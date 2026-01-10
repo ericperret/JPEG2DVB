@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 06 - Assemblage Elementary Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1100px;
+            margin: 20px auto;
+        }
+        .hex-display {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 150px;
+            overflow-y: auto;
+            word-break: break-all;
+            text-align: left;
+        }
+        .hex-display .sc {
+            color: #ff4444;
+            font-weight: bold;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+        }
+        .legend-color {
+            width: 20px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        table.header-table {
+            border-collapse: collapse;
+            font-size: 11px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        table.header-table th, table.header-table td {
+            border: 1px solid #333;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        table.header-table th {
+            background: #0f3460;
+        }
+        table.header-table tr:nth-child(even) {
+            background: #16213e;
+        }
+        .code {
+            font-family: monospace;
+            color: #00d4ff;
+        }
+        .section-detail {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .section-detail h4 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        .field-list {
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .field-list .field-name {
+            color: #ff8800;
+        }
+        .field-list .field-value {
+            color: #00ff88;
+        }
+    </style>
+</head>
+<body>
+    <h1>📦 Page 06 - Assemblage Elementary Stream</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Assemble les bitstreams VLC en un Elementary Stream MPEG-2 Video complet.<br>
+        Structure : Sequence Header → GOP Header → Picture Header → Slices (1 par ligne de MB)<br>
+        <strong>Entrée :</strong> Fichier JSON des bitstreams VLC (sortie Page 05)<br>
+        <strong>Sortie :</strong> Fichier binaire ES (.es) + JSON avec métadonnées
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Bitstreams</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Seq Header</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">GOP Header</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Picture Header</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Slices</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">ES</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Bitstreams en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Bitstreams VLC</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Bitstreams par bloc (sortie Page 05)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Structure ES -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Structure ES</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnAssemble" onclick="assembleES()" disabled>⚙️ Assembler ES</button>
+            </div>
+            <div class="info">Hiérarchie des headers MPEG-2</div>
+        </div>
+        
+        <!-- CANVAS 3 : ES final - Vue linéaire interactive -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Flux ES linéaire</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .es</button>
+            </div>
+            <div class="info">Cliquez sur une section pour voir le détail</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#ff6600"></div> Seq Hdr</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff9900"></div> Seq Ext</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ffcc00"></div> GOP</div>
+                <div class="legend-item"><div class="legend-color" style="background:#99cc00"></div> Pic Hdr</div>
+                <div class="legend-item"><div class="legend-color" style="background:#00cc99"></div> Pic Ext</div>
+                <div class="legend-item"><div class="legend-color" style="background:#0099cc"></div> Slices</div>
+                <div class="legend-item"><div class="legend-color" style="background:#cc0066"></div> End</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Détail de la section sélectionnée -->
+    <div class="detail-section">
+        <div id="sectionDetail" class="section-detail" style="display:none;">
+            <h4 id="detailTitle">Section</h4>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Champs :</strong>
+                    <div id="detailFields" class="field-list"></div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Hexdump :</strong>
+                    <div id="detailHex" class="hex-display"></div>
+                </div>
+            </div>
+            <div id="detailStats" style="margin-top: 10px; font-size: 11px; color: #888;"></div>
+        </div>
+        
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Référence : Headers MPEG-2 Video</h4>
+        <table class="header-table">
+            <tr>
+                <th>Header</th>
+                <th>Start Code</th>
+                <th>Contenu principal</th>
+            </tr>
+            <tr>
+                <td>Sequence Header</td>
+                <td class="code">00 00 01 B3</td>
+                <td>Résolution, aspect ratio, framerate, bitrate</td>
+            </tr>
+            <tr>
+                <td>Sequence Extension</td>
+                <td class="code">00 00 01 B5 (id=1)</td>
+                <td>Profile/Level, progressive, chroma format 4:2:0</td>
+            </tr>
+            <tr>
+                <td>GOP Header</td>
+                <td class="code">00 00 01 B8</td>
+                <td>Timecode, closed_gop, broken_link</td>
+            </tr>
+            <tr>
+                <td>Picture Header</td>
+                <td class="code">00 00 01 00</td>
+                <td>Temporal ref, picture type (I), vbv_delay</td>
+            </tr>
+            <tr>
+                <td>Picture Coding Ext.</td>
+                <td class="code">00 00 01 B5 (id=8)</td>
+                <td>intra_dc_precision, picture_structure=frame</td>
+            </tr>
+            <tr>
+                <td>Slice (n)</td>
+                <td class="code">00 00 01 01..12</td>
+                <td>Quantizer scale + macroblocs de la ligne n</td>
+            </tr>
+            <tr>
+                <td>Sequence End</td>
+                <td class="code">00 00 01 B7</td>
+                <td>Marqueur de fin de flux</td>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES MPEG-2
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const MB_WIDTH = WIDTH / 16;   // 22
+        const MB_HEIGHT = HEIGHT / 16; // 18
+        
+        // Start codes
+        const START_CODE_PREFIX = [0x00, 0x00, 0x01];
+        const SEQUENCE_HEADER_CODE = 0xB3;
+        const EXTENSION_START_CODE = 0xB5;
+        const GOP_START_CODE = 0xB8;
+        const PICTURE_START_CODE = 0x00;
+        const SEQUENCE_END_CODE = 0xB7;
+        
+        // Couleurs des sections
+        const COLORS = {
+            sequenceHeader: '#ff6600',
+            sequenceExtension: '#ff9900',
+            gopHeader: '#ffcc00',
+            pictureHeader: '#99cc00',
+            pictureCodingExtension: '#00cc99',
+            slice: '#0099cc',
+            sequenceEnd: '#cc0066'
+        };
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let encodedMacroblocs = [];
+        let esData = null;
+        let esBinary = [];
+        let assembled = false;
+        let esSections = [];
+        let selectedSection = null;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            displayStructureInit();
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_VLC_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 05.');
+                        return;
+                    }
+                    
+                    encodedMacroblocs = inputData.data;
+                    assembled = false;
+                    esSections = [];
+                    
+                    displayInputBitstreams();
+                    displayStructureInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnAssemble').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('sectionDetail').style.display = 'none';
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Fichier chargé :</strong><br>
+                        • Macroblocs : ${encodedMacroblocs.length}<br>
+                        • Bits totaux : ${inputData.encoding.totalEncodedBits.toLocaleString()}<br>
+                        • Compression : ${inputData.encoding.compressionRatio}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE ENTRÉE
+        // ============================================================
+        
+        function displayInputBitstreams() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            let minBits = Infinity, maxBits = 0;
+            for (const mb of encodedMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    const len = mb.Y[b].bitstream.length;
+                    if (len < minBits) minBits = len;
+                    if (len > maxBits) maxBits = len;
+                }
+            }
+            
+            for (const mb of encodedMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const bits = mb.Y[b].bitstream.length;
+                    const ratio = (bits - minBits) / (maxBits - minBits || 1);
+                    
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    const r = Math.floor(ratio * 200);
+                    const g = Math.floor((1 - ratio) * 200);
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            imageData.data[idx] = r;
+                            imageData.data[idx + 1] = g;
+                            imageData.data[idx + 2] = 50;
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx, 16);
+        }
+        
+        // ============================================================
+        // AFFICHAGE STRUCTURE
+        // ============================================================
+        
+        function displayStructureInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Structure MPEG-2 Video ES', WIDTH / 2, 25);
+            
+            const boxes = [
+                { name: 'Sequence Header', code: '00 00 01 B3', y: 50, color: COLORS.sequenceHeader },
+                { name: 'Sequence Extension', code: '00 00 01 B5', y: 80, color: COLORS.sequenceExtension },
+                { name: 'GOP Header', code: '00 00 01 B8', y: 115, color: COLORS.gopHeader },
+                { name: 'Picture Header', code: '00 00 01 00', y: 150, color: COLORS.pictureHeader },
+                { name: 'Picture Coding Ext.', code: '00 00 01 B5', y: 180, color: COLORS.pictureCodingExtension },
+                { name: 'Slice 1 (MB 0-21)', code: '00 00 01 01', y: 215, color: COLORS.slice },
+                { name: '... Slice 18', code: '00 00 01 12', y: 245, color: COLORS.slice },
+                { name: 'Sequence End', code: '00 00 01 B7', y: 275, color: COLORS.sequenceEnd },
+            ];
+            
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'left';
+            
+            for (const box of boxes) {
+                ctx.fillStyle = box.color + '40';
+                ctx.fillRect(20, box.y - 12, 310, 22);
+                ctx.strokeStyle = box.color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(20, box.y - 12, 310, 22);
+                
+                ctx.fillStyle = '#fff';
+                ctx.fillText(box.name, 30, box.y + 3);
+                ctx.fillStyle = '#ff4444';
+                ctx.fillText(box.code, 200, box.y + 3);
+            }
+        }
+        
+        // ============================================================
+        // ASSEMBLAGE ES
+        // ============================================================
+        
+        function assembleES() {
+            if (!encodedMacroblocs.length) return;
+            
+            esBinary = [];
+            esSections = [];
+            esData = { headers: {}, slices: [], totalBytes: 0 };
+            
+            let offset = 0;
+            
+            // 1. Sequence Header
+            const seqHeader = buildSequenceHeader();
+            appendSection('Sequence Header', 'sequenceHeader', seqHeader, offset);
+            offset += seqHeader.bytes.length;
+            esData.headers.sequenceHeader = seqHeader;
+            
+            // 2. Sequence Extension
+            const seqExt = buildSequenceExtension();
+            appendSection('Sequence Extension', 'sequenceExtension', seqExt, offset);
+            offset += seqExt.bytes.length;
+            esData.headers.sequenceExtension = seqExt;
+            
+            // 3. GOP Header
+            const gopHeader = buildGOPHeader();
+            appendSection('GOP Header', 'gopHeader', gopHeader, offset);
+            offset += gopHeader.bytes.length;
+            esData.headers.gopHeader = gopHeader;
+            
+            // 4. Picture Header
+            const picHeader = buildPictureHeader();
+            appendSection('Picture Header', 'pictureHeader', picHeader, offset);
+            offset += picHeader.bytes.length;
+            esData.headers.pictureHeader = picHeader;
+            
+            // 5. Picture Coding Extension
+            const picCodingExt = buildPictureCodingExtension();
+            appendSection('Picture Coding Ext.', 'pictureCodingExtension', picCodingExt, offset);
+            offset += picCodingExt.bytes.length;
+            esData.headers.pictureCodingExtension = picCodingExt;
+            
+            // 6. Slices
+            for (let sliceRow = 0; sliceRow < MB_HEIGHT; sliceRow++) {
+                const slice = buildSlice(sliceRow);
+                appendSection(`Slice ${sliceRow + 1}`, 'slice', slice, offset);
+                offset += slice.bytes.length;
+                esData.slices.push(slice);
+            }
+            
+            // 7. Sequence End
+            const seqEnd = { bytes: [...START_CODE_PREFIX, SEQUENCE_END_CODE], fields: { marker: 'End of sequence' }, startCode: '00 00 01 B7' };
+            appendSection('Sequence End', 'sequenceEnd', seqEnd, offset);
+            esData.headers.sequenceEnd = seqEnd;
+            
+            esData.totalBytes = esBinary.length;
+            
+            assembled = true;
+            displayOutputES();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            const globalStats = document.getElementById('globalStats');
+            globalStats.style.display = 'block';
+            globalStats.innerHTML = `
+                <strong>Elementary Stream assemblé :</strong><br>
+                • Taille totale : <strong>${esBinary.length.toLocaleString()} octets</strong> (${(esBinary.length / 1024).toFixed(2)} Ko)<br>
+                • Headers : ${esData.headers.sequenceHeader.bytes.length + esData.headers.sequenceExtension.bytes.length + esData.headers.gopHeader.bytes.length + esData.headers.pictureHeader.bytes.length + esData.headers.pictureCodingExtension.bytes.length} octets<br>
+                • Slices : ${esData.slices.length} (${esData.slices.reduce((a, s) => a + s.bytes.length, 0)} octets)<br>
+                • Prêt pour empaquetage PES
+            `;
+        }
+        
+        function appendSection(name, type, data, offset) {
+            esBinary.push(...data.bytes);
+            esSections.push({
+                name: name,
+                type: type,
+                offset: offset,
+                size: data.bytes.length,
+                bytes: data.bytes,
+                fields: data.fields,
+                startCode: data.startCode || ''
+            });
+        }
+        
+        // ============================================================
+        // CONSTRUCTION DES HEADERS
+        // ============================================================
+        
+        function buildSequenceHeader() {
+            const bits = new BitWriter();
+            bits.writeBits(0x000001B3, 32);
+            bits.writeBits(WIDTH, 12);
+            bits.writeBits(HEIGHT, 12);
+            bits.writeBits(2, 4);      // aspect ratio 4:3
+            bits.writeBits(3, 4);      // 25 fps
+            bits.writeBits(0x3FFFF, 18); // bitrate
+            bits.writeBits(1, 1);      // marker
+            bits.writeBits(112, 10);   // vbv buffer
+            bits.writeBits(0, 1);      // constrained
+            bits.writeBits(0, 1);      // load intra matrix
+            bits.writeBits(0, 1);      // load non-intra matrix
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: '00 00 01 B3',
+                fields: {
+                    'horizontal_size': WIDTH,
+                    'vertical_size': HEIGHT,
+                    'aspect_ratio': '4:3 (2)',
+                    'frame_rate': '25 fps (3)',
+                    'bit_rate': 'variable (0x3FFFF)',
+                    'vbv_buffer_size': 112
+                }
+            };
+        }
+        
+        function buildSequenceExtension() {
+            const bits = new BitWriter();
+            bits.writeBits(0x000001B5, 32);
+            bits.writeBits(1, 4);       // extension id = sequence
+            bits.writeBits(0x48, 8);    // Main @ Main
+            bits.writeBits(1, 1);       // progressive
+            bits.writeBits(1, 2);       // chroma 4:2:0
+            bits.writeBits(0, 2);       // h size ext
+            bits.writeBits(0, 2);       // v size ext
+            bits.writeBits(0, 12);      // bitrate ext
+            bits.writeBits(1, 1);       // marker
+            bits.writeBits(0, 8);       // vbv ext
+            bits.writeBits(0, 1);       // low delay
+            bits.writeBits(0, 2);       // frame rate n
+            bits.writeBits(0, 5);       // frame rate d
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: '00 00 01 B5',
+                fields: {
+                    'extension_id': '1 (sequence)',
+                    'profile_level': 'Main @ Main (0x48)',
+                    'progressive_sequence': 'true',
+                    'chroma_format': '4:2:0 (1)',
+                    'low_delay': 'false'
+                }
+            };
+        }
+        
+        function buildGOPHeader() {
+            const bits = new BitWriter();
+            bits.writeBits(0x000001B8, 32);
+            bits.writeBits(0, 1);  // drop frame
+            bits.writeBits(0, 5);  // hours
+            bits.writeBits(0, 6);  // minutes
+            bits.writeBits(1, 1);  // marker
+            bits.writeBits(0, 6);  // seconds
+            bits.writeBits(0, 6);  // pictures
+            bits.writeBits(1, 1);  // closed gop
+            bits.writeBits(0, 1);  // broken link
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: '00 00 01 B8',
+                fields: {
+                    'time_code': '00:00:00:00',
+                    'drop_frame_flag': 'false',
+                    'closed_gop': 'true',
+                    'broken_link': 'false'
+                }
+            };
+        }
+        
+        function buildPictureHeader() {
+            const bits = new BitWriter();
+            bits.writeBits(0x00000100, 32);
+            bits.writeBits(0, 10);      // temporal ref
+            bits.writeBits(1, 3);       // I-frame
+            bits.writeBits(0xFFFF, 16); // vbv delay
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: '00 00 01 00',
+                fields: {
+                    'temporal_reference': 0,
+                    'picture_coding_type': 'I-frame (1)',
+                    'vbv_delay': '0xFFFF (variable)'
+                }
+            };
+        }
+        
+        function buildPictureCodingExtension() {
+            const bits = new BitWriter();
+            bits.writeBits(0x000001B5, 32);
+            bits.writeBits(8, 4);   // extension id = picture coding
+            bits.writeBits(15, 4);  // f_code[0][0]
+            bits.writeBits(15, 4);  // f_code[0][1]
+            bits.writeBits(15, 4);  // f_code[1][0]
+            bits.writeBits(15, 4);  // f_code[1][1]
+            bits.writeBits(0, 2);   // intra_dc_precision
+            bits.writeBits(3, 2);   // picture_structure = frame
+            bits.writeBits(0, 1);   // top_field_first
+            bits.writeBits(1, 1);   // frame_pred_frame_dct
+            bits.writeBits(0, 1);   // concealment_motion_vectors
+            bits.writeBits(0, 1);   // q_scale_type
+            bits.writeBits(0, 1);   // intra_vlc_format
+            bits.writeBits(0, 1);   // alternate_scan
+            bits.writeBits(0, 1);   // repeat_first_field
+            bits.writeBits(1, 1);   // chroma_420_type
+            bits.writeBits(1, 1);   // progressive_frame
+            bits.writeBits(0, 1);   // composite_display_flag
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: '00 00 01 B5',
+                fields: {
+                    'extension_id': '8 (picture coding)',
+                    'intra_dc_precision': '8 bits (0)',
+                    'picture_structure': 'frame (3)',
+                    'progressive_frame': 'true',
+                    'chroma_420_type': 'true'
+                }
+            };
+        }
+        
+        function buildSlice(sliceRow) {
+            const bits = new BitWriter();
+            const sliceCode = sliceRow + 1;
+            
+            bits.writeBits(0x000001, 24);
+            bits.writeBits(sliceCode, 8);
+            bits.writeBits(16, 5);  // quantiser_scale
+            bits.writeBits(0, 1);   // extra_bit_slice
+            
+            const startMB = sliceRow * MB_WIDTH;
+            const endMB = startMB + MB_WIDTH;
+            
+            for (let mbIdx = startMB; mbIdx < endMB && mbIdx < encodedMacroblocs.length; mbIdx++) {
+                const mb = encodedMacroblocs[mbIdx];
+                bits.writeBits(1, 1);  // mb_address_increment
+                bits.writeBits(1, 1);  // mb_type intra
+                
+                for (let b = 0; b < 4; b++) {
+                    for (const bit of mb.Y[b].bitstream) {
+                        bits.writeBits(bit === '1' ? 1 : 0, 1);
+                    }
+                }
+                for (const bit of mb.Cb.bitstream) {
+                    bits.writeBits(bit === '1' ? 1 : 0, 1);
+                }
+                for (const bit of mb.Cr.bitstream) {
+                    bits.writeBits(bit === '1' ? 1 : 0, 1);
+                }
+            }
+            
+            bits.byteAlign();
+            
+            return {
+                bytes: bits.getBytes(),
+                startCode: `00 00 01 ${sliceCode.toString(16).padStart(2, '0').toUpperCase()}`,
+                fields: {
+                    'slice_vertical_position': sliceRow + 1,
+                    'quantiser_scale_code': 16,
+                    'macroblocs': `${startMB} - ${Math.min(endMB, encodedMacroblocs.length) - 1}`,
+                    'mb_count': Math.min(MB_WIDTH, encodedMacroblocs.length - startMB)
+                }
+            };
+        }
+        
+        // ============================================================
+        // BITWRITER
+        // ============================================================
+        
+        class BitWriter {
+            constructor() {
+                this.bytes = [];
+                this.currentByte = 0;
+                this.bitPosition = 7;
+            }
+            
+            writeBits(value, numBits) {
+                for (let i = numBits - 1; i >= 0; i--) {
+                    const bit = (value >> i) & 1;
+                    this.currentByte |= (bit << this.bitPosition);
+                    this.bitPosition--;
+                    if (this.bitPosition < 0) {
+                        this.bytes.push(this.currentByte);
+                        this.currentByte = 0;
+                        this.bitPosition = 7;
+                    }
+                }
+            }
+            
+            byteAlign() {
+                if (this.bitPosition < 7) {
+                    this.bytes.push(this.currentByte);
+                    this.currentByte = 0;
+                    this.bitPosition = 7;
+                }
+            }
+            
+            getBytes() {
+                const result = [...this.bytes];
+                if (this.bitPosition < 7) result.push(this.currentByte);
+                return result;
+            }
+        }
+        
+        // ============================================================
+        // AFFICHAGE SORTIE ES - VUE LINÉAIRE EN BLOCS
+        // ============================================================
+        
+        function displayOutputES() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Afficher chaque section comme un rectangle proportionnel
+            const totalBytes = esBinary.length;
+            const margin = 10;
+            const blockHeight = 35;
+            const labelHeight = 12;
+            let currentY = margin;
+            
+            // Grouper les slices pour l'affichage
+            const displaySections = [];
+            let sliceGroup = null;
+            
+            for (const section of esSections) {
+                if (section.type === 'slice') {
+                    if (!sliceGroup) {
+                        sliceGroup = {
+                            name: 'Slices 1-18',
+                            type: 'slice',
+                            offset: section.offset,
+                            size: 0,
+                            bytes: [],
+                            fields: { count: 0 },
+                            startCode: '00 00 01 01..12',
+                            subSections: []
+                        };
+                        displaySections.push(sliceGroup);
+                    }
+                    sliceGroup.size += section.size;
+                    sliceGroup.bytes.push(...section.bytes);
+                    sliceGroup.fields.count++;
+                    sliceGroup.subSections.push(section);
+                } else {
+                    displaySections.push(section);
+                }
+            }
+            
+            // Calculer la largeur disponible
+            const usableWidth = WIDTH - 2 * margin;
+            
+            // Afficher les sections
+            for (let i = 0; i < displaySections.length; i++) {
+                const section = displaySections[i];
+                const widthRatio = section.size / totalBytes;
+                const blockWidth = Math.max(usableWidth * widthRatio, 30); // Minimum 30px
+                
+                const color = COLORS[section.type] || '#666';
+                
+                // Rectangle de la section
+                ctx.fillStyle = color;
+                ctx.fillRect(margin, currentY, usableWidth, blockHeight);
+                
+                // Bordure
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = selectedSection === i ? 3 : 1;
+                ctx.strokeRect(margin, currentY, usableWidth, blockHeight);
+                
+                // Barre de proportion
+                ctx.fillStyle = color + '80';
+                ctx.fillRect(margin, currentY + blockHeight, usableWidth * widthRatio, 5);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(margin, currentY + blockHeight, 2, 5);
+                
+                // Texte
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(section.name, margin + 5, currentY + blockHeight / 2 - 5);
+                
+                ctx.font = '10px monospace';
+                ctx.fillStyle = '#333';
+                ctx.fillText(`${section.size} octets (${(widthRatio * 100).toFixed(1)}%)`, margin + 5, currentY + blockHeight / 2 + 8);
+                
+                // Start code à droite
+                ctx.textAlign = 'right';
+                ctx.fillStyle = '#000';
+                ctx.font = '9px monospace';
+                ctx.fillText(section.startCode, WIDTH - margin - 5, currentY + blockHeight / 2);
+                
+                // Stocker les coordonnées pour le clic
+                section.displayY = currentY;
+                section.displayHeight = blockHeight + 5;
+                section.displayIndex = i;
+                
+                currentY += blockHeight + labelHeight;
+            }
+            
+            // Stocker pour le clic
+            window.displaySections = displaySections;
+        }
+        
+        // ============================================================
+        // CLIC SUR SECTION
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!assembled || !window.displaySections) return;
+            
+            const rect = this.getBoundingClientRect();
+            const y = e.clientY - rect.top;
+            
+            // Trouver la section cliquée
+            for (let i = 0; i < window.displaySections.length; i++) {
+                const section = window.displaySections[i];
+                if (y >= section.displayY && y < section.displayY + section.displayHeight) {
+                    selectedSection = i;
+                    displayOutputES();
+                    displaySectionDetail(section);
+                    return;
+                }
+            }
+        });
+        
+        function displaySectionDetail(section) {
+            const detailDiv = document.getElementById('sectionDetail');
+            detailDiv.style.display = 'block';
+            
+            // Titre
+            document.getElementById('detailTitle').textContent = 
+                `${section.name} — Start Code: ${section.startCode}`;
+            
+            // Champs
+            const fieldsDiv = document.getElementById('detailFields');
+            let fieldsHtml = '';
+            
+            if (section.subSections) {
+                // C'est le groupe de slices
+                fieldsHtml += `<span class="field-name">nb_slices</span>: <span class="field-value">${section.fields.count}</span><br>`;
+                fieldsHtml += `<span class="field-name">total_size</span>: <span class="field-value">${section.size} octets</span><br>`;
+                fieldsHtml += `<span class="field-name">avg_size</span>: <span class="field-value">${Math.round(section.size / section.fields.count)} octets/slice</span><br><br>`;
+                fieldsHtml += `<strong>Détail par slice :</strong><br>`;
+                for (const sub of section.subSections.slice(0, 5)) {
+                    fieldsHtml += `<span class="field-name">${sub.name}</span>: <span class="field-value">${sub.size} octets</span><br>`;
+                }
+                if (section.subSections.length > 5) {
+                    fieldsHtml += `<span style="color:#666">... et ${section.subSections.length - 5} autres</span>`;
+                }
+            } else {
+                for (const [key, value] of Object.entries(section.fields)) {
+                    fieldsHtml += `<span class="field-name">${key}</span>: <span class="field-value">${value}</span><br>`;
+                }
+            }
+            fieldsDiv.innerHTML = fieldsHtml;
+            
+            // Hexdump
+            const hexDiv = document.getElementById('detailHex');
+            const bytesToShow = section.subSections ? section.subSections[0].bytes : section.bytes;
+            let hexHtml = '';
+            const displayBytes = bytesToShow.slice(0, 48);
+            
+            for (let i = 0; i < displayBytes.length; i++) {
+                const byte = displayBytes[i];
+                const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                
+                if (i < 4) {
+                    hexHtml += `<span class="sc">${hex}</span> `;
+                } else {
+                    hexHtml += hex + ' ';
+                }
+                
+                if ((i + 1) % 16 === 0) hexHtml += '\n';
+            }
+            
+            if (bytesToShow.length > 48) {
+                hexHtml += `\n... (${bytesToShow.length - 48} octets de plus)`;
+            }
+            
+            hexDiv.innerHTML = hexHtml;
+            
+            // Stats
+            document.getElementById('detailStats').innerHTML = 
+                `Offset: ${section.offset} | Taille: ${section.size} octets | ` +
+                `${(section.size / esBinary.length * 100).toFixed(2)}% du flux total`;
+        }
+        
+        // ============================================================
+        // EXPORT
+        // ============================================================
+        
+        function exportJSON() {
+            if (!assembled) return;
+            
+            const output = {
+                format: 'MPEG2_ES_V1',
+                description: 'Elementary Stream MPEG-2 Video',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                stream: {
+                    totalBytes: esBinary.length,
+                    structure: esSections.map(s => ({
+                        name: s.name,
+                        type: s.type,
+                        offset: s.offset,
+                        size: s.size,
+                        startCode: s.startCode
+                    }))
+                },
+                binary: btoa(String.fromCharCode.apply(null, esBinary))
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'elementary_stream.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportBinary() {
+            if (!assembled) return;
+            
+            const blob = new Blob([new Uint8Array(esBinary)], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'video.es';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        
+        function drawGrid(ctx, size) {
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += size) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += size) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+    </script>
+</body>
+</html>
