@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 03 - Quantification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .matrix-display {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+            margin: 10px auto;
+            width: fit-content;
+        }
+        .matrix-cell {
+            width: 35px;
+            height: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-family: monospace;
+            background: #0f3460;
+            border-radius: 2px;
+        }
+        .matrix-cell.high {
+            background: #4a0000;
+        }
+        .matrix-cell.low {
+            background: #004a00;
+        }
+        select, input[type="range"] {
+            background: #0f3460;
+            color: #fff;
+            border: 1px solid #00d4ff;
+            padding: 5px 10px;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        .quality-control {
+            margin: 15px 0;
+            padding: 10px;
+            background: #0a0a15;
+            border-radius: 5px;
+        }
+        .formula {
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .zero-meter {
+            margin-top: 10px;
+            height: 20px;
+            background: #0f3460;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .zero-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #00ff88);
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Page 03 - Quantification</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Division des coefficients DCT par une matrice de quantification.<br>
+        Cette étape introduit la compression avec pertes : les hautes fréquences sont plus atténuées.<br>
+        <strong>Entrée :</strong> Fichier JSON des coefficients DCT (sortie Page 02)<br>
+        <strong>Sortie :</strong> Fichier JSON des coefficients quantifiés (entiers, beaucoup de zéros)
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Coeffs DCT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">÷ Matrice Q</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Arrondi</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Coeffs quantifiés</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Coefficients DCT en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Coefficients DCT</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Coefficients DCT (valeurs flottantes)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Matrice Q et traitement -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Matrice Q</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <select id="matrixSelect" onchange="updateMatrix()">
+                    <option value="mpeg2_intra">MPEG-2 Intra</option>
+                    <option value="jpeg_standard">JPEG Standard</option>
+                    <option value="jpeg_quality">JPEG Qualité</option>
+                    <option value="flat">Plate (test)</option>
+                </select>
+                <button id="btnQuantize" onclick="quantize()" disabled>⚙️ Quantifier</button>
+            </div>
+            <div class="quality-control">
+                <label>Facteur qualité : <span id="qualityValue">50</span></label><br>
+                <input type="range" id="qualitySlider" min="1" max="100" value="50" onchange="updateQuality()">
+                <div class="info">1 = très compressé, 100 = quasi sans perte</div>
+            </div>
+            <div class="formula">
+                Q_coeff[u][v] = round( DCT[u][v] / (Q[u][v] × scale) )
+            </div>
+        </div>
+        
+        <!-- CANVAS 3 : Résultat quantifié -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Coefficients Quantifiés</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Exporter JSON</button>
+                <button id="btnDequant" onclick="dequantizePreview()" disabled>🔄 Prévisualiser</button>
+            </div>
+            <div class="info">Cliquez sur un bloc pour comparer avant/après</div>
+            <div id="zeroStats" class="stats" style="display:none;">
+                <strong>Taux de zéros :</strong>
+                <div class="zero-meter">
+                    <div id="zeroFill" class="zero-fill" style="width: 0%"></div>
+                </div>
+                <span id="zeroPercent">0%</span> des coefficients AC sont nuls
+            </div>
+        </div>
+    </div>
+    
+    <!-- Affichage de la matrice Q -->
+    <div style="text-align: center; margin-top: 20px;">
+        <h3 style="color: #00d4ff;">Matrice de Quantification (8×8)</h3>
+        <div id="matrixDisplay" class="matrix-display"></div>
+        <div id="blockComparison" class="stats" style="display:none; max-width: 800px; margin: 20px auto;"></div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const BLOCK_SIZE = 8;
+        const MB_SIZE = 16;
+        const MB_COLS = WIDTH / MB_SIZE;
+        const MB_ROWS = HEIGHT / MB_SIZE;
+        
+        // ============================================================
+        // MATRICES DE QUANTIFICATION
+        // ============================================================
+        
+        const MATRICES = {
+            // Matrice MPEG-2 Intra (default_intra_quantizer_matrix)
+            mpeg2_intra: [
+                 8, 16, 19, 22, 26, 27, 29, 34,
+                16, 16, 22, 24, 27, 29, 34, 37,
+                19, 22, 26, 27, 29, 34, 34, 38,
+                22, 22, 26, 27, 29, 34, 37, 40,
+                22, 26, 27, 29, 32, 35, 40, 48,
+                26, 27, 29, 32, 35, 40, 48, 58,
+                26, 27, 29, 34, 38, 46, 56, 69,
+                27, 29, 35, 38, 46, 56, 69, 83
+            ],
+            
+            // Matrice JPEG standard (qualité 50)
+            jpeg_standard: [
+                16, 11, 10, 16, 24, 40, 51, 61,
+                12, 12, 14, 19, 26, 58, 60, 55,
+                14, 13, 16, 24, 40, 57, 69, 56,
+                14, 17, 22, 29, 51, 87, 80, 62,
+                18, 22, 37, 56, 68,109,103, 77,
+                24, 35, 55, 64, 81,104,113, 92,
+                49, 64, 78, 87,103,121,120,101,
+                72, 92, 95, 98,112,100,103, 99
+            ],
+            
+            // Matrice haute qualité
+            jpeg_quality: [
+                 2,  2,  2,  2,  3,  4,  5,  6,
+                 2,  2,  2,  2,  3,  4,  5,  6,
+                 2,  2,  2,  2,  4,  5,  7,  9,
+                 2,  2,  2,  4,  5,  7,  9, 12,
+                 3,  3,  4,  5,  8, 11, 15, 18,
+                 4,  4,  5,  7, 11, 15, 18, 21,
+                 5,  5,  7,  9, 15, 18, 21, 24,
+                 6,  6,  9, 12, 18, 21, 24, 28
+            ],
+            
+            // Matrice plate (tous les coefficients identiques)
+            flat: [
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16,
+                16, 16, 16, 16, 16, 16, 16, 16
+            ]
+        };
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let dctMacroblocs = [];
+        let quantizedMacroblocs = [];
+        let currentMatrix = MATRICES.mpeg2_intra;
+        let qualityFactor = 50;
+        let quantized = false;
+        let selectedBlock = null;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            updateMatrix();
+            displayMatrixVisualization();
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_DCT_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 02.');
+                        return;
+                    }
+                    
+                    dctMacroblocs = inputData.data;
+                    quantizedMacroblocs = [];
+                    quantized = false;
+                    
+                    displayDCTInput();
+                    displayMatrixVisualization();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnQuantize').disabled = false;
+                    document.getElementById('btnExport').disabled = true;
+                    document.getElementById('btnDequant').disabled = true;
+                    document.getElementById('zeroStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Fichier chargé :</strong><br>
+                        • Macroblocs : ${dctMacroblocs.length}<br>
+                        • Blocs 8×8 : ${dctMacroblocs.length * 6}<br>
+                        • Coefficients : ${dctMacroblocs.length * 6 * 64}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE DCT ENTRÉE
+        // ============================================================
+        
+        function displayDCTInput() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            let maxVal = 1;
+            for (const mb of dctMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+            }
+            
+            for (const mb of dctMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = block[y * 8 + x];
+                            const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            
+                            if (x === 0 && y === 0) {
+                                imageData.data[idx] = intensity;
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 0;
+                            } else {
+                                imageData.data[idx] = intensity;
+                                imageData.data[idx + 1] = intensity;
+                                imageData.data[idx + 2] = intensity;
+                            }
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+        }
+        
+        // ============================================================
+        // MATRICE DE QUANTIFICATION
+        // ============================================================
+        
+        function updateMatrix() {
+            const select = document.getElementById('matrixSelect');
+            currentMatrix = MATRICES[select.value];
+            displayMatrixVisualization();
+            displayMatrixOnCanvas();
+        }
+        
+        function updateQuality() {
+            qualityFactor = parseInt(document.getElementById('qualitySlider').value);
+            document.getElementById('qualityValue').textContent = qualityFactor;
+            displayMatrixVisualization();
+            displayMatrixOnCanvas();
+        }
+        
+        function getScaledMatrix() {
+            // Facteur d'échelle basé sur la qualité (comme JPEG)
+            let scale;
+            if (qualityFactor < 50) {
+                scale = 5000 / qualityFactor;
+            } else {
+                scale = 200 - qualityFactor * 2;
+            }
+            scale = scale / 100;
+            
+            const scaled = new Array(64);
+            for (let i = 0; i < 64; i++) {
+                scaled[i] = Math.max(1, Math.round(currentMatrix[i] * scale));
+            }
+            return scaled;
+        }
+        
+        function displayMatrixVisualization() {
+            const container = document.getElementById('matrixDisplay');
+            const scaled = getScaledMatrix();
+            
+            const maxVal = Math.max(...scaled);
+            const minVal = Math.min(...scaled);
+            
+            let html = '';
+            for (let i = 0; i < 64; i++) {
+                const val = scaled[i];
+                const ratio = (val - minVal) / (maxVal - minVal || 1);
+                let cls = 'matrix-cell';
+                if (ratio > 0.6) cls += ' high';
+                else if (ratio < 0.3) cls += ' low';
+                
+                html += `<div class="${cls}">${val}</div>`;
+            }
+            container.innerHTML = html;
+        }
+        
+        function displayMatrixOnCanvas() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            const scaled = getScaledMatrix();
+            const maxVal = Math.max(...scaled);
+            
+            // Dessiner la matrice Q agrandie au centre
+            const cellSize = 30;
+            const startX = (WIDTH - 8 * cellSize) / 2;
+            const startY = 30;
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Matrice Q (×' + (getScaledMatrix()[0] / currentMatrix[0]).toFixed(2) + ')', WIDTH / 2, 20);
+            
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const val = scaled[y * 8 + x];
+                    const ratio = val / maxVal;
+                    
+                    // Couleur basée sur la valeur
+                    const r = Math.floor(ratio * 180);
+                    const g = Math.floor((1 - ratio) * 100);
+                    const b = 50;
+                    
+                    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                    ctx.fillRect(startX + x * cellSize, startY + y * cellSize, cellSize - 1, cellSize - 1);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(val.toString(), startX + x * cellSize + cellSize/2, startY + y * cellSize + cellSize/2);
+                }
+            }
+            
+            // Légende
+            ctx.fillStyle = '#888';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Basses fréquences (haut-gauche) → valeurs faibles = plus de précision', 20, startY + 8 * cellSize + 30);
+            ctx.fillText('Hautes fréquences (bas-droite) → valeurs élevées = plus de compression', 20, startY + 8 * cellSize + 50);
+            
+            // Formule
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = '12px monospace';
+            ctx.fillText('Qcoeff = round( DCT / Q )', 20, startY + 8 * cellSize + 80);
+        }
+        
+        // ============================================================
+        // QUANTIFICATION
+        // ============================================================
+        
+        function quantize() {
+            if (!dctMacroblocs.length) return;
+            
+            const scaledQ = getScaledMatrix();
+            quantizedMacroblocs = [];
+            let totalZeros = 0;
+            let totalAC = 0;
+            
+            for (const mb of dctMacroblocs) {
+                const qMB = {
+                    index: mb.index,
+                    position: mb.position,
+                    Y: [],
+                    Cb: null,
+                    Cr: null
+                };
+                
+                // Quantifier les 4 blocs Y
+                for (let b = 0; b < 4; b++) {
+                    const qBlock = quantizeBlock(mb.Y[b], scaledQ);
+                    qMB.Y.push(qBlock.coeffs);
+                    totalZeros += qBlock.zeros;
+                    totalAC += 63; // 63 coefficients AC par bloc
+                }
+                
+                // Quantifier Cb et Cr
+                const qCb = quantizeBlock(mb.Cb, scaledQ);
+                const qCr = quantizeBlock(mb.Cr, scaledQ);
+                qMB.Cb = qCb.coeffs;
+                qMB.Cr = qCr.coeffs;
+                totalZeros += qCb.zeros + qCr.zeros;
+                totalAC += 126; // 63 × 2
+                
+                quantizedMacroblocs.push(qMB);
+            }
+            
+            quantized = true;
+            displayQuantizedOutput();
+            
+            // Statistiques de zéros
+            const zeroPercent = ((totalZeros / totalAC) * 100).toFixed(1);
+            document.getElementById('zeroStats').style.display = 'block';
+            document.getElementById('zeroFill').style.width = zeroPercent + '%';
+            document.getElementById('zeroPercent').textContent = zeroPercent + '%';
+            
+            document.getElementById('btnExport').disabled = false;
+            document.getElementById('btnDequant').disabled = false;
+        }
+        
+        function quantizeBlock(dctBlock, qMatrix) {
+            const quantized = new Array(64);
+            let zeros = 0;
+            
+            for (let i = 0; i < 64; i++) {
+                // Division et arrondi
+                quantized[i] = Math.round(dctBlock[i] / qMatrix[i]);
+                
+                // Compter les zéros AC (pas le DC)
+                if (i > 0 && quantized[i] === 0) {
+                    zeros++;
+                }
+            }
+            
+            return { coeffs: quantized, zeros: zeros };
+        }
+        
+        // ============================================================
+        // AFFICHAGE SORTIE QUANTIFIÉE
+        // ============================================================
+        
+        function displayQuantizedOutput() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Trouver max pour normalisation
+            let maxVal = 1;
+            for (const mb of quantizedMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+            }
+            
+            for (const mb of quantizedMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = block[y * 8 + x];
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            
+                            if (val === 0 && !(x === 0 && y === 0)) {
+                                // Zéros en bleu foncé
+                                imageData.data[idx] = 0;
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 40;
+                            } else {
+                                const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                                if (x === 0 && y === 0) {
+                                    imageData.data[idx] = intensity;
+                                    imageData.data[idx + 1] = 0;
+                                    imageData.data[idx + 2] = 0;
+                                } else {
+                                    imageData.data[idx] = 0;
+                                    imageData.data[idx + 1] = intensity;
+                                    imageData.data[idx + 2] = 0;
+                                }
+                            }
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+        }
+        
+        // ============================================================
+        // SÉLECTION ET COMPARAISON DE BLOC
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!quantized) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = Math.floor(e.clientX - rect.left);
+            const y = Math.floor(e.clientY - rect.top);
+            
+            const blockX = Math.floor(x / 8);
+            const blockY = Math.floor(y / 8);
+            const mbX = Math.floor(blockX / 2);
+            const mbY = Math.floor(blockY / 2);
+            const mbIndex = mbY * MB_COLS + mbX;
+            const localBlockX = blockX % 2;
+            const localBlockY = blockY % 2;
+            const blockIndex = localBlockY * 2 + localBlockX;
+            
+            if (mbIndex < quantizedMacroblocs.length) {
+                displayBlockComparison(mbIndex, blockIndex);
+                
+                // Highlight
+                displayQuantizedOutput();
+                const ctx = this.getContext('2d');
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(blockX * 8, blockY * 8, 8, 8);
+            }
+        });
+        
+        function displayBlockComparison(mbIndex, blockIndex) {
+            const original = dctMacroblocs[mbIndex].Y[blockIndex];
+            const quant = quantizedMacroblocs[mbIndex].Y[blockIndex];
+            const scaledQ = getScaledMatrix();
+            
+            const comparison = document.getElementById('blockComparison');
+            comparison.style.display = 'block';
+            
+            let html = `<strong>Bloc Y${blockIndex} du MB #${mbIndex}</strong><br><br>`;
+            html += '<div style="display: flex; gap: 20px; justify-content: center;">';
+            
+            // Tableau DCT original
+            html += '<div><strong>DCT Original</strong><table style="font-size:9px; border-collapse:collapse;">';
+            for (let y = 0; y < 8; y++) {
+                html += '<tr>';
+                for (let x = 0; x < 8; x++) {
+                    const val = original[y * 8 + x];
+                    html += `<td style="padding:2px 4px; border:1px solid #333; background:${x===0&&y===0?'#400':'#222'}">${val.toFixed(0)}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</table></div>';
+            
+            // Flèche
+            html += '<div style="display:flex;align-items:center;font-size:24px;color:#00d4ff;">÷Q→</div>';
+            
+            // Tableau quantifié
+            html += '<div><strong>Quantifié</strong><table style="font-size:9px; border-collapse:collapse;">';
+            for (let y = 0; y < 8; y++) {
+                html += '<tr>';
+                for (let x = 0; x < 8; x++) {
+                    const val = quant[y * 8 + x];
+                    const bg = val === 0 ? '#003' : (x===0&&y===0 ? '#400' : '#030');
+                    html += `<td style="padding:2px 4px; border:1px solid #333; background:${bg}">${val}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</table></div>';
+            
+            html += '</div>';
+            
+            // Statistiques
+            let zeros = 0;
+            for (let i = 1; i < 64; i++) {
+                if (quant[i] === 0) zeros++;
+            }
+            html += `<br>Zéros AC : ${zeros}/63 (${(zeros/63*100).toFixed(0)}%)`;
+            
+            comparison.innerHTML = html;
+        }
+        
+        // ============================================================
+        // PRÉVISUALISATION (DEQUANTIFICATION + IDCT)
+        // ============================================================
+        
+        function dequantizePreview() {
+            if (!quantized) return;
+            
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            const scaledQ = getScaledMatrix();
+            
+            // Table cosinus pour IDCT
+            const cosTable = new Float64Array(64);
+            for (let u = 0; u < 8; u++) {
+                for (let x = 0; x < 8; x++) {
+                    cosTable[u * 8 + x] = Math.cos((2 * x + 1) * u * Math.PI / 16);
+                }
+            }
+            
+            for (const mb of quantizedMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    // Dequantifier
+                    const dequant = new Float64Array(64);
+                    for (let i = 0; i < 64; i++) {
+                        dequant[i] = mb.Y[b][i] * scaledQ[i];
+                    }
+                    
+                    // IDCT
+                    const pixels = computeIDCT(dequant, cosTable);
+                    
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = Math.max(0, Math.min(255, Math.round(pixels[y * 8 + x] + 128)));
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            imageData.data[idx] = val;
+                            imageData.data[idx + 1] = val;
+                            imageData.data[idx + 2] = val;
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        function computeIDCT(dct, cosTable) {
+            const pixels = new Float64Array(64);
+            
+            for (let x = 0; x < 8; x++) {
+                for (let y = 0; y < 8; y++) {
+                    let sum = 0;
+                    for (let u = 0; u < 8; u++) {
+                        for (let v = 0; v < 8; v++) {
+                            const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
+                            const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
+                            sum += Cu * Cv * dct[u * 8 + v] * cosTable[u * 8 + x] * cosTable[v * 8 + y];
+                        }
+                    }
+                    pixels[y * 8 + x] = 0.25 * sum;
+                }
+            }
+            return pixels;
+        }
+        
+        // ============================================================
+        // EXPORT JSON
+        // ============================================================
+        
+        function exportJSON() {
+            if (!quantized) return;
+            
+            const output = {
+                format: 'MPEG2_QUANTIZED_V1',
+                description: 'Coefficients DCT quantifiés pour encodage MPEG-2',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                quantization: {
+                    matrix: document.getElementById('matrixSelect').value,
+                    quality: qualityFactor,
+                    scaledMatrix: Array.from(getScaledMatrix())
+                },
+                macroblocs: {
+                    count: quantizedMacroblocs.length,
+                    cols: MB_COLS,
+                    rows: MB_ROWS
+                },
+                data: quantizedMacroblocs.map(mb => ({
+                    index: mb.index,
+                    position: mb.position,
+                    Y: mb.Y,
+                    Cb: mb.Cb,
+                    Cr: mb.Cr
+                }))
+            };
+            
+            const json = JSON.stringify(output);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'coefficients_quantified.json';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        
+        function drawGrid(ctx) {
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+    </script>
+</body>
+</html>
