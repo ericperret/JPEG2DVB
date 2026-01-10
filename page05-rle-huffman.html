@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 05 - RLE + Huffman (VLC)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1000px;
+            margin: 20px auto;
+            text-align: center;
+        }
+        .rle-display {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .rle-pair {
+            background: #0f3460;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 11px;
+        }
+        .rle-pair.dc {
+            background: #4a0000;
+        }
+        .rle-pair.eob {
+            background: #004a00;
+        }
+        .rle-pair.escape {
+            background: #4a4a00;
+        }
+        .bitstream-display {
+            font-family: monospace;
+            font-size: 12px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            word-break: break-all;
+            text-align: left;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .bitstream-display .vlc {
+            color: #00d4ff;
+        }
+        .bitstream-display .value {
+            color: #ff8800;
+        }
+        .bitstream-display .sign {
+            color: #ff4444;
+        }
+        .compression-bar {
+            height: 30px;
+            background: #0f3460;
+            border-radius: 5px;
+            margin: 10px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .compression-bar .original {
+            position: absolute;
+            height: 100%;
+            background: #4a0000;
+            left: 0;
+        }
+        .compression-bar .compressed {
+            position: absolute;
+            height: 100%;
+            background: #004a00;
+            left: 0;
+        }
+        .compression-bar .label {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 30px;
+            font-size: 12px;
+            color: #fff;
+            z-index: 1;
+        }
+        table.vlc-table {
+            border-collapse: collapse;
+            font-size: 10px;
+            margin: 10px auto;
+        }
+        table.vlc-table th, table.vlc-table td {
+            border: 1px solid #333;
+            padding: 4px 8px;
+            text-align: center;
+        }
+        table.vlc-table th {
+            background: #0f3460;
+        }
+        table.vlc-table tr:nth-child(even) {
+            background: #16213e;
+        }
+    </style>
+</head>
+<body>
+    <h1>🗜️ Page 05 - RLE + Huffman (VLC)</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Encode les vecteurs zigzag en bitstream compressé.<br>
+        • <strong>RLE</strong> : Transforme en paires (run, level) où run = zéros consécutifs, level = valeur non-nulle<br>
+        • <strong>VLC</strong> : Code chaque paire avec un code Huffman de longueur variable<br>
+        <strong>Entrée :</strong> Fichier JSON des vecteurs zigzag (sortie Page 04)<br>
+        <strong>Sortie :</strong> Fichier JSON contenant les bitstreams de chaque bloc
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Vecteur [64]</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">DC (DPCM)</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">RLE (run,level)</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">VLC Huffman</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Bitstream</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Vecteurs zigzag en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Vecteurs Zigzag</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">DC (rouge) + AC (vert/bleu)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Processus RLE + VLC -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - RLE → VLC</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnEncode" onclick="encodeAll()" disabled>⚙️ Encoder</button>
+                <button id="btnAnimate" onclick="animateEncoding()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">Visualisation du processus d'encodage</div>
+        </div>
+        
+        <!-- CANVAS 3 : Bitstreams résultants -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Bitstreams</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Exporter JSON</button>
+            </div>
+            <div class="info">Taille bitstream par bloc (couleur = compression)</div>
+            <div id="statsOutput" class="stats" style="display:none;"></div>
+        </div>
+    </div>
+    
+    <!-- Détails -->
+    <div class="detail-section">
+        <h3 style="color: #00d4ff;">Compression globale</h3>
+        <div class="compression-bar">
+            <div id="barOriginal" class="original" style="width: 100%"></div>
+            <div id="barCompressed" class="compressed" style="width: 0%"></div>
+            <div class="label"><span id="compressionLabel">-</span></div>
+        </div>
+        
+        <div id="blockDetail" style="display: none; margin-top: 20px;">
+            <h3 style="color: #00d4ff;">Détail du bloc sélectionné</h3>
+            
+            <h4>Vecteur source [64]</h4>
+            <div id="vectorDisplay" class="bitstream-display"></div>
+            
+            <h4>Encodage RLE : DC + paires (run, level) + EOB</h4>
+            <div id="rleDisplay" class="rle-display"></div>
+            
+            <h4>Bitstream VLC</h4>
+            <div id="bitstreamDisplay" class="bitstream-display"></div>
+            
+            <div id="blockStats" class="stats" style="max-width: 600px; margin: 15px auto;"></div>
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <h4 style="color: #00d4ff;">Table VLC AC (extrait simplifié MPEG-2)</h4>
+            <table class="vlc-table" id="vlcTable"></table>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const BLOCK_SIZE = 8;
+        const MB_SIZE = 16;
+        const MB_COLS = WIDTH / MB_SIZE;
+        const MB_ROWS = HEIGHT / MB_SIZE;
+        
+        // ============================================================
+        // TABLES VLC SIMPLIFIÉES (basées sur MPEG-2)
+        // ============================================================
+        
+        // Table pour DC luminance (différence DPCM)
+        // Format: size -> code VLC
+        const DC_VLC_LUMA = {
+            0: '100',           // size 0
+            1: '00',            // size 1
+            2: '01',            // size 2
+            3: '101',           // size 3
+            4: '110',           // size 4
+            5: '1110',          // size 5
+            6: '11110',         // size 6
+            7: '111110',        // size 7
+            8: '1111110',       // size 8
+            9: '11111110',      // size 9
+            10: '111111110',    // size 10
+            11: '1111111110'    // size 11
+        };
+        
+        // Table VLC pour AC (run, level) - simplifiée
+        // Format: "run,level" -> code VLC
+        // En réalité MPEG-2 a une table beaucoup plus grande
+        const AC_VLC = {
+            'EOB': '10',                    // End of Block
+            '0,1': '11',                    // run=0, level=1
+            '0,2': '0100',
+            '0,3': '00101',
+            '0,4': '0000110',
+            '0,5': '00100110',
+            '0,6': '00100001',
+            '0,7': '000000100',
+            '1,1': '011',                   // run=1, level=1
+            '1,2': '000110',
+            '1,3': '00100101',
+            '1,4': '000000111',
+            '2,1': '00101',
+            '2,2': '0000101',
+            '2,3': '000000110',
+            '3,1': '00111',
+            '3,2': '00100100',
+            '4,1': '00110',
+            '4,2': '000000101',
+            '5,1': '000111',
+            '6,1': '0000111',
+            '7,1': '0000100',
+            '8,1': '00100111',
+            '9,1': '00100011',
+            '10,1': '00100010',
+            '11,1': '00100000',
+            '12,1': '000000010',
+            '13,1': '000000011',
+            '14,1': '000000001',
+            '15,1': '000000000',
+            // Escape code pour les paires non dans la table
+            'ESCAPE': '000001'
+        };
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let zigzagMacroblocs = [];
+        let encodedMacroblocs = [];
+        let encoded = false;
+        let animationId = null;
+        let lastDC = 0; // Pour DPCM
+        
+        // Statistiques
+        let totalOriginalBits = 0;
+        let totalEncodedBits = 0;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            displayVLCTable();
+        };
+        
+        // ============================================================
+        // AFFICHAGE TABLE VLC
+        // ============================================================
+        
+        function displayVLCTable() {
+            const table = document.getElementById('vlcTable');
+            let html = '<tr><th>Run</th><th>Level</th><th>Code VLC</th><th>Bits</th></tr>';
+            
+            html += `<tr><td colspan="2">EOB</td><td><code>${AC_VLC['EOB']}</code></td><td>${AC_VLC['EOB'].length}</td></tr>`;
+            
+            const entries = [
+                '0,1', '0,2', '0,3', '1,1', '1,2', '2,1', '2,2', '3,1', '4,1', '5,1', '6,1', '7,1'
+            ];
+            
+            for (const key of entries) {
+                const [run, level] = key.split(',');
+                const code = AC_VLC[key];
+                html += `<tr><td>${run}</td><td>${level}</td><td><code>${code}</code></td><td>${code.length}</td></tr>`;
+            }
+            
+            html += `<tr><td colspan="2">ESCAPE</td><td><code>${AC_VLC['ESCAPE']}</code> + 6b run + 12b level</td><td>24</td></tr>`;
+            
+            table.innerHTML = html;
+        }
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_ZIGZAG_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 04.');
+                        return;
+                    }
+                    
+                    zigzagMacroblocs = inputData.data;
+                    encodedMacroblocs = [];
+                    encoded = false;
+                    lastDC = 0;
+                    
+                    displayZigzagInput();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnEncode').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExport').disabled = true;
+                    document.getElementById('blockDetail').style.display = 'none';
+                    
+                    // Calcul taille originale (64 coeffs × 12 bits chacun)
+                    totalOriginalBits = zigzagMacroblocs.length * 6 * 64 * 12;
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Fichier chargé :</strong><br>
+                        • Macroblocs : ${zigzagMacroblocs.length}<br>
+                        • Blocs 8×8 : ${zigzagMacroblocs.length * 6}<br>
+                        • Taille brute : ${(totalOriginalBits / 8 / 1024).toFixed(2)} Ko
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE ENTRÉE
+        // ============================================================
+        
+        function displayZigzagInput() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            let maxVal = 1;
+            for (const mb of zigzagMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+            }
+            
+            for (const mb of zigzagMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const vector = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const i = y * 8 + x;
+                            const val = vector[i];
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            
+                            if (i === 0) {
+                                // DC en rouge
+                                const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                                imageData.data[idx] = Math.max(50, intensity);
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 0;
+                            } else if (val === 0) {
+                                imageData.data[idx] = 0;
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 30;
+                            } else {
+                                const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                                imageData.data[idx] = 0;
+                                imageData.data[idx + 1] = intensity;
+                                imageData.data[idx + 2] = 0;
+                            }
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PROCESS INIT
+        // ============================================================
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Processus RLE + VLC', WIDTH / 2, 30);
+            
+            // Schéma explicatif
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            
+            const y = 60;
+            ctx.fillText('1. DC : Codage différentiel (DPCM)', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   DC_diff = DC_current - DC_previous', 20, y + 20);
+            ctx.fillText('   → Code VLC selon la taille (nb bits)', 20, y + 35);
+            
+            ctx.fillStyle = '#fff';
+            ctx.fillText('2. AC : Run-Length Encoding', 20, y + 65);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   Parcours du vecteur [1..63]', 20, y + 85);
+            ctx.fillText('   → Paires (nb_zeros, valeur_non_nulle)', 20, y + 100);
+            ctx.fillText('   → EOB si que des zéros restants', 20, y + 115);
+            
+            ctx.fillStyle = '#fff';
+            ctx.fillText('3. VLC : Huffman par table', 20, y + 145);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   Chaque paire (run,level) → code binaire', 20, y + 165);
+            ctx.fillText('   Codes courts pour paires fréquentes', 20, y + 180);
+            ctx.fillText('   ESCAPE + 18bits si paire rare', 20, y + 195);
+        }
+        
+        // ============================================================
+        // ENCODAGE COMPLET
+        // ============================================================
+        
+        function encodeAll() {
+            if (!zigzagMacroblocs.length) return;
+            
+            encodedMacroblocs = [];
+            totalEncodedBits = 0;
+            lastDC = 0;
+            
+            for (const mb of zigzagMacroblocs) {
+                const encMB = {
+                    index: mb.index,
+                    position: mb.position,
+                    Y: [],
+                    Cb: null,
+                    Cr: null
+                };
+                
+                // Encoder les 4 blocs Y
+                for (let b = 0; b < 4; b++) {
+                    const result = encodeBlock(mb.Y[b]);
+                    encMB.Y.push(result);
+                    totalEncodedBits += result.bitstream.length;
+                }
+                
+                // Encoder Cb et Cr
+                encMB.Cb = encodeBlock(mb.Cb);
+                encMB.Cr = encodeBlock(mb.Cr);
+                totalEncodedBits += encMB.Cb.bitstream.length + encMB.Cr.bitstream.length;
+                
+                encodedMacroblocs.push(encMB);
+            }
+            
+            encoded = true;
+            displayEncodedOutput();
+            updateCompressionStats();
+            
+            document.getElementById('btnExport').disabled = false;
+        }
+        
+        function encodeBlock(vector) {
+            let bitstream = '';
+            const rle = [];
+            
+            // 1. Encoder DC (DPCM)
+            const dc = vector[0];
+            const dcDiff = dc - lastDC;
+            lastDC = dc;
+            
+            const dcEncoded = encodeDC(dcDiff);
+            bitstream += dcEncoded.bits;
+            rle.push({ type: 'DC', value: dcDiff, bits: dcEncoded.bits });
+            
+            // 2. Encoder AC avec RLE
+            let runLength = 0;
+            
+            for (let i = 1; i < 64; i++) {
+                const val = vector[i];
+                
+                if (val === 0) {
+                    runLength++;
+                } else {
+                    // Gérer les runs > 15 (escape multiple si nécessaire)
+                    while (runLength > 15) {
+                        // Escape pour 15 zéros
+                        const escBits = AC_VLC['ESCAPE'] + toBinary(15, 6) + toBinary(0, 12);
+                        bitstream += escBits;
+                        rle.push({ type: 'ESCAPE', run: 15, level: 0, bits: escBits });
+                        runLength -= 16;
+                    }
+                    
+                    const acEncoded = encodeAC(runLength, val);
+                    bitstream += acEncoded.bits;
+                    rle.push({ type: 'AC', run: runLength, level: val, bits: acEncoded.bits, escape: acEncoded.escape });
+                    runLength = 0;
+                }
+            }
+            
+            // 3. EOB
+            bitstream += AC_VLC['EOB'];
+            rle.push({ type: 'EOB', bits: AC_VLC['EOB'] });
+            
+            return {
+                bitstream: bitstream,
+                rle: rle,
+                originalVector: vector
+            };
+        }
+        
+        function encodeDC(dcDiff) {
+            // Calculer la taille nécessaire
+            const absVal = Math.abs(dcDiff);
+            let size = 0;
+            if (absVal > 0) {
+                size = Math.floor(Math.log2(absVal)) + 1;
+            }
+            
+            // Code VLC pour la taille
+            const vlcCode = DC_VLC_LUMA[Math.min(size, 11)] || DC_VLC_LUMA[11];
+            
+            // Valeur en complément à 1 si négatif
+            let valueBits = '';
+            if (size > 0) {
+                if (dcDiff > 0) {
+                    valueBits = toBinary(dcDiff, size);
+                } else {
+                    // Complément à 1
+                    valueBits = toBinary(absVal ^ ((1 << size) - 1), size);
+                }
+            }
+            
+            return { bits: vlcCode + valueBits, size: size };
+        }
+        
+        function encodeAC(run, level) {
+            const absLevel = Math.abs(level);
+            const key = `${run},${absLevel}`;
+            
+            let bits;
+            let escape = false;
+            
+            if (AC_VLC[key]) {
+                // Code dans la table
+                bits = AC_VLC[key];
+                // Ajouter bit de signe
+                bits += (level < 0) ? '1' : '0';
+            } else {
+                // Escape code
+                escape = true;
+                bits = AC_VLC['ESCAPE'];
+                bits += toBinary(run, 6);
+                // Level en complément à 2 sur 12 bits
+                if (level >= 0) {
+                    bits += toBinary(level, 12);
+                } else {
+                    bits += toBinary((4096 + level) & 0xFFF, 12);
+                }
+            }
+            
+            return { bits: bits, escape: escape };
+        }
+        
+        function toBinary(num, bits) {
+            return (num >>> 0).toString(2).padStart(bits, '0').slice(-bits);
+        }
+        
+        // ============================================================
+        // AFFICHAGE SORTIE
+        // ============================================================
+        
+        function displayEncodedOutput() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Trouver min/max taille bitstream
+            let minBits = Infinity, maxBits = 0;
+            for (const mb of encodedMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    const len = mb.Y[b].bitstream.length;
+                    if (len < minBits) minBits = len;
+                    if (len > maxBits) maxBits = len;
+                }
+            }
+            
+            // Couleur basée sur la compression
+            for (const mb of encodedMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const bits = mb.Y[b].bitstream.length;
+                    const ratio = (bits - minBits) / (maxBits - minBits || 1);
+                    
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    // Vert = bien compressé, Rouge = peu compressé
+                    const r = Math.floor(ratio * 200);
+                    const g = Math.floor((1 - ratio) * 200);
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            imageData.data[idx] = r;
+                            imageData.data[idx + 1] = g;
+                            imageData.data[idx + 2] = 50;
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+            
+            // Clic pour détails
+            canvas.onclick = function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.floor(e.clientX - rect.left);
+                const y = Math.floor(e.clientY - rect.top);
+                
+                const blockX = Math.floor(x / 8);
+                const blockY = Math.floor(y / 8);
+                const mbX = Math.floor(blockX / 2);
+                const mbY = Math.floor(blockY / 2);
+                const mbIndex = mbY * MB_COLS + mbX;
+                const localBlockX = blockX % 2;
+                const localBlockY = blockY % 2;
+                const blockIndex = localBlockY * 2 + localBlockX;
+                
+                if (mbIndex < encodedMacroblocs.length) {
+                    displayBlockDetail(mbIndex, blockIndex);
+                    
+                    // Highlight
+                    displayEncodedOutput();
+                    ctx.strokeStyle = '#ff0';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(blockX * 8, blockY * 8, 8, 8);
+                }
+            };
+        }
+        
+        function updateCompressionStats() {
+            const ratio = (totalEncodedBits / totalOriginalBits * 100).toFixed(1);
+            const savings = (100 - ratio).toFixed(1);
+            
+            document.getElementById('barCompressed').style.width = ratio + '%';
+            document.getElementById('compressionLabel').textContent = 
+                `Original: ${(totalOriginalBits/8/1024).toFixed(2)} Ko → Compressé: ${(totalEncodedBits/8/1024).toFixed(2)} Ko (${ratio}%, économie ${savings}%)`;
+            
+            const stats = document.getElementById('statsOutput');
+            stats.style.display = 'block';
+            stats.innerHTML = `
+                <strong>Résultat encodage :</strong><br>
+                • Bits originaux : ${totalOriginalBits.toLocaleString()}<br>
+                • Bits encodés : ${totalEncodedBits.toLocaleString()}<br>
+                • Taux compression : ${ratio}%<br>
+                • Économie : ${savings}%
+            `;
+        }
+        
+        // ============================================================
+        // DÉTAIL BLOC
+        // ============================================================
+        
+        function displayBlockDetail(mbIndex, blockIndex) {
+            const encBlock = encodedMacroblocs[mbIndex].Y[blockIndex];
+            
+            document.getElementById('blockDetail').style.display = 'block';
+            
+            // Vecteur source
+            const vectorDiv = document.getElementById('vectorDisplay');
+            let vectorHtml = '[';
+            for (let i = 0; i < 64; i++) {
+                const val = encBlock.originalVector[i];
+                if (i === 0) {
+                    vectorHtml += `<span style="color:#f44">${val}</span>`;
+                } else if (val === 0) {
+                    vectorHtml += `<span style="color:#446">0</span>`;
+                } else {
+                    vectorHtml += `<span style="color:#4f4">${val}</span>`;
+                }
+                if (i < 63) vectorHtml += ', ';
+            }
+            vectorHtml += ']';
+            vectorDiv.innerHTML = vectorHtml;
+            
+            // RLE
+            const rleDiv = document.getElementById('rleDisplay');
+            let rleHtml = '';
+            for (const item of encBlock.rle) {
+                if (item.type === 'DC') {
+                    rleHtml += `<span class="rle-pair dc">DC=${item.value}</span>`;
+                } else if (item.type === 'EOB') {
+                    rleHtml += `<span class="rle-pair eob">EOB</span>`;
+                } else if (item.type === 'ESCAPE') {
+                    rleHtml += `<span class="rle-pair escape">(${item.run},${item.level}) ESC</span>`;
+                } else {
+                    const cls = item.escape ? 'rle-pair escape' : 'rle-pair';
+                    rleHtml += `<span class="${cls}">(${item.run},${item.level})</span>`;
+                }
+            }
+            rleDiv.innerHTML = rleHtml;
+            
+            // Bitstream
+            const bsDiv = document.getElementById('bitstreamDisplay');
+            let bsHtml = '';
+            for (const item of encBlock.rle) {
+                if (item.type === 'DC') {
+                    bsHtml += `<span class="vlc" title="DC">${item.bits}</span> `;
+                } else if (item.type === 'EOB') {
+                    bsHtml += `<span class="vlc" title="EOB">${item.bits}</span>`;
+                } else {
+                    const title = item.escape ? `ESC(${item.run},${item.level})` : `(${item.run},${item.level})`;
+                    bsHtml += `<span class="vlc" title="${title}">${item.bits}</span> `;
+                }
+            }
+            bsDiv.innerHTML = bsHtml;
+            
+            // Stats
+            const statsDiv = document.getElementById('blockStats');
+            const originalBits = 64 * 12;
+            const encodedBits = encBlock.bitstream.length;
+            const acPairs = encBlock.rle.filter(r => r.type === 'AC').length;
+            const escapes = encBlock.rle.filter(r => r.escape).length;
+            
+            statsDiv.innerHTML = `
+                <strong>Bloc MB#${mbIndex} Y${blockIndex} :</strong><br>
+                • Original : ${originalBits} bits (64 × 12 bits)<br>
+                • Encodé : ${encodedBits} bits<br>
+                • Compression : ${(encodedBits/originalBits*100).toFixed(1)}%<br>
+                • Paires AC : ${acPairs}<br>
+                • Escape codes : ${escapes}
+            `;
+        }
+        
+        // ============================================================
+        // ANIMATION
+        // ============================================================
+        
+        function animateEncoding() {
+            if (!zigzagMacroblocs.length) return;
+            
+            // Animation sur le premier bloc
+            const vector = zigzagMacroblocs[0].Y[0];
+            let step = 0;
+            let tempLastDC = 0;
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                const canvas = document.getElementById('canvasProcess');
+                const ctx = canvas.getContext('2d');
+                
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                // Titre
+                ctx.fillStyle = '#00d4ff';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Animation encodage bloc [0,0]', WIDTH / 2, 20);
+                
+                // Afficher le vecteur
+                const cellW = 18;
+                const cellH = 16;
+                const startY = 40;
+                
+                ctx.font = '10px monospace';
+                ctx.textAlign = 'center';
+                
+                for (let i = 0; i < 64; i++) {
+                    const x = 10 + (i % 16) * cellW;
+                    const y = startY + Math.floor(i / 16) * cellH;
+                    const val = vector[i];
+                    
+                    let bg;
+                    if (i < step) {
+                        bg = '#004400'; // Traité
+                    } else if (i === step) {
+                        bg = '#ff4400'; // En cours
+                    } else {
+                        bg = val === 0 ? '#001122' : '#0f3460';
+                    }
+                    
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(x, y, cellW - 1, cellH - 1);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.fillText(val.toString(), x + cellW/2, y + cellH/2 + 3);
+                }
+                
+                // Afficher l'encodage en cours
+                const infoY = startY + 5 * cellH + 20;
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'left';
+                ctx.font = '12px monospace';
+                
+                if (step === 0) {
+                    const dc = vector[0];
+                    const dcDiff = dc - tempLastDC;
+                    ctx.fillText(`Étape ${step}: DC = ${dc}, Diff = ${dcDiff}`, 20, infoY);
+                    const dcEnc = encodeDC(dcDiff);
+                    ctx.fillStyle = '#00d4ff';
+                    ctx.fillText(`→ VLC: ${dcEnc.bits}`, 20, infoY + 20);
+                    tempLastDC = dc;
+                } else if (step < 64) {
+                    const val = vector[step];
+                    if (val === 0) {
+                        ctx.fillText(`Étape ${step}: AC[${step}] = 0 → accumule run`, 20, infoY);
+                    } else {
+                        // Compter les zéros avant
+                        let run = 0;
+                        for (let j = step - 1; j >= 1; j--) {
+                            if (vector[j] === 0) run++;
+                            else break;
+                        }
+                        ctx.fillText(`Étape ${step}: AC[${step}] = ${val}, run = ${run}`, 20, infoY);
+                        const acEnc = encodeAC(run, val);
+                        ctx.fillStyle = '#00d4ff';
+                        ctx.fillText(`→ VLC (${run},${val}): ${acEnc.bits}`, 20, infoY + 20);
+                    }
+                } else {
+                    ctx.fillText('Fin du vecteur → EOB', 20, infoY);
+                    ctx.fillStyle = '#00d4ff';
+                    ctx.fillText(`→ VLC: ${AC_VLC['EOB']}`, 20, infoY + 20);
+                }
+                
+                step++;
+                
+                if (step <= 64) {
+                    animationId = setTimeout(animate, 150);
+                } else {
+                    stopAnimation();
+                    encodeAll();
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        // ============================================================
+        // EXPORT JSON
+        // ============================================================
+        
+        function exportJSON() {
+            if (!encoded) return;
+            
+            const output = {
+                format: 'MPEG2_VLC_V1',
+                description: 'Bitstreams VLC encodés pour MPEG-2',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                quantization: inputData.quantization,
+                encoding: {
+                    dcTable: 'MPEG2_DC_LUMA',
+                    acTable: 'MPEG2_AC_SIMPLIFIED',
+                    totalOriginalBits: totalOriginalBits,
+                    totalEncodedBits: totalEncodedBits,
+                    compressionRatio: (totalEncodedBits / totalOriginalBits * 100).toFixed(2) + '%'
+                },
+                macroblocs: {
+                    count: encodedMacroblocs.length,
+                    cols: MB_COLS,
+                    rows: MB_ROWS
+                },
+                data: encodedMacroblocs.map(mb => ({
+                    index: mb.index,
+                    position: mb.position,
+                    Y: mb.Y.map(b => ({
+                        bitstream: b.bitstream,
+                        rle: b.rle.map(r => ({
+                            type: r.type,
+                            run: r.run,
+                            level: r.level,
+                            value: r.value
+                        }))
+                    })),
+                    Cb: {
+                        bitstream: mb.Cb.bitstream,
+                        rle: mb.Cb.rle.map(r => ({ type: r.type, run: r.run, level: r.level, value: r.value }))
+                    },
+                    Cr: {
+                        bitstream: mb.Cr.bitstream,
+                        rle: mb.Cr.rle.map(r => ({ type: r.type, run: r.run, level: r.level, value: r.value }))
+                    }
+                }))
+            };
+            
+            const json = JSON.stringify(output);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'bitstreams_vlc.json';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        
+        function drawGrid(ctx) {
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+    </script>
+</body>
+</html>
