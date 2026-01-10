@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 08 - Empaquetage Transport Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1100px;
+            margin: 20px auto;
+        }
+        .hex-display {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 120px;
+            overflow-y: auto;
+            word-break: break-all;
+            text-align: left;
+        }
+        .hex-display .sync { color: #ff4444; font-weight: bold; }
+        .hex-display .hdr { color: #ff8800; }
+        .hex-display .adapt { color: #ffcc00; }
+        .hex-display .payload { color: #00d4ff; }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+        }
+        .legend-color {
+            width: 16px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        table.header-table {
+            border-collapse: collapse;
+            font-size: 11px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        table.header-table th, table.header-table td {
+            border: 1px solid #333;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        table.header-table th {
+            background: #0f3460;
+        }
+        table.header-table tr:nth-child(even) {
+            background: #16213e;
+        }
+        .code {
+            font-family: monospace;
+            color: #00d4ff;
+        }
+        .section-detail {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .section-detail h4 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        .field-list {
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .field-list .field-name { color: #ff8800; }
+        .field-list .field-value { color: #00ff88; }
+        .ts-header-diagram {
+            font-family: monospace;
+            font-size: 10px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .pid-bar {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .pid-item {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>📺 Page 08 - Empaquetage Transport Stream</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Découpe le flux PES en paquets Transport Stream de 188 octets.<br>
+        Ajoute les tables PSI : PAT (Program Association Table) et PMT (Program Map Table).<br>
+        <strong>Entrée :</strong> Fichier JSON du PES (sortie Page 07)<br>
+        <strong>Sortie :</strong> Fichier .ts compatible lecteurs multimédia
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">PES</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">PAT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">PMT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Paquets 188 oct</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">TS</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : PES en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Flux PES</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">PES MPEG-2 Video (sortie Page 07)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Structure TS -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Création TS</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnPacketize" onclick="createTS()" disabled>⚙️ Créer TS</button>
+            </div>
+            <div class="info">Tables PSI + découpage 188 octets</div>
+        </div>
+        
+        <!-- CANVAS 3 : Paquets TS -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Transport Stream</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .ts</button>
+            </div>
+            <div class="info">Cliquez sur un paquet pour le détail</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#ff4444"></div> PAT</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff8800"></div> PMT</div>
+                <div class="legend-item"><div class="legend-color" style="background:#0099cc"></div> Vidéo</div>
+                <div class="legend-item"><div class="legend-color" style="background:#444"></div> Null</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Détails -->
+    <div class="detail-section">
+        <div id="packetDetail" class="section-detail" style="display:none;">
+            <h4 id="detailTitle">Paquet TS</h4>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Champs du header :</strong>
+                    <div id="detailFields" class="field-list"></div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Hexdump complet (188 octets) :</strong>
+                    <div id="detailHex" class="hex-display"></div>
+                </div>
+            </div>
+            <div id="detailStats" style="margin-top: 10px; font-size: 11px; color: #888;"></div>
+        </div>
+        
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <!-- PID utilisés -->
+        <h4 style="color: #00d4ff; margin-top: 20px;">PIDs utilisés (configuration DVB-S)</h4>
+        <div class="pid-bar">
+            <div class="pid-item" style="background:#ff4444">PID 0x0000<br>PAT</div>
+            <div class="pid-item" style="background:#ff8800">PID 0x00DE (222)<br>PMT</div>
+            <div class="pid-item" style="background:#0099cc">PID 0x00E2 (226)<br>Vidéo</div>
+            <div class="pid-item" style="background:#666">(PID 0x0296 (662)<br>Audio - non utilisé)</div>
+            <div class="pid-item" style="background:#444">PID 0x1FFF<br>Null</div>
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Structure du paquet TS (188 octets)</h4>
+        <div class="ts-header-diagram">
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                              HEADER (4 octets)                                        │
+├───────────┬───────────┬───────────────────────────────────────────────────────────────┤
+│ sync_byte │ TEI│PUSI│TP│         PID (13 bits)        │ TSC │ AFC │    CC (4 bits)   │
+│   0x47    │ 1  │ 1  │1 │  0x0000=PAT, 0x0100=PMT...   │  2  │  2  │ continuity cnt   │
+├───────────┴───────────┴───────────────────────────────────────────────────────────────┤
+│                    ADAPTATION FIELD (optionnel, si AFC=10 ou 11)                      │
+│  adaptation_field_length │ flags │ [stuffing bytes 0xFF]                              │
+├───────────────────────────────────────────────────────────────────────────────────────┤
+│                              PAYLOAD (max 184 octets)                                 │
+│  Pour PAT/PMT: pointer_field + table_section                                          │
+│  Pour Vidéo: données PES                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+
+Légende:
+  TEI  = Transport Error Indicator       TSC = Transport Scrambling Control
+  PUSI = Payload Unit Start Indicator    AFC = Adaptation Field Control
+  TP   = Transport Priority              CC  = Continuity Counter
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Tables PSI</h4>
+        <table class="header-table">
+            <tr>
+                <th>Table</th>
+                <th>PID</th>
+                <th>Table ID</th>
+                <th>Contenu</th>
+            </tr>
+            <tr>
+                <td>PAT (Program Association Table)</td>
+                <td class="code">0x0000</td>
+                <td class="code">0x00</td>
+                <td>Programme 1 → PMT PID 0x00DE</td>
+            </tr>
+            <tr>
+                <td>PMT (Program Map Table)</td>
+                <td class="code">0x00DE (222)</td>
+                <td class="code">0x02</td>
+                <td>Vidéo MPEG-2 → PID 0x00E2</td>
+            </tr>
+            <tr>
+                <td>Null Packet</td>
+                <td class="code">0x1FFF</td>
+                <td>-</td>
+                <td>Remplissage (padding)</td>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES TS
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        
+        const TS_PACKET_SIZE = 188;
+        const TS_HEADER_SIZE = 4;
+        const TS_SYNC_BYTE = 0x47;
+        
+        // PIDs (configuration DVB-S réelle)
+        const PID_PAT = 0x0000;    // Standard
+        const PID_PMT = 0x00DE;    // 222
+        const PID_VIDEO = 0x00E2;  // 226
+        const PID_AUDIO = 0x0296;  // 662 (non utilisé ici)
+        const PID_NULL = 0x1FFF;
+        
+        // Bitrate
+        const BITRATE = 6000000;   // 6 Mbps
+        
+        // Table IDs
+        const TABLE_ID_PAT = 0x00;
+        const TABLE_ID_PMT = 0x02;
+        
+        // Stream types
+        const STREAM_TYPE_VIDEO_MPEG2 = 0x02;
+        
+        // Programme
+        const PROGRAM_NUMBER = 1;
+        
+        // Couleurs par PID
+        const PID_COLORS = {
+            [PID_PAT]: '#ff4444',
+            [PID_PMT]: '#ff8800',
+            [PID_VIDEO]: '#0099cc',
+            [PID_NULL]: '#444444'
+        };
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let pesBinary = [];
+        let tsPackets = [];
+        let created = false;
+        let selectedPacket = null;
+        let continuityCounters = {};
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            displayProcessInit();
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_PES_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 07.');
+                        return;
+                    }
+                    
+                    // Décoder le binaire base64
+                    const binaryString = atob(inputData.binary);
+                    pesBinary = [];
+                    for (let i = 0; i < binaryString.length; i++) {
+                        pesBinary.push(binaryString.charCodeAt(i));
+                    }
+                    
+                    tsPackets = [];
+                    created = false;
+                    selectedPacket = null;
+                    continuityCounters = {};
+                    
+                    displayInputPES();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnPacketize').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('packetDetail').style.display = 'none';
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>PES chargé :</strong><br>
+                        • Taille : ${pesBinary.length.toLocaleString()} octets<br>
+                        • Paquets PES : ${inputData.pes.packetCount}<br>
+                        • Stream ID : 0x${inputData.pes.streamId.toString(16).toUpperCase()}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PES ENTRÉE
+        // ============================================================
+        
+        function displayInputPES() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Packetized Elementary Stream', WIDTH / 2, 20);
+            ctx.fillText(`${pesBinary.length.toLocaleString()} octets`, WIDTH / 2, 35);
+            
+            // Visualisation comme une bande continue
+            const bytesPerRow = Math.ceil(pesBinary.length / (HEIGHT - 50));
+            const startY = 50;
+            const rowHeight = 3;
+            
+            for (let row = 0; row < (HEIGHT - startY) / rowHeight; row++) {
+                const byteStart = row * bytesPerRow;
+                if (byteStart >= pesBinary.length) break;
+                
+                const byteEnd = Math.min(byteStart + bytesPerRow, pesBinary.length);
+                const widthRatio = (byteEnd - byteStart) / bytesPerRow;
+                
+                ctx.fillStyle = '#0099cc';
+                ctx.fillRect(10, startY + row * rowHeight, (WIDTH - 20) * widthRatio, rowHeight - 1);
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Flux PES continu à découper', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PROCESS
+        // ============================================================
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Création Transport Stream', WIDTH / 2, 25);
+            
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            
+            let y = 50;
+            ctx.fillText('1. Créer la PAT (Program Association Table)', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   • PID 0x0000, Table ID 0x00', 20, y + 15);
+            ctx.fillText('   • Programme 1 → PMT PID 0x0100', 20, y + 30);
+            
+            y += 50;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('2. Créer la PMT (Program Map Table)', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   • PID 0x0100, Table ID 0x02', 20, y + 15);
+            ctx.fillText('   • Vidéo MPEG-2 → PID 0x0101', 20, y + 30);
+            
+            y += 50;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('3. Découper le PES en paquets 188 octets', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   • Header 4 octets + payload 184 octets', 20, y + 15);
+            ctx.fillText('   • PUSI=1 sur le 1er paquet PES', 20, y + 30);
+            ctx.fillText('   • Continuity counter incrémenté', 20, y + 45);
+            
+            y += 65;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('4. Assembler le flux TS', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('   • PAT en premier', 20, y + 15);
+            ctx.fillText('   • PMT ensuite', 20, y + 30);
+            ctx.fillText('   • Paquets vidéo', 20, y + 45);
+        }
+        
+        // ============================================================
+        // CRÉATION TRANSPORT STREAM
+        // ============================================================
+        
+        function createTS() {
+            if (!pesBinary.length) return;
+            
+            tsPackets = [];
+            continuityCounters = {
+                [PID_PAT]: 0,
+                [PID_PMT]: 0,
+                [PID_VIDEO]: 0
+            };
+            
+            // 1. Créer la PAT
+            const patPacket = createPAT();
+            tsPackets.push(patPacket);
+            
+            // 2. Créer la PMT
+            const pmtPacket = createPMT();
+            tsPackets.push(pmtPacket);
+            
+            // 3. Découper le PES en paquets TS
+            let pesOffset = 0;
+            let isFirst = true;
+            
+            while (pesOffset < pesBinary.length) {
+                const packet = createVideoPacket(pesOffset, isFirst);
+                tsPackets.push(packet);
+                pesOffset += packet.payloadSize;
+                isFirst = false;
+            }
+            
+            created = true;
+            displayOutputTS();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            // Stats
+            const videoPackets = tsPackets.filter(p => p.pid === PID_VIDEO).length;
+            const totalSize = tsPackets.length * TS_PACKET_SIZE;
+            
+            const globalStats = document.getElementById('globalStats');
+            globalStats.style.display = 'block';
+            globalStats.innerHTML = `
+                <strong>Transport Stream créé :</strong><br>
+                • Paquets TS total : ${tsPackets.length}<br>
+                • PAT : 1 paquet (PID 0x0000)<br>
+                • PMT : 1 paquet (PID 0x00DE / 222)<br>
+                • Vidéo : ${videoPackets} paquets (PID 0x00E2 / 226)<br>
+                • Taille totale : ${totalSize.toLocaleString()} octets (${(totalSize / 1024).toFixed(2)} Ko)<br>
+                • Bitrate cible : 6 Mbps<br>
+                • Overhead TS : ${((totalSize - pesBinary.length) / pesBinary.length * 100).toFixed(1)}%
+            `;
+        }
+        
+        // ============================================================
+        // CRÉATION PAT
+        // ============================================================
+        
+        function createPAT() {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            // Header TS (4 octets)
+            packet[0] = TS_SYNC_BYTE;
+            packet[1] = 0x40 | ((PID_PAT >> 8) & 0x1F); // PUSI=1, PID high
+            packet[2] = PID_PAT & 0xFF;                  // PID low
+            packet[3] = 0x10 | (continuityCounters[PID_PAT] & 0x0F); // AFC=01 (payload only), CC
+            continuityCounters[PID_PAT] = (continuityCounters[PID_PAT] + 1) & 0x0F;
+            
+            // Pointer field (pour tables PSI)
+            packet[4] = 0x00;
+            
+            // PAT Section
+            let offset = 5;
+            packet[offset++] = TABLE_ID_PAT;           // table_id
+            packet[offset++] = 0xB0;                   // section_syntax_indicator=1, '0', reserved, section_length high
+            packet[offset++] = 13;                     // section_length low (13 bytes après ce champ)
+            packet[offset++] = 0x00;                   // transport_stream_id high
+            packet[offset++] = 0x01;                   // transport_stream_id low
+            packet[offset++] = 0xC1;                   // reserved, version=0, current_next=1
+            packet[offset++] = 0x00;                   // section_number
+            packet[offset++] = 0x00;                   // last_section_number
+            
+            // Programme 1 -> PMT PID 0x0100
+            packet[offset++] = (PROGRAM_NUMBER >> 8) & 0xFF;  // program_number high
+            packet[offset++] = PROGRAM_NUMBER & 0xFF;          // program_number low
+            packet[offset++] = 0xE0 | ((PID_PMT >> 8) & 0x1F); // reserved + PMT PID high
+            packet[offset++] = PID_PMT & 0xFF;                 // PMT PID low
+            
+            // CRC32
+            const crc = calculateCRC32(packet.slice(5, offset));
+            packet[offset++] = (crc >> 24) & 0xFF;
+            packet[offset++] = (crc >> 16) & 0xFF;
+            packet[offset++] = (crc >> 8) & 0xFF;
+            packet[offset++] = crc & 0xFF;
+            
+            return {
+                index: 0,
+                pid: PID_PAT,
+                type: 'PAT',
+                pusi: true,
+                cc: 0,
+                bytes: packet,
+                payloadSize: offset - 4,
+                fields: {
+                    'sync_byte': '0x47',
+                    'PID': '0x0000 (PAT)',
+                    'PUSI': '1 (start of section)',
+                    'table_id': '0x00 (PAT)',
+                    'transport_stream_id': '0x0001',
+                    'program_number': PROGRAM_NUMBER,
+                    'PMT_PID': '0x0100'
+                }
+            };
+        }
+        
+        // ============================================================
+        // CRÉATION PMT
+        // ============================================================
+        
+        function createPMT() {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            // Header TS
+            packet[0] = TS_SYNC_BYTE;
+            packet[1] = 0x40 | ((PID_PMT >> 8) & 0x1F);
+            packet[2] = PID_PMT & 0xFF;
+            packet[3] = 0x10 | (continuityCounters[PID_PMT] & 0x0F);
+            continuityCounters[PID_PMT] = (continuityCounters[PID_PMT] + 1) & 0x0F;
+            
+            // Pointer field
+            packet[4] = 0x00;
+            
+            // PMT Section
+            let offset = 5;
+            packet[offset++] = TABLE_ID_PMT;           // table_id
+            packet[offset++] = 0xB0;                   // section_syntax_indicator=1, section_length high
+            packet[offset++] = 18;                     // section_length low
+            packet[offset++] = (PROGRAM_NUMBER >> 8) & 0xFF;  // program_number high
+            packet[offset++] = PROGRAM_NUMBER & 0xFF;  // program_number low
+            packet[offset++] = 0xC1;                   // reserved, version=0, current_next=1
+            packet[offset++] = 0x00;                   // section_number
+            packet[offset++] = 0x00;                   // last_section_number
+            packet[offset++] = 0xE0 | ((PID_VIDEO >> 8) & 0x1F); // PCR_PID high (same as video)
+            packet[offset++] = PID_VIDEO & 0xFF;       // PCR_PID low
+            packet[offset++] = 0xF0;                   // reserved + program_info_length high
+            packet[offset++] = 0x00;                   // program_info_length low
+            
+            // Stream info: Video MPEG-2
+            packet[offset++] = STREAM_TYPE_VIDEO_MPEG2; // stream_type
+            packet[offset++] = 0xE0 | ((PID_VIDEO >> 8) & 0x1F); // reserved + elementary_PID high
+            packet[offset++] = PID_VIDEO & 0xFF;       // elementary_PID low
+            packet[offset++] = 0xF0;                   // reserved + ES_info_length high
+            packet[offset++] = 0x00;                   // ES_info_length low
+            
+            // CRC32
+            const crc = calculateCRC32(packet.slice(5, offset));
+            packet[offset++] = (crc >> 24) & 0xFF;
+            packet[offset++] = (crc >> 16) & 0xFF;
+            packet[offset++] = (crc >> 8) & 0xFF;
+            packet[offset++] = crc & 0xFF;
+            
+            return {
+                index: 1,
+                pid: PID_PMT,
+                type: 'PMT',
+                pusi: true,
+                cc: 0,
+                bytes: packet,
+                payloadSize: offset - 4,
+                fields: {
+                    'sync_byte': '0x47',
+                    'PID': '0x0100 (PMT)',
+                    'PUSI': '1 (start of section)',
+                    'table_id': '0x02 (PMT)',
+                    'program_number': PROGRAM_NUMBER,
+                    'PCR_PID': '0x0101 (Video)',
+                    'stream_type': '0x02 (MPEG-2 Video)',
+                    'video_PID': '0x0101'
+                }
+            };
+        }
+        
+        // ============================================================
+        // CRÉATION PAQUET VIDÉO
+        // ============================================================
+        
+        function createVideoPacket(pesOffset, isFirst) {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            const remainingPES = pesBinary.length - pesOffset;
+            const maxPayload = TS_PACKET_SIZE - TS_HEADER_SIZE;
+            let payloadSize = Math.min(remainingPES, maxPayload);
+            let adaptationFieldLength = 0;
+            
+            // Si c'est le dernier paquet et qu'il ne remplit pas, ajouter adaptation field
+            if (payloadSize < maxPayload && remainingPES <= maxPayload) {
+                adaptationFieldLength = maxPayload - payloadSize;
+                if (adaptationFieldLength === 1) {
+                    // Besoin d'au moins 2 octets pour adaptation field
+                    adaptationFieldLength = 2;
+                    payloadSize = maxPayload - 2;
+                }
+            }
+            
+            // Header TS
+            packet[0] = TS_SYNC_BYTE;
+            const pusi = isFirst ? 0x40 : 0x00;
+            packet[1] = pusi | ((PID_VIDEO >> 8) & 0x1F);
+            packet[2] = PID_VIDEO & 0xFF;
+            
+            const hasAdaptation = adaptationFieldLength > 0;
+            const afc = hasAdaptation ? 0x30 : 0x10; // 11 = both, 01 = payload only
+            packet[3] = afc | (continuityCounters[PID_VIDEO] & 0x0F);
+            const cc = continuityCounters[PID_VIDEO];
+            continuityCounters[PID_VIDEO] = (continuityCounters[PID_VIDEO] + 1) & 0x0F;
+            
+            let offset = 4;
+            
+            // Adaptation field si nécessaire
+            if (hasAdaptation) {
+                packet[offset++] = adaptationFieldLength - 1; // adaptation_field_length
+                if (adaptationFieldLength > 1) {
+                    packet[offset++] = 0x00; // flags (pas de PCR, etc.)
+                    // Stuffing bytes (déjà 0xFF)
+                    offset += adaptationFieldLength - 2;
+                }
+            }
+            
+            // Payload
+            for (let i = 0; i < payloadSize; i++) {
+                packet[offset + i] = pesBinary[pesOffset + i];
+            }
+            
+            return {
+                index: tsPackets.length,
+                pid: PID_VIDEO,
+                type: 'Video',
+                pusi: isFirst,
+                cc: cc,
+                bytes: packet,
+                payloadSize: payloadSize,
+                adaptationFieldLength: adaptationFieldLength,
+                pesOffset: pesOffset,
+                fields: {
+                    'sync_byte': '0x47',
+                    'PID': '0x0101 (Video)',
+                    'PUSI': isFirst ? '1 (PES start)' : '0 (continuation)',
+                    'AFC': hasAdaptation ? '11 (adaptation + payload)' : '01 (payload only)',
+                    'continuity_counter': cc,
+                    'adaptation_length': adaptationFieldLength,
+                    'payload_size': payloadSize,
+                    'PES_offset': pesOffset
+                }
+            };
+        }
+        
+        // ============================================================
+        // CRC32 MPEG-2
+        // ============================================================
+        
+        function calculateCRC32(data) {
+            let crc = 0xFFFFFFFF;
+            const polynomial = 0x04C11DB7;
+            
+            for (const byte of data) {
+                for (let bit = 0; bit < 8; bit++) {
+                    const msb = (crc >> 31) & 1;
+                    const dataBit = (byte >> (7 - bit)) & 1;
+                    crc = (crc << 1) >>> 0;
+                    if (msb !== dataBit) {
+                        crc = (crc ^ polynomial) >>> 0;
+                    }
+                }
+            }
+            
+            return crc >>> 0;
+        }
+        
+        // ============================================================
+        // AFFICHAGE PAQUETS TS
+        // ============================================================
+        
+        function displayOutputTS() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Afficher les paquets comme une grille
+            const packetsPerRow = 22; // ~352/16
+            const packetWidth = Math.floor(WIDTH / packetsPerRow);
+            const packetHeight = 12;
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${tsPackets.length} paquets TS (188 octets chacun)`, WIDTH / 2, 15);
+            
+            const startY = 25;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const packet = tsPackets[i];
+                const row = Math.floor(i / packetsPerRow);
+                const col = i % packetsPerRow;
+                
+                const x = col * packetWidth;
+                const y = startY + row * (packetHeight + 2);
+                
+                if (y + packetHeight > HEIGHT) break;
+                
+                // Couleur selon le PID
+                ctx.fillStyle = PID_COLORS[packet.pid] || '#666';
+                ctx.fillRect(x + 1, y, packetWidth - 2, packetHeight);
+                
+                // Bordure de sélection
+                if (selectedPacket === i) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y, packetWidth - 2, packetHeight);
+                }
+                
+                // Marquer PUSI
+                if (packet.pusi) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x + 2, y + 1, 3, 3);
+                }
+                
+                // Stocker pour le clic
+                packet.displayX = x;
+                packet.displayY = y;
+                packet.displayWidth = packetWidth;
+                packet.displayHeight = packetHeight;
+            }
+            
+            // Légende compacte en bas
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#888';
+            ctx.fillText('□ = PUSI (Payload Unit Start)', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // CLIC SUR PAQUET
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!created) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const packet = tsPackets[i];
+                if (x >= packet.displayX && x < packet.displayX + packet.displayWidth &&
+                    y >= packet.displayY && y < packet.displayY + packet.displayHeight) {
+                    selectedPacket = i;
+                    displayOutputTS();
+                    displayPacketDetail(packet);
+                    return;
+                }
+            }
+        });
+        
+        function displayPacketDetail(packet) {
+            const detailDiv = document.getElementById('packetDetail');
+            detailDiv.style.display = 'block';
+            
+            // Titre
+            const pidName = packet.pid === PID_PAT ? 'PAT' : 
+                           packet.pid === PID_PMT ? 'PMT' : 
+                           packet.pid === PID_VIDEO ? 'Video' : 'Unknown';
+            document.getElementById('detailTitle').textContent = 
+                `Paquet TS #${packet.index} — ${pidName} (PID 0x${packet.pid.toString(16).padStart(4, '0')})`;
+            
+            // Champs
+            const fieldsDiv = document.getElementById('detailFields');
+            let fieldsHtml = '';
+            for (const [key, value] of Object.entries(packet.fields)) {
+                fieldsHtml += `<span class="field-name">${key}</span>: <span class="field-value">${value}</span><br>`;
+            }
+            fieldsDiv.innerHTML = fieldsHtml;
+            
+            // Hexdump complet (188 octets)
+            const hexDiv = document.getElementById('detailHex');
+            let hexHtml = '';
+            
+            for (let i = 0; i < TS_PACKET_SIZE; i++) {
+                const byte = packet.bytes[i];
+                const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                
+                if (i === 0) {
+                    hexHtml += `<span class="sync">${hex}</span> `;
+                } else if (i < 4) {
+                    hexHtml += `<span class="hdr">${hex}</span> `;
+                } else if (packet.adaptationFieldLength > 0 && i < 4 + packet.adaptationFieldLength) {
+                    hexHtml += `<span class="adapt">${hex}</span> `;
+                } else {
+                    hexHtml += `<span class="payload">${hex}</span> `;
+                }
+                
+                if ((i + 1) % 16 === 0) hexHtml += '\n';
+            }
+            
+            hexDiv.innerHTML = hexHtml;
+            
+            // Stats
+            document.getElementById('detailStats').innerHTML = 
+                `Header: 4 oct | Adaptation: ${packet.adaptationFieldLength} oct | ` +
+                `Payload: ${packet.payloadSize} oct | Total: 188 oct`;
+        }
+        
+        // ============================================================
+        // EXPORT
+        // ============================================================
+        
+        function exportJSON() {
+            if (!created) return;
+            
+            // Construire le binaire TS complet
+            let tsBinary = [];
+            for (const packet of tsPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const output = {
+                format: 'MPEG2_TS_V1',
+                description: 'MPEG-2 Transport Stream',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                ts: {
+                    packetSize: TS_PACKET_SIZE,
+                    packetCount: tsPackets.length,
+                    totalBytes: tsBinary.length,
+                    pids: {
+                        PAT: PID_PAT,
+                        PMT: PID_PMT,
+                        Video: PID_VIDEO
+                    },
+                    packets: tsPackets.map(p => ({
+                        index: p.index,
+                        pid: p.pid,
+                        type: p.type,
+                        pusi: p.pusi,
+                        cc: p.cc,
+                        payloadSize: p.payloadSize
+                    }))
+                },
+                binary: btoa(String.fromCharCode.apply(null, tsBinary))
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transport_stream.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportBinary() {
+            if (!created) return;
+            
+            let tsBinary = [];
+            for (const packet of tsPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const blob = new Blob([new Uint8Array(tsBinary)], { type: 'video/mp2t' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'video.ts';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+    </script>
+</body>
+</html>
