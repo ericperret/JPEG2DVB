@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 01 - Image → YCbCr → Macroblocs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .selected-info {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .block-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .block-label {
+            font-size: 10px;
+            color: #00d4ff;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+        }
+        #convergenceCanvas {
+            cursor: default;
+        }
+    </style>
+</head>
+<body>
+    <h1>📺 Page 01 - Image → YCbCr 4:2:0 → Macroblocs</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Conversion d'une image RGB en composantes YCbCr avec sous-échantillonnage 4:2:0, 
+        puis découpage en macroblocs 16×16 pixels (standard MPEG-2).<br>
+        <strong>Entrée :</strong> Fichier image (PNG, JPEG, etc.)<br>
+        <strong>Sortie :</strong> Fichier JSON contenant tous les macroblocs (4 blocs Y + 1 Cb + 1 Cr par macrobloc)
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Image RGB</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">YCbCr 4:2:0</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Macroblocs 16×16</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">6 blocs 8×8</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Image source RGB -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Image RGB</h3>
+            <canvas id="canvasRGB" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger Image</button>
+                <button onclick="generateMire()">🎨 Générer Mire</button>
+                <input type="file" id="fileInput" accept="image/*" onchange="loadImage(this.files)">
+            </div>
+            <div class="info">352×288 pixels (CIF)</div>
+        </div>
+        
+        <!-- CANVAS 2 : Plan Y avec grille macroblocs -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Plan Y + Grille</h3>
+            <canvas id="canvasY" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnConvert" onclick="convertToYCbCr()" disabled>⚙️ Convertir YCbCr</button>
+                <button id="btnShowCb" onclick="showPlane('Cb')" disabled>Cb</button>
+                <button id="btnShowCr" onclick="showPlane('Cr')" disabled>Cr</button>
+                <button id="btnShowY" onclick="showPlane('Y')" disabled>Y</button>
+            </div>
+            <div class="info">Cliquez sur un macrobloc pour le sélectionner</div>
+            <div id="statsInfo" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 3 : Macrobloc sélectionné (zoom) -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Macrobloc détail</h3>
+            <canvas id="canvasMB" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Exporter JSON</button>
+                <button id="btnImportJSON" onclick="document.getElementById('jsonInput').click()" style="background:#4a4a00;">📂 Importer JSON</button>
+                <input type="file" id="jsonInput" accept=".json" onchange="importJSON(this.files)">
+            </div>
+            <div id="convergenceInfo" class="selected-info" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        let imageLoaded = false;
+        let ycbcrConverted = false;
+        
+        // Plans YCbCr complets (pleine résolution pour Y, demi pour Cb/Cr)
+        let planeY = null;   // 352×288
+        let planeCb = null;  // 176×144 (sous-échantillonné 4:2:0)
+        let planeCr = null;  // 176×144
+        
+        // Liste des macroblocs
+        let macroblocs = [];
+        
+        // Macrobloc sélectionné
+        let selectedMB = null;
+        
+        // Dimensions
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const MB_SIZE = 16;
+        const BLOCK_SIZE = 8;
+        const MB_COLS = WIDTH / MB_SIZE;   // 22
+        const MB_ROWS = HEIGHT / MB_SIZE;  // 18
+        
+        // ============================================================
+        // FONCTIONS UTILITAIRES
+        // ============================================================
+        
+        // Clamp une valeur entre min et max
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, Math.round(val)));
+        }
+        
+        // ============================================================
+        // CHARGEMENT IMAGE
+        // ============================================================
+        
+        function loadImage(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.getElementById('canvasRGB');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Effacer et dessiner l'image redimensionnée
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                    ctx.drawImage(img, 0, 0, WIDTH, HEIGHT);
+                    
+                    imageLoaded = true;
+                    ycbcrConverted = false;
+                    document.getElementById('btnConvert').disabled = false;
+                    document.getElementById('btnExport').disabled = true;
+                    resetPlanes();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(files[0]);
+        }
+        
+        // ============================================================
+        // GÉNÉRATION MIRE
+        // ============================================================
+        
+        function generateMire() {
+            const canvas = document.getElementById('canvasRGB');
+            const ctx = canvas.getContext('2d');
+            
+            // Fond noir
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Barres de couleur EBU (haut)
+            const colors = [
+                '#FFFFFF', // Blanc
+                '#FFFF00', // Jaune
+                '#00FFFF', // Cyan
+                '#00FF00', // Vert
+                '#FF00FF', // Magenta
+                '#FF0000', // Rouge
+                '#0000FF', // Bleu
+                '#000000'  // Noir
+            ];
+            const barWidth = WIDTH / 8;
+            const barHeight = HEIGHT * 0.6;
+            
+            for (let i = 0; i < 8; i++) {
+                ctx.fillStyle = colors[i];
+                ctx.fillRect(i * barWidth, 0, barWidth, barHeight);
+            }
+            
+            // Dégradé de gris (milieu)
+            const gradientHeight = HEIGHT * 0.15;
+            for (let x = 0; x < WIDTH; x++) {
+                const gray = Math.floor((x / WIDTH) * 255);
+                ctx.fillStyle = `rgb(${gray},${gray},${gray})`;
+                ctx.fillRect(x, barHeight, 1, gradientHeight);
+            }
+            
+            // Texte identification (bas)
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, barHeight + gradientHeight, WIDTH, HEIGHT - barHeight - gradientHeight);
+            ctx.fillStyle = '#FFF';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('MIRE DVB-S TEST', WIDTH / 2, barHeight + gradientHeight + 30);
+            ctx.font = '16px monospace';
+            ctx.fillText('352×288 CIF - YCbCr 4:2:0', WIDTH / 2, barHeight + gradientHeight + 55);
+            
+            imageLoaded = true;
+            ycbcrConverted = false;
+            document.getElementById('btnConvert').disabled = false;
+            document.getElementById('btnExport').disabled = true;
+            resetPlanes();
+        }
+        
+        // ============================================================
+        // CONVERSION RGB → YCbCr 4:2:0
+        // ============================================================
+        
+        function convertToYCbCr() {
+            if (!imageLoaded) return;
+            
+            const canvasRGB = document.getElementById('canvasRGB');
+            const ctxRGB = canvasRGB.getContext('2d');
+            const imageData = ctxRGB.getImageData(0, 0, WIDTH, HEIGHT);
+            const pixels = imageData.data;
+            
+            // Initialiser les plans
+            planeY = new Uint8Array(WIDTH * HEIGHT);
+            planeCb = new Uint8Array((WIDTH/2) * (HEIGHT/2));
+            planeCr = new Uint8Array((WIDTH/2) * (HEIGHT/2));
+            
+            // Plans temporaires Cb/Cr pleine résolution pour moyennage
+            const tempCb = new Float32Array(WIDTH * HEIGHT);
+            const tempCr = new Float32Array(WIDTH * HEIGHT);
+            
+            // Conversion RGB → YCbCr (ITU-R BT.601)
+            // Y  =  0.299*R + 0.587*G + 0.114*B
+            // Cb = -0.169*R - 0.331*G + 0.500*B + 128
+            // Cr =  0.500*R - 0.419*G - 0.081*B + 128
+            
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    const idx = (y * WIDTH + x) * 4;
+                    const R = pixels[idx];
+                    const G = pixels[idx + 1];
+                    const B = pixels[idx + 2];
+                    
+                    const Y  = 0.299 * R + 0.587 * G + 0.114 * B;
+                    const Cb = -0.168736 * R - 0.331264 * G + 0.5 * B + 128;
+                    const Cr = 0.5 * R - 0.418688 * G - 0.081312 * B + 128;
+                    
+                    const pos = y * WIDTH + x;
+                    planeY[pos] = clamp(Y, 0, 255);
+                    tempCb[pos] = Cb;
+                    tempCr[pos] = Cr;
+                }
+            }
+            
+            // Sous-échantillonnage 4:2:0 (moyenne 2×2)
+            for (let y = 0; y < HEIGHT/2; y++) {
+                for (let x = 0; x < WIDTH/2; x++) {
+                    const srcX = x * 2;
+                    const srcY = y * 2;
+                    
+                    // Moyenne des 4 pixels
+                    const cb = (
+                        tempCb[srcY * WIDTH + srcX] +
+                        tempCb[srcY * WIDTH + srcX + 1] +
+                        tempCb[(srcY + 1) * WIDTH + srcX] +
+                        tempCb[(srcY + 1) * WIDTH + srcX + 1]
+                    ) / 4;
+                    
+                    const cr = (
+                        tempCr[srcY * WIDTH + srcX] +
+                        tempCr[srcY * WIDTH + srcX + 1] +
+                        tempCr[(srcY + 1) * WIDTH + srcX] +
+                        tempCr[(srcY + 1) * WIDTH + srcX + 1]
+                    ) / 4;
+                    
+                    const pos = y * (WIDTH/2) + x;
+                    planeCb[pos] = clamp(cb, 0, 255);
+                    planeCr[pos] = clamp(cr, 0, 255);
+                }
+            }
+            
+            // Extraire les macroblocs
+            extractMacroblocs();
+            
+            // Afficher le plan Y avec grille
+            showPlane('Y');
+            
+            ycbcrConverted = true;
+            document.getElementById('btnShowCb').disabled = false;
+            document.getElementById('btnShowCr').disabled = false;
+            document.getElementById('btnShowY').disabled = false;
+            document.getElementById('btnExport').disabled = false;
+            
+            // Afficher stats
+            const stats = document.getElementById('statsInfo');
+            stats.style.display = 'block';
+            stats.innerHTML = `
+                <strong>Conversion effectuée :</strong><br>
+                • Plan Y : ${WIDTH}×${HEIGHT} = ${planeY.length} octets<br>
+                • Plan Cb : ${WIDTH/2}×${HEIGHT/2} = ${planeCb.length} octets<br>
+                • Plan Cr : ${WIDTH/2}×${HEIGHT/2} = ${planeCr.length} octets<br>
+                • Macroblocs : ${MB_COLS}×${MB_ROWS} = ${macroblocs.length}
+            `;
+        }
+        
+        // ============================================================
+        // EXTRACTION DES MACROBLOCS
+        // ============================================================
+        
+        function extractMacroblocs() {
+            macroblocs = [];
+            
+            let mbIndex = 0;
+            for (let mbY = 0; mbY < MB_ROWS; mbY++) {
+                for (let mbX = 0; mbX < MB_COLS; mbX++) {
+                    const mb = {
+                        index: mbIndex,
+                        x: mbX * MB_SIZE,
+                        y: mbY * MB_SIZE,
+                        col: mbX,
+                        row: mbY,
+                        // 4 blocs Y (8×8 chacun) dans le macrobloc 16×16
+                        Y: [
+                            extractBlock8x8_Y(mbX * 2, mbY * 2),         // Haut-gauche
+                            extractBlock8x8_Y(mbX * 2 + 1, mbY * 2),     // Haut-droite
+                            extractBlock8x8_Y(mbX * 2, mbY * 2 + 1),     // Bas-gauche
+                            extractBlock8x8_Y(mbX * 2 + 1, mbY * 2 + 1)  // Bas-droite
+                        ],
+                        // 1 bloc Cb (8×8) - correspond au macrobloc entier après sous-échantillonnage
+                        Cb: extractBlock8x8_Chroma(planeCb, mbX, mbY),
+                        // 1 bloc Cr (8×8)
+                        Cr: extractBlock8x8_Chroma(planeCr, mbX, mbY)
+                    };
+                    macroblocs.push(mb);
+                    mbIndex++;
+                }
+            }
+        }
+        
+        // Extrait un bloc 8×8 du plan Y
+        function extractBlock8x8_Y(blockX, blockY) {
+            const block = new Array(64);
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const srcX = blockX * 8 + x;
+                    const srcY = blockY * 8 + y;
+                    block[y * 8 + x] = planeY[srcY * WIDTH + srcX];
+                }
+            }
+            return block;
+        }
+        
+        // Extrait un bloc 8×8 d'un plan chroma (déjà sous-échantillonné)
+        function extractBlock8x8_Chroma(plane, mbX, mbY) {
+            const block = new Array(64);
+            const chromaWidth = WIDTH / 2;
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const srcX = mbX * 8 + x;
+                    const srcY = mbY * 8 + y;
+                    block[y * 8 + x] = plane[srcY * chromaWidth + srcX];
+                }
+            }
+            return block;
+        }
+        
+        // ============================================================
+        // AFFICHAGE DES PLANS
+        // ============================================================
+        
+        function showPlane(planeName) {
+            const canvas = document.getElementById('canvasY');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    const idx = (y * WIDTH + x) * 4;
+                    let value;
+                    
+                    if (planeName === 'Y') {
+                        value = planeY[y * WIDTH + x];
+                        imageData.data[idx] = value;
+                        imageData.data[idx + 1] = value;
+                        imageData.data[idx + 2] = value;
+                    } else if (planeName === 'Cb') {
+                        // Cb : bleu quand > 128, jaune quand < 128
+                        const chromaX = Math.floor(x / 2);
+                        const chromaY = Math.floor(y / 2);
+                        value = planeCb[chromaY * (WIDTH/2) + chromaX];
+                        imageData.data[idx] = 128;
+                        imageData.data[idx + 1] = 128;
+                        imageData.data[idx + 2] = value;
+                    } else if (planeName === 'Cr') {
+                        // Cr : rouge quand > 128, cyan quand < 128
+                        const chromaX = Math.floor(x / 2);
+                        const chromaY = Math.floor(y / 2);
+                        value = planeCr[chromaY * (WIDTH/2) + chromaX];
+                        imageData.data[idx] = value;
+                        imageData.data[idx + 1] = 128;
+                        imageData.data[idx + 2] = 128;
+                    }
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            // Dessiner la grille des macroblocs
+            drawMacroblocGrid(ctx);
+        }
+        
+        function drawMacroblocGrid(ctx) {
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.5)';
+            ctx.lineWidth = 1;
+            
+            // Lignes verticales
+            for (let x = 0; x <= WIDTH; x += MB_SIZE) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            
+            // Lignes horizontales
+            for (let y = 0; y <= HEIGHT; y += MB_SIZE) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+            
+            // Numéros des macroblocs
+            ctx.fillStyle = 'rgba(0, 212, 255, 0.8)';
+            ctx.font = '8px monospace';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            
+            let idx = 0;
+            for (let row = 0; row < MB_ROWS; row++) {
+                for (let col = 0; col < MB_COLS; col++) {
+                    ctx.fillText(idx.toString(), col * MB_SIZE + 2, row * MB_SIZE + 2);
+                    idx++;
+                }
+            }
+            
+            // Surligner le macrobloc sélectionné
+            if (selectedMB !== null) {
+                const mb = macroblocs[selectedMB];
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(mb.x, mb.y, MB_SIZE, MB_SIZE);
+            }
+        }
+        
+        // ============================================================
+        // SÉLECTION MACROBLOC (CLIC)
+        // ============================================================
+        
+        document.getElementById('canvasY').addEventListener('click', function(e) {
+            if (!ycbcrConverted) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const mbX = Math.floor(x / MB_SIZE);
+            const mbY = Math.floor(y / MB_SIZE);
+            const mbIndex = mbY * MB_COLS + mbX;
+            
+            if (mbIndex >= 0 && mbIndex < macroblocs.length) {
+                selectedMB = mbIndex;
+                showPlane('Y'); // Redessiner avec sélection
+                displayMacrobloc(mbIndex);
+            }
+        });
+        
+        // ============================================================
+        // AFFICHAGE DÉTAIL MACROBLOC
+        // ============================================================
+        
+        function displayMacrobloc(mbIndex) {
+            const mb = macroblocs[mbIndex];
+            const canvas = document.getElementById('canvasMB');
+            const ctx = canvas.getContext('2d');
+            
+            // Effacer
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Disposition : 3 colonnes × 2 lignes de blocs 8×8 zoomés
+            // Y0 Y1 Cb
+            // Y2 Y3 Cr
+            const blockZoom = 10; // Chaque pixel du bloc = 10 pixels affichés
+            const blockDisplaySize = 8 * blockZoom; // 80 pixels
+            const margin = 15;
+            const startX = 20;
+            const startY = 50;
+            
+            // Titre
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Macrobloc #${mbIndex} (${mb.col}, ${mb.row})`, 10, 25);
+            ctx.font = '12px monospace';
+            ctx.fillStyle = '#888';
+            ctx.fillText(`Position: (${mb.x}, ${mb.y})`, 10, 42);
+            
+            // Labels des blocs
+            const labels = ['Y0', 'Y1', 'Cb', 'Y2', 'Y3', 'Cr'];
+            const blocks = [mb.Y[0], mb.Y[1], mb.Cb, mb.Y[2], mb.Y[3], mb.Cr];
+            const colors = ['#fff', '#fff', '#0088ff', '#fff', '#fff', '#ff4444'];
+            
+            for (let row = 0; row < 2; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const idx = row * 3 + col;
+                    const bx = startX + col * (blockDisplaySize + margin);
+                    const by = startY + row * (blockDisplaySize + margin + 20);
+                    
+                    // Label
+                    ctx.fillStyle = colors[idx];
+                    ctx.font = 'bold 12px Arial';
+                    ctx.fillText(labels[idx], bx, by - 5);
+                    
+                    // Dessiner le bloc
+                    drawBlock8x8(ctx, blocks[idx], bx, by, blockZoom, idx >= 2 && idx !== 4 && idx !== 3);
+                    
+                    // Cadre
+                    ctx.strokeStyle = colors[idx];
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(bx, by, blockDisplaySize, blockDisplaySize);
+                }
+            }
+            
+            // Info de convergence
+            const info = document.getElementById('convergenceInfo');
+            info.style.display = 'block';
+            info.innerHTML = `
+                <strong>Structure du macrobloc 16×16 :</strong><br>
+                • 4 blocs Y (8×8) = 256 échantillons luminance<br>
+                • 1 bloc Cb (8×8) = 64 échantillons chrominance bleue<br>
+                • 1 bloc Cr (8×8) = 64 échantillons chrominance rouge<br>
+                • Total : 6 blocs × 64 = 384 valeurs/macrobloc
+            `;
+        }
+        
+        function drawBlock8x8(ctx, block, startX, startY, zoom, isChroma) {
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const val = block[y * 8 + x];
+                    if (isChroma) {
+                        // Affichage chroma centré sur 128
+                        const diff = val - 128;
+                        if (startX < 200) {
+                            // Cb
+                            ctx.fillStyle = `rgb(${128 - diff}, ${128 - diff}, ${val})`;
+                        } else {
+                            // Cr
+                            ctx.fillStyle = `rgb(${val}, ${128 - diff}, ${128 - diff})`;
+                        }
+                    } else {
+                        ctx.fillStyle = `rgb(${val}, ${val}, ${val})`;
+                    }
+                    ctx.fillRect(startX + x * zoom, startY + y * zoom, zoom, zoom);
+                }
+            }
+        }
+        
+        // ============================================================
+        // EXPORT JSON
+        // ============================================================
+        
+        function exportJSON() {
+            if (macroblocs.length === 0) {
+                alert('Aucun macrobloc à exporter. Convertissez d\'abord une image.');
+                return;
+            }
+            
+            const output = {
+                format: 'MPEG2_MACROBLOCS_V1',
+                description: 'Macroblocs YCbCr 4:2:0 pour encodage MPEG-2',
+                date: new Date().toISOString(),
+                image: {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    colorSpace: 'YCbCr',
+                    subsampling: '4:2:0'
+                },
+                macroblocs: {
+                    count: macroblocs.length,
+                    cols: MB_COLS,
+                    rows: MB_ROWS,
+                    size: MB_SIZE,
+                    blockSize: BLOCK_SIZE,
+                    blocksPerMB: 6
+                },
+                data: macroblocs.map(mb => ({
+                    index: mb.index,
+                    position: { x: mb.x, y: mb.y, col: mb.col, row: mb.row },
+                    Y: mb.Y,    // 4 blocs de 64 valeurs
+                    Cb: mb.Cb,  // 1 bloc de 64 valeurs
+                    Cr: mb.Cr   // 1 bloc de 64 valeurs
+                }))
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'macroblocs_ycbcr_420.json';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // IMPORT JSON
+        // ============================================================
+        
+        function importJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    // Validation basique
+                    if (!data.format || data.format !== 'MPEG2_MACROBLOCS_V1') {
+                        alert('Format de fichier non reconnu.');
+                        return;
+                    }
+                    
+                    // Restaurer les macroblocs
+                    macroblocs = data.data.map(d => ({
+                        index: d.index,
+                        x: d.position.x,
+                        y: d.position.y,
+                        col: d.position.col,
+                        row: d.position.row,
+                        Y: d.Y,
+                        Cb: d.Cb,
+                        Cr: d.Cr
+                    }));
+                    
+                    // Reconstruire les plans
+                    reconstructPlanes();
+                    
+                    // Afficher
+                    showPlane('Y');
+                    reconstructRGB();
+                    
+                    ycbcrConverted = true;
+                    imageLoaded = true;
+                    document.getElementById('btnShowCb').disabled = false;
+                    document.getElementById('btnShowCr').disabled = false;
+                    document.getElementById('btnShowY').disabled = false;
+                    document.getElementById('btnExport').disabled = false;
+                    document.getElementById('btnConvert').disabled = false;
+                    
+                    // Stats
+                    const stats = document.getElementById('statsInfo');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Import réussi :</strong><br>
+                        • Macroblocs chargés : ${macroblocs.length}<br>
+                        • Dimensions : ${data.image.width}×${data.image.height}<br>
+                        • Format : ${data.image.subsampling}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur de lecture JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        function reconstructPlanes() {
+            planeY = new Uint8Array(WIDTH * HEIGHT);
+            planeCb = new Uint8Array((WIDTH/2) * (HEIGHT/2));
+            planeCr = new Uint8Array((WIDTH/2) * (HEIGHT/2));
+            
+            for (const mb of macroblocs) {
+                // Reconstruire Y (4 blocs 8×8)
+                const blockPositions = [
+                    [0, 0], [8, 0], [0, 8], [8, 8]
+                ];
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.x + blockPositions[b][0];
+                    const by = mb.y + blockPositions[b][1];
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            planeY[(by + y) * WIDTH + (bx + x)] = block[y * 8 + x];
+                        }
+                    }
+                }
+                
+                // Reconstruire Cb
+                const cbX = mb.col * 8;
+                const cbY = mb.row * 8;
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        planeCb[(cbY + y) * (WIDTH/2) + (cbX + x)] = mb.Cb[y * 8 + x];
+                    }
+                }
+                
+                // Reconstruire Cr
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 8; x++) {
+                        planeCr[(cbY + y) * (WIDTH/2) + (cbX + x)] = mb.Cr[y * 8 + x];
+                    }
+                }
+            }
+        }
+        
+        function reconstructRGB() {
+            const canvas = document.getElementById('canvasRGB');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // YCbCr → RGB (ITU-R BT.601)
+            for (let y = 0; y < HEIGHT; y++) {
+                for (let x = 0; x < WIDTH; x++) {
+                    const Y = planeY[y * WIDTH + x];
+                    const chromaX = Math.floor(x / 2);
+                    const chromaY = Math.floor(y / 2);
+                    const Cb = planeCb[chromaY * (WIDTH/2) + chromaX];
+                    const Cr = planeCr[chromaY * (WIDTH/2) + chromaX];
+                    
+                    const R = Y + 1.402 * (Cr - 128);
+                    const G = Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128);
+                    const B = Y + 1.772 * (Cb - 128);
+                    
+                    const idx = (y * WIDTH + x) * 4;
+                    imageData.data[idx] = clamp(R, 0, 255);
+                    imageData.data[idx + 1] = clamp(G, 0, 255);
+                    imageData.data[idx + 2] = clamp(B, 0, 255);
+                    imageData.data[idx + 3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        function resetPlanes() {
+            planeY = null;
+            planeCb = null;
+            planeCr = null;
+            macroblocs = [];
+            selectedMB = null;
+            
+            // Effacer canvas 2 et 3
+            const ctx2 = document.getElementById('canvasY').getContext('2d');
+            const ctx3 = document.getElementById('canvasMB').getContext('2d');
+            ctx2.fillStyle = '#1a1a2e';
+            ctx2.fillRect(0, 0, WIDTH, HEIGHT);
+            ctx3.fillStyle = '#1a1a2e';
+            ctx3.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            document.getElementById('statsInfo').style.display = 'none';
+            document.getElementById('convergenceInfo').style.display = 'none';
+        }
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            // Générer une mire par défaut
+            generateMire();
+        };
+    </script>
+</body>
+</html>
