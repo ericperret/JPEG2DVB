@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 00 - Caméra Webcam</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; text-align: center; }
+        h1 span { font-size: 14px; color: #ff8800; }
+        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ff8800; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #00d4ff; font-size: 14px; }
+        canvas, video { border: 2px solid #0f3460; border-radius: 4px; }
+        .controls { margin-top: 10px; }
+        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #00d4ff; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        button.record { background: #cc0000; }
+        button.record:hover { background: #ff4444; }
+        select { background: #0f3460; color: #fff; border: none; padding: 8px; border-radius: 5px; }
+        .info { margin-top: 8px; font-size: 11px; color: #888; }
+        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 11px; text-align: left; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #ff8800; color: #000; }
+        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .component-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
+        .component-box { text-align: center; }
+        .component-box canvas { display: block; margin: 0 auto; }
+        .component-label { font-size: 10px; color: #888; margin-top: 4px; }
+        .param-row { display: flex; gap: 15px; align-items: center; justify-content: center; margin: 10px 0; flex-wrap: wrap; }
+        .param-item { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+        .ycbcr-badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; margin: 2px; }
+        .y-badge { background: #888; color: #000; }
+        .cb-badge { background: #4444ff; color: #fff; }
+        .cr-badge { background: #ff4444; color: #fff; }
+    </style>
+</head>
+<body>
+    <h1>📹 Page 00 - Caméra Webcam <span>★ Source du Pipeline ★</span></h1>
+    
+    <div class="description">
+        <strong>La vraie source analogique !</strong> Capture webcam → conversion <span class="ycbcr-badge y-badge">Y</span><span class="ycbcr-badge cb-badge">Cb</span><span class="ycbcr-badge cr-badge">Cr</span> (BT.601)<br>
+        <strong>Sortie :</strong> Image 352×288 en luminance + chrominance pour Page 01 (Macroblocs)
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step active">📹 WEBCAM</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Macroblocs</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">DCT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">...</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">RF 📡</span>
+    </div>
+    
+    <!-- Paramètres -->
+    <div class="param-row">
+        <div class="param-item">
+            <label>Caméra:</label>
+            <select id="cameraSelect" onchange="switchCamera()">
+                <option value="">Chargement...</option>
+            </select>
+        </div>
+        <div class="param-item">
+            <label>Gamma:</label>
+            <select id="gamma">
+                <option value="1.0">1.0 (linéaire)</option>
+                <option value="0.45" selected>0.45 (PAL/BT.601)</option>
+                <option value="0.50">0.50</option>
+            </select>
+        </div>
+        <div class="param-item">
+            <label>Bruit capteur:</label>
+            <select id="noise">
+                <option value="0">Aucun</option>
+                <option value="5" selected>Faible (5)</option>
+                <option value="15">Moyen (15)</option>
+                <option value="30">Fort (30)</option>
+            </select>
+        </div>
+    </div>
+    
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. FLUX WEBCAM (Live)</h3>
+            <video id="video" width="352" height="288" autoplay playsinline muted></video>
+            <div class="controls">
+                <button id="btnStart" onclick="startCamera()">▶️ Démarrer</button>
+                <button id="btnCapture" onclick="captureFrame()" disabled class="record">📸 Capturer</button>
+            </div>
+            <div class="info" id="videoInfo">Cliquer "Démarrer" pour activer</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>2. CAPTURE RGB (352×288)</h3>
+            <canvas id="canvasRGB" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnMire" onclick="generateTestPattern()">🎨 Mire Test</button>
+            </div>
+            <div class="info">Image capturée + effets</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>3. SORTIE YCbCr (BT.601)</h3>
+            <canvas id="canvasY" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Export JSON</button>
+            </div>
+            <div class="info">Luminance Y (pour Page 01)</div>
+        </div>
+    </div>
+    
+    <!-- Composantes YCbCr -->
+    <div style="max-width: 600px; margin: 20px auto;">
+        <h4 style="color: #00d4ff; text-align: center;">Composantes YCbCr Séparées</h4>
+        <div class="component-grid">
+            <div class="component-box">
+                <canvas id="canvasYsmall" width="176" height="144"></canvas>
+                <div class="component-label"><span class="ycbcr-badge y-badge">Y</span> Luminance (100%)</div>
+            </div>
+            <div class="component-box">
+                <canvas id="canvasCb" width="176" height="144"></canvas>
+                <div class="component-label"><span class="ycbcr-badge cb-badge">Cb</span> Chrominance Bleue</div>
+            </div>
+            <div class="component-box">
+                <canvas id="canvasCr" width="176" height="144"></canvas>
+                <div class="component-label"><span class="ycbcr-badge cr-badge">Cr</span> Chrominance Rouge</div>
+            </div>
+        </div>
+    </div>
+    
+    <div style="max-width: 800px; margin: 20px auto;">
+        <div id="stats" class="stats" style="display:none;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Conversion RGB → YCbCr (BT.601)</h4>
+        <div style="background: #0a0a15; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px;">
+Standard ITU-R BT.601 (SD TV, PAL/NTSC):
+
+Y  =  16 + 65.481×R + 128.553×G +  24.966×B    [16-235]  Luminance
+Cb = 128 - 37.797×R -  74.203×G + 112.000×B    [16-240]  Chrominance Bleue  
+Cr = 128 + 112.000×R -  93.786×G -  18.214×B   [16-240]  Chrominance Rouge
+
+Où R, G, B sont normalisés [0-1] après correction gamma.
+
+Note: Les valeurs 16-235/16-240 laissent une marge "headroom/footroom" 
+pour les dépassements analogiques (super-blanc, super-noir).
+        </div>
+    </div>
+
+    <script>
+        const WIDTH = 352, HEIGHT = 288;
+        
+        let video, stream = null;
+        let capturedRGB = null;
+        let yCbCrData = null;
+        
+        // === INITIALISATION ===
+        window.onload = function() {
+            video = document.getElementById('video');
+            enumerateCameras();
+            clearCanvas('canvasRGB');
+            clearCanvas('canvasY');
+            clearCanvas('canvasYsmall');
+            clearCanvas('canvasCb');
+            clearCanvas('canvasCr');
+        };
+        
+        // === ÉNUMÉRATION CAMÉRAS ===
+        async function enumerateCameras() {
+            try {
+                // Demander permission d'abord
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                const select = document.getElementById('cameraSelect');
+                select.innerHTML = '';
+                
+                videoDevices.forEach((device, idx) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Caméra ${idx + 1}`;
+                    select.appendChild(option);
+                });
+                
+                if (videoDevices.length === 0) {
+                    select.innerHTML = '<option value="">Aucune caméra détectée</option>';
+                }
+            } catch (err) {
+                console.log('Énumération caméras:', err);
+                document.getElementById('cameraSelect').innerHTML = 
+                    '<option value="">Accès caméra requis</option>';
+            }
+        }
+        
+        // === DÉMARRAGE CAMÉRA ===
+        async function startCamera() {
+            const deviceId = document.getElementById('cameraSelect').value;
+            
+            const constraints = {
+                video: {
+                    width: { ideal: WIDTH },
+                    height: { ideal: HEIGHT },
+                    deviceId: deviceId ? { exact: deviceId } : undefined
+                }
+            };
+            
+            try {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                document.getElementById('btnCapture').disabled = false;
+                document.getElementById('btnStart').textContent = '⏹️ Arrêter';
+                document.getElementById('btnStart').onclick = stopCamera;
+                
+                const track = stream.getVideoTracks()[0];
+                const settings = track.getSettings();
+                document.getElementById('videoInfo').textContent = 
+                    `${settings.width}×${settings.height} @ ${settings.frameRate?.toFixed(1) || '?'} fps`;
+                    
+            } catch (err) {
+                alert('Erreur accès caméra: ' + err.message);
+                console.error(err);
+            }
+        }
+        
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            document.getElementById('btnCapture').disabled = true;
+            document.getElementById('btnStart').textContent = '▶️ Démarrer';
+            document.getElementById('btnStart').onclick = startCamera;
+            document.getElementById('videoInfo').textContent = 'Caméra arrêtée';
+        }
+        
+        function switchCamera() {
+            if (stream) {
+                startCamera();
+            }
+        }
+        
+        // === CAPTURE FRAME ===
+        function captureFrame() {
+            const canvas = document.getElementById('canvasRGB');
+            const ctx = canvas.getContext('2d');
+            
+            // Dessiner la vidéo sur le canvas
+            ctx.drawImage(video, 0, 0, WIDTH, HEIGHT);
+            
+            // Appliquer effets
+            applyEffects(ctx);
+            
+            // Récupérer les données RGB
+            capturedRGB = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+            
+            // Convertir en YCbCr
+            convertToYCbCr();
+            
+            document.getElementById('btnExport').disabled = false;
+        }
+        
+        // === EFFETS CAMÉRA ===
+        function applyEffects(ctx) {
+            const gamma = parseFloat(document.getElementById('gamma').value);
+            const noiseLevel = parseInt(document.getElementById('noise').value);
+            
+            const imageData = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                // Gamma
+                if (gamma !== 1.0) {
+                    data[i] = 255 * Math.pow(data[i] / 255, gamma);
+                    data[i + 1] = 255 * Math.pow(data[i + 1] / 255, gamma);
+                    data[i + 2] = 255 * Math.pow(data[i + 2] / 255, gamma);
+                }
+                
+                // Bruit capteur (gaussien approximé)
+                if (noiseLevel > 0) {
+                    const noise = (Math.random() + Math.random() + Math.random() - 1.5) * noiseLevel;
+                    data[i] = clamp(data[i] + noise, 0, 255);
+                    data[i + 1] = clamp(data[i + 1] + noise, 0, 255);
+                    data[i + 2] = clamp(data[i + 2] + noise, 0, 255);
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        // === CONVERSION RGB → YCbCr (BT.601) ===
+        function convertToYCbCr() {
+            const data = capturedRGB.data;
+            
+            // Tableaux pour Y, Cb, Cr
+            const Y = new Uint8Array(WIDTH * HEIGHT);
+            const Cb = new Uint8Array(WIDTH * HEIGHT);
+            const Cr = new Uint8Array(WIDTH * HEIGHT);
+            
+            for (let i = 0; i < WIDTH * HEIGHT; i++) {
+                const idx = i * 4;
+                const R = data[idx] / 255;
+                const G = data[idx + 1] / 255;
+                const B = data[idx + 2] / 255;
+                
+                // BT.601 avec headroom/footroom
+                Y[i] = clamp(Math.round(16 + 65.481 * R + 128.553 * G + 24.966 * B), 16, 235);
+                Cb[i] = clamp(Math.round(128 - 37.797 * R - 74.203 * G + 112.0 * B), 16, 240);
+                Cr[i] = clamp(Math.round(128 + 112.0 * R - 93.786 * G - 18.214 * B), 16, 240);
+            }
+            
+            yCbCrData = { Y, Cb, Cr, width: WIDTH, height: HEIGHT };
+            
+            // Afficher
+            displayY();
+            displayComponents();
+            displayStats();
+        }
+        
+        // === AFFICHAGE Y (GRAND) ===
+        function displayY() {
+            const canvas = document.getElementById('canvasY');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            for (let i = 0; i < WIDTH * HEIGHT; i++) {
+                const y = yCbCrData.Y[i];
+                imageData.data[i * 4] = y;
+                imageData.data[i * 4 + 1] = y;
+                imageData.data[i * 4 + 2] = y;
+                imageData.data[i * 4 + 3] = 255;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        // === AFFICHAGE COMPOSANTES ===
+        function displayComponents() {
+            // Y petit
+            displayComponent('canvasYsmall', yCbCrData.Y, 'gray');
+            // Cb
+            displayComponent('canvasCb', yCbCrData.Cb, 'blue');
+            // Cr
+            displayComponent('canvasCr', yCbCrData.Cr, 'red');
+        }
+        
+        function displayComponent(canvasId, component, type) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const imageData = ctx.createImageData(w, h);
+            
+            // Sous-échantillonner pour affichage
+            const scaleX = WIDTH / w;
+            const scaleY = HEIGHT / h;
+            
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const srcX = Math.floor(x * scaleX);
+                    const srcY = Math.floor(y * scaleY);
+                    const srcIdx = srcY * WIDTH + srcX;
+                    const dstIdx = (y * w + x) * 4;
+                    
+                    const val = component[srcIdx];
+                    
+                    if (type === 'gray') {
+                        imageData.data[dstIdx] = val;
+                        imageData.data[dstIdx + 1] = val;
+                        imageData.data[dstIdx + 2] = val;
+                    } else if (type === 'blue') {
+                        // Cb: 128 = neutre, <128 = jaune, >128 = bleu
+                        const normalized = (val - 16) / (240 - 16) * 255;
+                        imageData.data[dstIdx] = 128 - (normalized - 128);
+                        imageData.data[dstIdx + 1] = 128 - Math.abs(normalized - 128) / 2;
+                        imageData.data[dstIdx + 2] = normalized;
+                    } else if (type === 'red') {
+                        // Cr: 128 = neutre, <128 = cyan, >128 = rouge
+                        const normalized = (val - 16) / (240 - 16) * 255;
+                        imageData.data[dstIdx] = normalized;
+                        imageData.data[dstIdx + 1] = 128 - Math.abs(normalized - 128) / 2;
+                        imageData.data[dstIdx + 2] = 128 - (normalized - 128);
+                    }
+                    
+                    imageData.data[dstIdx + 3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+        }
+        
+        // === STATISTIQUES ===
+        function displayStats() {
+            let minY = 255, maxY = 0, sumY = 0;
+            let minCb = 255, maxCb = 0;
+            let minCr = 255, maxCr = 0;
+            
+            for (let i = 0; i < WIDTH * HEIGHT; i++) {
+                minY = Math.min(minY, yCbCrData.Y[i]);
+                maxY = Math.max(maxY, yCbCrData.Y[i]);
+                sumY += yCbCrData.Y[i];
+                minCb = Math.min(minCb, yCbCrData.Cb[i]);
+                maxCb = Math.max(maxCb, yCbCrData.Cb[i]);
+                minCr = Math.min(minCr, yCbCrData.Cr[i]);
+                maxCr = Math.max(maxCr, yCbCrData.Cr[i]);
+            }
+            
+            const avgY = sumY / (WIDTH * HEIGHT);
+            
+            document.getElementById('stats').style.display = 'block';
+            document.getElementById('stats').innerHTML = `
+                <strong>Statistiques image capturée :</strong><br>
+                • Résolution : ${WIDTH} × ${HEIGHT} = ${(WIDTH * HEIGHT).toLocaleString()} pixels<br>
+                • <span class="ycbcr-badge y-badge">Y</span> Luminance : min=${minY}, max=${maxY}, moy=${avgY.toFixed(1)}<br>
+                • <span class="ycbcr-badge cb-badge">Cb</span> Chroma bleue : min=${minCb}, max=${maxCb}<br>
+                • <span class="ycbcr-badge cr-badge">Cr</span> Chroma rouge : min=${minCr}, max=${maxCr}<br>
+                • Gamma appliqué : ${document.getElementById('gamma').value}<br>
+                • Bruit capteur : ${document.getElementById('noise').value}
+            `;
+        }
+        
+        // === MIRE DE TEST ===
+        function generateTestPattern() {
+            const canvas = document.getElementById('canvasRGB');
+            const ctx = canvas.getContext('2d');
+            
+            // Barres de couleur EBU 100%
+            const colors = [
+                [255, 255, 255], // Blanc
+                [255, 255, 0],   // Jaune
+                [0, 255, 255],   // Cyan
+                [0, 255, 0],     // Vert
+                [255, 0, 255],   // Magenta
+                [255, 0, 0],     // Rouge
+                [0, 0, 255],     // Bleu
+                [0, 0, 0]        // Noir
+            ];
+            
+            const barWidth = WIDTH / colors.length;
+            
+            for (let i = 0; i < colors.length; i++) {
+                ctx.fillStyle = `rgb(${colors[i][0]}, ${colors[i][1]}, ${colors[i][2]})`;
+                ctx.fillRect(i * barWidth, 0, barWidth, HEIGHT * 0.7);
+            }
+            
+            // Rampe de gris en bas
+            for (let x = 0; x < WIDTH; x++) {
+                const gray = Math.floor((x / WIDTH) * 255);
+                ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+                ctx.fillRect(x, HEIGHT * 0.7, 1, HEIGHT * 0.15);
+            }
+            
+            // Noir et blanc en bas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, HEIGHT * 0.85, WIDTH / 2, HEIGHT * 0.15);
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(WIDTH / 2, HEIGHT * 0.85, WIDTH / 2, HEIGHT * 0.15);
+            
+            // Récupérer et convertir
+            capturedRGB = ctx.getImageData(0, 0, WIDTH, HEIGHT);
+            convertToYCbCr();
+            
+            document.getElementById('btnExport').disabled = false;
+        }
+        
+        // === EXPORT JSON ===
+        function exportJSON() {
+            if (!yCbCrData) return;
+            
+            const output = {
+                format: 'DVB_CAMERA_V1',
+                description: 'Webcam capture - YCbCr BT.601',
+                date: new Date().toISOString(),
+                image: {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    colorspace: 'YCbCr',
+                    standard: 'BT.601',
+                    gamma: parseFloat(document.getElementById('gamma').value),
+                    noise: parseInt(document.getElementById('noise').value)
+                },
+                // Encoder en base64
+                Y: uint8ArrayToBase64(yCbCrData.Y),
+                Cb: uint8ArrayToBase64(yCbCrData.Cb),
+                Cr: uint8ArrayToBase64(yCbCrData.Cr)
+            };
+            
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'camera_ycbcr.json';
+            a.click();
+        }
+        
+        function uint8ArrayToBase64(arr) {
+            let binary = '';
+            for (let i = 0; i < arr.length; i++) {
+                binary += String.fromCharCode(arr[i]);
+            }
+            return btoa(binary);
+        }
+        
+        // === UTILITAIRES ===
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, val));
+        }
+        
+        function clearCanvas(id) {
+            const canvas = document.getElementById(id);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('En attente...', canvas.width / 2, canvas.height / 2);
+        }
+    </script>
+</body>
+</html>
