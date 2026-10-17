@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page12-convolutional_1.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 12 - Codeur Convolutif
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 12 - Codeur Convolutif</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; text-align: center; }
+        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #00d4ff; color: #000; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #00d4ff; }
+        canvas { border: 2px solid #0f3460; }
+        .controls { margin-top: 10px; }
+        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #00d4ff; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        select { background: #0f3460; color: #fff; border: none; padding: 8px; border-radius: 5px; }
+        .info { margin-top: 10px; font-size: 12px; color: #888; }
+        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .conv-diagram { font-family: monospace; font-size: 10px; background: #0a0a15; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
+        table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
+        table.info-table th { background: #0f3460; }
+        .register-display { display: flex; justify-content: center; gap: 2px; margin: 10px 0; }
+        .reg-bit { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-family: monospace; font-weight: bold; }
+        .reg-bit.one { background: #00aa00; color: #fff; }
+        .reg-bit.zero { background: #333; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>⚡ Page 12 - Codeur Convolutif</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Codage convolutif FEC (Forward Error Correction) selon DVB-S EN 300 421.<br>
+        <strong>Paramètres :</strong> K=7 (longueur contrainte), Taux de base 1/2<br>
+        <strong>Générateurs (masques XOR) :</strong> G1 = 171₈ (0x79), G2 = 133₈ (0x5B) — Simple XOR binaire, pas de Galois !<br>
+        <strong>Entrée :</strong> Flux entrelacé — <strong>Sortie :</strong> Flux codé (×2 bits) + poinçonnage optionnel
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">RS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Convolutif</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">QPSK</span>
+    </div>
+    
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Flux Entrelacé</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Données entrelacées (sortie Page 11)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Codeur K=7</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <label style="font-size:12px;">Taux: </label>
+                <select id="codeRate" onchange="updateRateInfo()">
+                    <option value="1/2">1/2 (pas de poinçonnage)</option>
+                    <option value="2/3">2/3</option>
+                    <option value="3/4" selected>3/4</option>
+                    <option value="5/6">5/6</option>
+                    <option value="7/8">7/8</option>
+                </select>
+                <br>
+                <button id="btnEncode" onclick="encode()" disabled>⚙️ Encoder</button>
+                <button id="btnAnimate" onclick="animateEncoder()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">Registre 6 bits + 2 sorties XOR</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>3. SORTIE - Flux Codé</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .bin</button>
+            </div>
+            <div class="info" id="outputInfo">Bits codés + poinçonnés</div>
+        </div>
+    </div>
+    
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Structure du Codeur Convolutif</h4>
+        <div class="conv-diagram">
+                                    ┌─────────────────────────────────────────────────────────┐
+                                    │                                                         │
+Entrée ──►┬──►[D5]──►[D4]──►[D3]──►[D2]──►[D1]──►[D0]                                        │
+          │    │      │             │             │                                           │
+          │    │      │      ┌──────┤      ┌──────┤                                           │
+          │    │      │      │      │      │      │                                           │
+          │    ▼      ▼      ▼      ▼      ▼      ▼                                           │
+          └───XOR────XOR────XOR────XOR────XOR────XOR──────────────────────────────────► G1 (X)│
+               │      │             │      │      │                                           │
+               │      │             │      │      │     G1 = 1111001 (171 octal = 0x79)      │
+               │      │             │      │      │     G2 = 1011011 (133 octal = 0x5B)      │
+               │      │             │      │      │                                           │
+          ┌───XOR────XOR───────────XOR────XOR────XOR──────────────────────────────────► G2 (Y)│
+          │    │      │             │      │      │                                           │
+          │    │      │             │      │      │                                           │
+Entrée ──►┴────┴──────┴─────────────┴──────┴──────┘                                           │
+                                                                                              │
+          Sortie: Pour chaque bit d'entrée → 2 bits de sortie (X, Y)                         │
+          Taux de base: R = 1/2                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+⚠️  ATTENTION: G1 et G2 sont des MASQUES DE CONNEXION (tap masks), PAS des polynômes Galois !
+    C'est du simple XOR binaire sur les bits du registre.
+    Rien à voir avec l'arithmétique GF(2^8) de Reed-Solomon.
+
+Masques de connexion (notation octale, bit de poids fort = entrée):
+  G1 = 171₈ = 1 111 001₂ = XOR des positions: entrée, D0, D1, D2, D5
+  G2 = 133₈ = 1 011 011₂ = XOR des positions: entrée, D0, D1, D3, D5
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Poinçonnage (Puncturing)</h4>
+        <table class="info-table">
+            <tr><th>Taux</th><th>Pattern X</th><th>Pattern Y</th><th>Bits in</th><th>Bits out</th><th>Efficacité</th></tr>
+            <tr><td>1/2</td><td>1</td><td>1</td><td>1</td><td>2</td><td>50%</td></tr>
+            <tr><td>2/3</td><td>1 0</td><td>1 1</td><td>2</td><td>3</td><td>67%</td></tr>
+            <tr><td>3/4</td><td>1 0 1</td><td>1 1 0</td><td>3</td><td>4</td><td>75%</td></tr>
+            <tr><td>5/6</td><td>1 0 1 0 1</td><td>1 1 0 1 0</td><td>5</td><td>6</td><td>83%</td></tr>
+            <tr><td>7/8</td><td>1 0 0 0 1 0 1</td><td>1 1 1 1 0 1 0</td><td>7</td><td>8</td><td>88%</td></tr>
+        </table>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Paramètres DVB-S</h4>
+        <table class="info-table">
+            <tr><th>Paramètre</th><th>Valeur</th><th>Description</th></tr>
+            <tr><td>K (contrainte)</td><td>7</td><td>6 registres + entrée</td></tr>
+            <tr><td>États</td><td>64</td><td>2^(K-1) = 2^6</td></tr>
+            <tr><td>G1 (masque)</td><td>171₈ = 0x79</td><td>XOR: IN⊕D0⊕D1⊕D2⊕D5</td></tr>
+            <tr><td>G2 (masque)</td><td>133₈ = 0x5B</td><td>XOR: IN⊕D0⊕D1⊕D3⊕D5</td></tr>
+            <tr><td>Taux base</td><td>1/2</td><td>1 bit → 2 bits</td></tr>
+            <tr><td>Distance libre</td><td>10</td><td>Capacité de correction</td></tr>
+            <tr><td>Arithmétique</td><td>XOR binaire</td><td>≠ Galois GF(2^8) !</td></tr>
+        </table>
+    </div>
+
+    <script>
+        const WIDTH = 352, HEIGHT = 288;
+        
+        // Polynômes générateurs (K=7)
+        const G1 = 0b1111001; // 171 octal = 0x79
+        const G2 = 0b1011011; // 133 octal = 0x5B
+        const K = 7;
+        const REG_SIZE = K - 1; // 6 bits de registre
+        
+        // Patterns de poinçonnage [X, Y] - 1 = garder, 0 = supprimer
+        const PUNCTURE_PATTERNS = {
+            '1/2': { X: [1], Y: [1], inBits: 1, outBits: 2 },
+            '2/3': { X: [1, 0], Y: [1, 1], inBits: 2, outBits: 3 },
+            '3/4': { X: [1, 0, 1], Y: [1, 1, 0], inBits: 3, outBits: 4 },
+            '5/6': { X: [1, 0, 1, 0, 1], Y: [1, 1, 0, 1, 0], inBits: 5, outBits: 6 },
+            '7/8': { X: [1, 0, 0, 0, 1, 0, 1], Y: [1, 1, 1, 1, 0, 1, 0], inBits: 7, outBits: 8 }
+        };
+        
+        let inputData = null, inputBytes = [], encodedBits = [], encoded = false;
+        let animationId = null, animStep = 0, animRegister = 0;
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            displayProcessInit();
+            clearCanvas('canvasOutput');
+            updateRateInfo();
+        };
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    if (!inputData.format || inputData.format !== 'DVB_INTERLEAVED_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 11.');
+                        return;
+                    }
+                    const binaryString = atob(inputData.binary);
+                    inputBytes = [];
+                    for (let i = 0; i < binaryString.length; i++) inputBytes.push(binaryString.charCodeAt(i));
+                    
+                    encodedBits = [];
+                    encoded = false;
+                    
+                    displayInputData();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnEncode').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    document.getElementById('statsInput').style.display = 'block';
+                    document.getElementById('statsInput').innerHTML = `
+                        <strong>Données chargées:</strong><br>
+                        • Octets: ${inputBytes.length.toLocaleString()}<br>
+                        • Bits: ${(inputBytes.length * 8).toLocaleString()}
+                    `;
+                } catch (err) { alert('Erreur: ' + err.message); }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        function displayInputData() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${inputBytes.length} octets entrelacés`, WIDTH/2, 20);
+            
+            // Visualiser les bits
+            const bitsPerRow = WIDTH - 20;
+            const rowH = 2;
+            const startY = 35;
+            
+            let bitIndex = 0;
+            for (let i = 0; i < inputBytes.length && bitIndex < bitsPerRow * ((HEIGHT-50)/rowH); i++) {
+                const byte = inputBytes[i];
+                for (let b = 7; b >= 0; b--) {
+                    const bit = (byte >> b) & 1;
+                    const x = 10 + (bitIndex % bitsPerRow);
+                    const y = startY + Math.floor(bitIndex / bitsPerRow) * rowH;
+                    
+                    ctx.fillStyle = bit ? '#00aa00' : '#333';
+                    ctx.fillRect(x, y, 1, rowH - 1);
+                    bitIndex++;
+                }
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Vert = 1, Gris = 0', 10, HEIGHT - 10);
+        }
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Codeur Convolutif K=7', WIDTH/2, 20);
+            
+            // Dessiner le registre
+            const regX = 50, regY = 50, cellW = 35, cellH = 30;
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('IN', regX - 20, regY + cellH/2 + 3);
+            
+            // Cases du registre
+            for (let i = 0; i < REG_SIZE; i++) {
+                ctx.fillStyle = '#333';
+                ctx.fillRect(regX + i * cellW, regY, cellW - 2, cellH);
+                ctx.strokeStyle = '#666';
+                ctx.strokeRect(regX + i * cellW, regY, cellW - 2, cellH);
+                ctx.fillStyle = '#888';
+                ctx.fillText(`D${REG_SIZE - 1 - i}`, regX + i * cellW + cellW/2 - 1, regY + cellH + 15);
+            }
+            
+            // G1 et G2
+            ctx.fillStyle = '#ff8800';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText('G1 = 171₈ → X', 50, 120);
+            ctx.fillText('Taps: IN, D0, D1, D2, D5', 50, 135);
+            
+            ctx.fillStyle = '#00aaff';
+            ctx.fillText('G2 = 133₈ → Y', 50, 160);
+            ctx.fillText('Taps: IN, D0, D1, D3, D5', 50, 175);
+            
+            // Sortie
+            ctx.fillStyle = '#fff';
+            ctx.font = '12px Arial';
+            ctx.fillText('Sortie: (X, Y) pour chaque bit', 50, 210);
+            
+            // Taux
+            const rate = document.getElementById('codeRate').value;
+            const pattern = PUNCTURE_PATTERNS[rate];
+            ctx.fillStyle = '#888';
+            ctx.font = '11px Arial';
+            ctx.fillText(`Taux ${rate}: ${pattern.inBits} bit(s) → ${pattern.outBits} bit(s)`, 50, 235);
+            
+            if (rate !== '1/2') {
+                ctx.fillText(`Poinçonnage X: [${pattern.X.join(',')}]`, 50, 252);
+                ctx.fillText(`Poinçonnage Y: [${pattern.Y.join(',')}]`, 50, 267);
+            }
+        }
+        
+        function updateRateInfo() {
+            displayProcessInit();
+            const rate = document.getElementById('codeRate').value;
+            const pattern = PUNCTURE_PATTERNS[rate];
+            document.getElementById('outputInfo').textContent = 
+                `Taux ${rate}: efficacité ${Math.round(pattern.inBits/pattern.outBits*100)}%`;
+        }
+        
+        function encode() {
+            if (!inputBytes.length) return;
+            
+            const rate = document.getElementById('codeRate').value;
+            const pattern = PUNCTURE_PATTERNS[rate];
+            
+            // Registre à décalage (6 bits)
+            let register = 0;
+            
+            // Bits codés avant poinçonnage
+            const rawBitsX = [];
+            const rawBitsY = [];
+            
+            // Encoder chaque bit
+            for (let i = 0; i < inputBytes.length; i++) {
+                const byte = inputBytes[i];
+                for (let b = 7; b >= 0; b--) {
+                    const inputBit = (byte >> b) & 1;
+                    
+                    // Combiner entrée + registre pour calcul
+                    const state = (inputBit << REG_SIZE) | register;
+                    
+                    // Calculer sorties avec les polynômes
+                    const x = parity(state & G1);
+                    const y = parity(state & G2);
+                    
+                    rawBitsX.push(x);
+                    rawBitsY.push(y);
+                    
+                    // Décaler le registre
+                    register = ((register << 1) | inputBit) & 0x3F; // Masque 6 bits
+                }
+            }
+            
+            // Flush : ajouter K-1 = 6 bits à zéro pour terminer
+            for (let i = 0; i < REG_SIZE; i++) {
+                const state = register; // entrée = 0
+                const x = parity(state & G1);
+                const y = parity(state & G2);
+                rawBitsX.push(x);
+                rawBitsY.push(y);
+                register = (register << 1) & 0x3F;
+            }
+            
+            // Appliquer le poinçonnage
+            encodedBits = [];
+            const patternLen = pattern.X.length;
+            
+            for (let i = 0; i < rawBitsX.length; i++) {
+                const patIdx = i % patternLen;
+                if (pattern.X[patIdx]) encodedBits.push(rawBitsX[i]);
+                if (pattern.Y[patIdx]) encodedBits.push(rawBitsY[i]);
+            }
+            
+            encoded = true;
+            displayOutputEncoded();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            const inputBits = inputBytes.length * 8;
+            const rawOutputBits = rawBitsX.length * 2;
+            
+            document.getElementById('globalStats').style.display = 'block';
+            document.getElementById('globalStats').innerHTML = `
+                <strong>Encodage terminé:</strong><br>
+                • Bits entrée: ${inputBits.toLocaleString()}<br>
+                • Bits sortie (avant poinçonnage): ${rawOutputBits.toLocaleString()}<br>
+                • Bits sortie (après poinçonnage): ${encodedBits.length.toLocaleString()}<br>
+                • Taux effectif: ${rate} (${(inputBits / encodedBits.length * 100).toFixed(1)}%)<br>
+                • Flush: ${REG_SIZE} bits ajoutés
+            `;
+        }
+        
+        // Calcul de parité (nombre de bits à 1 modulo 2)
+        function parity(x) {
+            let p = 0;
+            while (x) {
+                p ^= (x & 1);
+                x >>= 1;
+            }
+            return p;
+        }
+        
+        // Animation du codeur
+        function animateEncoder() {
+            if (animationId || !inputBytes.length) return;
+            
+            animStep = 0;
+            animRegister = 0;
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                const canvas = document.getElementById('canvasProcess');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                // Calculer le bit courant
+                const byteIdx = Math.floor(animStep / 8);
+                const bitIdx = 7 - (animStep % 8);
+                
+                if (byteIdx >= inputBytes.length) {
+                    stopAnimation();
+                    encode();
+                    return;
+                }
+                
+                const inputBit = (inputBytes[byteIdx] >> bitIdx) & 1;
+                const state = (inputBit << REG_SIZE) | animRegister;
+                const outX = parity(state & G1);
+                const outY = parity(state & G2);
+                
+                // Titre
+                ctx.font = 'bold 12px Arial';
+                ctx.fillStyle = '#00d4ff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Bit ${animStep} / ${inputBytes.length * 8}`, WIDTH/2, 20);
+                
+                // Entrée
+                ctx.font = 'bold 14px monospace';
+                ctx.fillStyle = inputBit ? '#00ff00' : '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText(inputBit.toString(), 30, 60);
+                ctx.font = '10px Arial';
+                ctx.fillStyle = '#888';
+                ctx.fillText('IN', 30, 75);
+                
+                // Flèche entrée
+                ctx.strokeStyle = '#666';
+                ctx.beginPath();
+                ctx.moveTo(45, 55);
+                ctx.lineTo(60, 55);
+                ctx.stroke();
+                
+                // Registre à décalage
+                const regX = 65, regY = 40, cellW = 35, cellH = 35;
+                for (let i = 0; i < REG_SIZE; i++) {
+                    const bitVal = (animRegister >> (REG_SIZE - 1 - i)) & 1;
+                    ctx.fillStyle = bitVal ? '#00aa00' : '#333';
+                    ctx.fillRect(regX + i * cellW, regY, cellW - 2, cellH);
+                    ctx.strokeStyle = '#666';
+                    ctx.strokeRect(regX + i * cellW, regY, cellW - 2, cellH);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 16px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(bitVal.toString(), regX + i * cellW + cellW/2 - 1, regY + cellH/2 + 6);
+                    
+                    ctx.fillStyle = '#888';
+                    ctx.font = '9px Arial';
+                    ctx.fillText(`D${REG_SIZE - 1 - i}`, regX + i * cellW + cellW/2 - 1, regY + cellH + 12);
+                }
+                
+                // Connexions G1 (orange)
+                const g1Taps = [0, 1, 2, 5]; // positions D5, D4, D3, D0 dans le registre
+                const g1Y = 115;
+                ctx.strokeStyle = '#ff8800';
+                ctx.lineWidth = 2;
+                
+                // Ligne horizontale G1
+                ctx.beginPath();
+                ctx.moveTo(25, g1Y);
+                ctx.lineTo(regX + 5.5 * cellW, g1Y);
+                ctx.stroke();
+                
+                // Taps G1
+                ctx.fillStyle = '#ff8800';
+                // Entrée
+                ctx.beginPath(); ctx.moveTo(30, 70); ctx.lineTo(30, g1Y); ctx.stroke();
+                ctx.beginPath(); ctx.arc(30, g1Y, 4, 0, Math.PI*2); ctx.fill();
+                // D0, D1, D2, D5
+                [5, 4, 3, 0].forEach(d => {
+                    const x = regX + (5-d) * cellW + cellW/2;
+                    ctx.beginPath(); ctx.moveTo(x, regY + cellH); ctx.lineTo(x, g1Y); ctx.stroke();
+                    ctx.beginPath(); ctx.arc(x, g1Y, 4, 0, Math.PI*2); ctx.fill();
+                });
+                
+                // Sortie X
+                ctx.fillStyle = outX ? '#ff8800' : '#663300';
+                ctx.fillRect(WIDTH - 60, g1Y - 15, 40, 30);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText(`X=${outX}`, WIDTH - 40, g1Y + 5);
+                
+                // Connexions G2 (bleu)
+                const g2Y = 155;
+                ctx.strokeStyle = '#00aaff';
+                ctx.lineWidth = 2;
+                
+                // Ligne horizontale G2
+                ctx.beginPath();
+                ctx.moveTo(25, g2Y);
+                ctx.lineTo(regX + 5.5 * cellW, g2Y);
+                ctx.stroke();
+                
+                // Taps G2
+                ctx.fillStyle = '#00aaff';
+                // Entrée
+                ctx.beginPath(); ctx.moveTo(30, g1Y); ctx.lineTo(30, g2Y); ctx.stroke();
+                ctx.beginPath(); ctx.arc(30, g2Y, 4, 0, Math.PI*2); ctx.fill();
+                // D0, D1, D3, D5
+                [5, 4, 2, 0].forEach(d => {
+                    const x = regX + (5-d) * cellW + cellW/2;
+                    ctx.beginPath(); ctx.moveTo(x, g1Y); ctx.lineTo(x, g2Y); ctx.stroke();
+                    ctx.beginPath(); ctx.arc(x, g2Y, 4, 0, Math.PI*2); ctx.fill();
+                });
+                
+                // Sortie Y
+                ctx.fillStyle = outY ? '#00aaff' : '#003366';
+                ctx.fillRect(WIDTH - 60, g2Y - 15, 40, 30);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px monospace';
+                ctx.fillText(`Y=${outY}`, WIDTH - 40, g2Y + 5);
+                
+                // Labels XOR
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText('G1: XOR(IN,D0,D1,D2,D5)', 50, 200);
+                ctx.fillText('G2: XOR(IN,D0,D1,D3,D5)', 50, 215);
+                
+                // Sortie combinée
+                ctx.fillStyle = '#00ff88';
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Sortie: (${outX},${outY})`, WIDTH/2, 245);
+                
+                // Barre de progression
+                ctx.fillStyle = '#0f3460';
+                ctx.fillRect(10, HEIGHT - 25, WIDTH - 20, 12);
+                ctx.fillStyle = '#00d4ff';
+                ctx.fillRect(10, HEIGHT - 25, (WIDTH - 20) * (animStep / (inputBytes.length * 8)), 12);
+                
+                // Décaler le registre
+                animRegister = ((animRegister << 1) | inputBit) & 0x3F;
+                animStep++;
+                
+                if (animStep < Math.min(inputBytes.length * 8, 500)) {
+                    animationId = setTimeout(animate, 50);
+                } else {
+                    stopAnimation();
+                    encode();
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        function displayOutputEncoded() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${encodedBits.length.toLocaleString()} bits codés`, WIDTH/2, 20);
+            
+            // Visualiser les bits
+            const bitsPerRow = WIDTH - 20;
+            const rowH = 2;
+            const startY = 35;
+            
+            for (let i = 0; i < encodedBits.length && startY + Math.floor(i/bitsPerRow)*rowH < HEIGHT-20; i++) {
+                const x = 10 + (i % bitsPerRow);
+                const y = startY + Math.floor(i / bitsPerRow) * rowH;
+                
+                ctx.fillStyle = encodedBits[i] ? '#ff8800' : '#333';
+                ctx.fillRect(x, y, 1, rowH - 1);
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Orange = 1, Gris = 0', 10, HEIGHT - 10);
+        }
+        
+        function exportJSON() {
+            if (!encoded) return;
+            
+            // Convertir bits en octets
+            const bytes = [];
+            for (let i = 0; i < encodedBits.length; i += 8) {
+                let byte = 0;
+                for (let b = 0; b < 8 && i + b < encodedBits.length; b++) {
+                    byte |= (encodedBits[i + b] << (7 - b));
+                }
+                bytes.push(byte);
+            }
+            
+            const rate = document.getElementById('codeRate').value;
+            
+            const output = {
+                format: 'DVB_CONVOLUTIONAL_V1',
+                description: 'DVB-S Convolutionally Encoded',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                convolutional: {
+                    K: K,
+                    G1_octal: '171',
+                    G2_octal: '133',
+                    rate: rate,
+                    inputBits: inputBytes.length * 8,
+                    outputBits: encodedBits.length,
+                    outputBytes: bytes.length
+                },
+                interleaving: inputData.interleaving,
+                binary: btoa(String.fromCharCode.apply(null, bytes))
+            };
+            
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'convolutional.json';
+            a.click();
+        }
+        
+        function exportBinary() {
+            if (!encoded) return;
+            
+            const bytes = [];
+            for (let i = 0; i < encodedBits.length; i += 8) {
+                let byte = 0;
+                for (let b = 0; b < 8 && i + b < encodedBits.length; b++) {
+                    byte |= (encodedBits[i + b] << (7 - b));
+                }
+                bytes.push(byte);
+            }
+            
+            const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'convolutional.bin';
+            a.click();
+        }
+        
+        function clearCanvas(id) {
+            const ctx = document.getElementById(id).getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+    </script>
+</body>
+</html>

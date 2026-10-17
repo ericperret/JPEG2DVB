@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page02-dct.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 02 - DCT 8×8
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 02 - DCT 8×8</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .progress-container {
+            width: 100%;
+            background: #0f3460;
+            border-radius: 5px;
+            margin-top: 10px;
+            height: 20px;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #00d4ff;
+            border-radius: 5px;
+            width: 0%;
+            transition: width 0.1s;
+        }
+        .formula {
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 11px;
+            margin-top: 10px;
+            text-align: left;
+            overflow-x: auto;
+        }
+        .block-detail {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 1px;
+            margin-top: 10px;
+            font-size: 9px;
+            font-family: monospace;
+        }
+        .block-cell {
+            padding: 2px;
+            text-align: center;
+            background: #0f3460;
+        }
+        .block-cell.dc {
+            background: #4a0000;
+        }
+    </style>
+</head>
+<body>
+    <h1>📐 Page 02 - DCT 8×8 (Discrete Cosine Transform)</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Applique la Transformée en Cosinus Discrète 2D sur chaque bloc 8×8.<br>
+        La DCT convertit les valeurs spatiales (pixels) en coefficients fréquentiels.<br>
+        <strong>Entrée :</strong> Fichier JSON des macroblocs (sortie Page 01)<br>
+        <strong>Sortie :</strong> Fichier JSON des coefficients DCT pour chaque bloc
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Macroblocs</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Centrage -128</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">DCT 2D</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Coefficients</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Blocs pixels en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Blocs Pixels</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Valeurs pixels [0-255] centrées → [-128, +127]</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Traitement DCT progressif -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - DCT Progressive</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnDCT" onclick="computeDCT()" disabled>⚙️ Calculer DCT</button>
+                <button id="btnStep" onclick="stepDCT()" disabled>⏭️ Pas à pas</button>
+            </div>
+            <div class="progress-container">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <div class="info">Visualisation : log(1 + |coef|) normalisé</div>
+            <div class="formula">
+                F(u,v) = ¼·C(u)·C(v)·Σₓ Σᵧ f(x,y)·cos[(2x+1)uπ/16]·cos[(2y+1)vπ/16]<br>
+                où C(0) = 1/√2, C(k) = 1 pour k > 0
+            </div>
+        </div>
+        
+        <!-- CANVAS 3 : Résultat + détail bloc -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Coefficients DCT</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Exporter JSON</button>
+                <button id="btnIDCT" onclick="verifyIDCT()" disabled>🔄 Vérifier IDCT</button>
+            </div>
+            <div class="info">Cliquez sur un bloc pour voir ses coefficients</div>
+            <div id="blockDetail" class="stats" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const BLOCK_SIZE = 8;
+        const MB_SIZE = 16;
+        const MB_COLS = WIDTH / MB_SIZE;
+        const MB_ROWS = HEIGHT / MB_SIZE;
+        
+        let inputData = null;       // Données JSON importées
+        let macroblocs = [];        // Macroblocs avec pixels
+        let dctMacroblocs = [];     // Macroblocs avec coefficients DCT
+        let cosTable = null;        // Table de cosinus pré-calculée
+        let currentMB = 0;          // Pour le mode pas à pas
+        let dctComputed = false;
+        let selectedBlock = null;
+        
+        // ============================================================
+        // INITIALISATION TABLE COSINUS
+        // ============================================================
+        
+        function initCosTable() {
+            cosTable = new Float64Array(64);
+            for (let u = 0; u < 8; u++) {
+                for (let x = 0; x < 8; x++) {
+                    cosTable[u * 8 + x] = Math.cos((2 * x + 1) * u * Math.PI / 16);
+                }
+            }
+        }
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_MACROBLOCS_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 01.');
+                        return;
+                    }
+                    
+                    macroblocs = inputData.data;
+                    dctMacroblocs = [];
+                    dctComputed = false;
+                    currentMB = 0;
+                    
+                    displayInputBlocks();
+                    clearCanvas('canvasProcess');
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnDCT').disabled = false;
+                    document.getElementById('btnStep').disabled = false;
+                    document.getElementById('btnExport').disabled = true;
+                    document.getElementById('btnIDCT').disabled = true;
+                    document.getElementById('progressBar').style.width = '0%';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Fichier chargé :</strong><br>
+                        • Macroblocs : ${macroblocs.length}<br>
+                        • Blocs 8×8 totaux : ${macroblocs.length * 6}<br>
+                        • Coefficients à calculer : ${macroblocs.length * 6 * 64}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE DES BLOCS D'ENTRÉE
+        // ============================================================
+        
+        function displayInputBlocks() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Reconstruire l'image Y depuis les macroblocs
+            for (const mb of macroblocs) {
+                const blockPositions = [
+                    [0, 0], [8, 0], [0, 8], [8, 8]
+                ];
+                
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = block[y * 8 + x];
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            imageData.data[idx] = val;
+                            imageData.data[idx + 1] = val;
+                            imageData.data[idx + 2] = val;
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            // Grille 8×8
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+        
+        // ============================================================
+        // CALCUL DCT
+        // ============================================================
+        
+        function computeDCT() {
+            if (!macroblocs.length) return;
+            
+            dctMacroblocs = [];
+            const totalMB = macroblocs.length;
+            let processed = 0;
+            
+            // Traitement par batch pour ne pas bloquer l'UI
+            function processBatch() {
+                const batchSize = 10;
+                const end = Math.min(processed + batchSize, totalMB);
+                
+                for (let i = processed; i < end; i++) {
+                    const mb = macroblocs[i];
+                    const dctMB = {
+                        index: mb.index,
+                        position: mb.position,
+                        Y: [
+                            computeBlockDCT(mb.Y[0]),
+                            computeBlockDCT(mb.Y[1]),
+                            computeBlockDCT(mb.Y[2]),
+                            computeBlockDCT(mb.Y[3])
+                        ],
+                        Cb: computeBlockDCT(mb.Cb),
+                        Cr: computeBlockDCT(mb.Cr)
+                    };
+                    dctMacroblocs.push(dctMB);
+                }
+                
+                processed = end;
+                const progress = (processed / totalMB) * 100;
+                document.getElementById('progressBar').style.width = progress + '%';
+                
+                // Mise à jour visuelle progressive
+                displayDCTBlocks(dctMacroblocs, 'canvasProcess');
+                
+                if (processed < totalMB) {
+                    requestAnimationFrame(processBatch);
+                } else {
+                    finalizeDCT();
+                }
+            }
+            
+            document.getElementById('btnDCT').disabled = true;
+            document.getElementById('btnStep').disabled = true;
+            processBatch();
+        }
+        
+        function stepDCT() {
+            if (currentMB >= macroblocs.length) return;
+            
+            const mb = macroblocs[currentMB];
+            const dctMB = {
+                index: mb.index,
+                position: mb.position,
+                Y: [
+                    computeBlockDCT(mb.Y[0]),
+                    computeBlockDCT(mb.Y[1]),
+                    computeBlockDCT(mb.Y[2]),
+                    computeBlockDCT(mb.Y[3])
+                ],
+                Cb: computeBlockDCT(mb.Cb),
+                Cr: computeBlockDCT(mb.Cr)
+            };
+            dctMacroblocs.push(dctMB);
+            
+            currentMB++;
+            const progress = (currentMB / macroblocs.length) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+            
+            displayDCTBlocks(dctMacroblocs, 'canvasProcess');
+            
+            if (currentMB >= macroblocs.length) {
+                finalizeDCT();
+            }
+        }
+        
+        function computeBlockDCT(block) {
+            // Centrage des valeurs : [0,255] → [-128, 127]
+            const centered = new Float64Array(64);
+            for (let i = 0; i < 64; i++) {
+                centered[i] = block[i] - 128;
+            }
+            
+            // DCT-II 2D
+            const dct = new Float64Array(64);
+            
+            for (let u = 0; u < 8; u++) {
+                for (let v = 0; v < 8; v++) {
+                    let sum = 0;
+                    
+                    for (let x = 0; x < 8; x++) {
+                        for (let y = 0; y < 8; y++) {
+                            sum += centered[y * 8 + x] * 
+                                   cosTable[u * 8 + x] * 
+                                   cosTable[v * 8 + y];
+                        }
+                    }
+                    
+                    const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
+                    const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
+                    
+                    dct[u * 8 + v] = 0.25 * Cu * Cv * sum;
+                }
+            }
+            
+            return Array.from(dct);
+        }
+        
+        function finalizeDCT() {
+            dctComputed = true;
+            document.getElementById('btnExport').disabled = false;
+            document.getElementById('btnIDCT').disabled = false;
+            document.getElementById('btnDCT').disabled = true;
+            document.getElementById('btnStep').disabled = true;
+            
+            displayDCTBlocks(dctMacroblocs, 'canvasOutput');
+        }
+        
+        // ============================================================
+        // AFFICHAGE DES COEFFICIENTS DCT
+        // ============================================================
+        
+        function displayDCTBlocks(dctData, canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Trouver la valeur max pour normalisation
+            let maxVal = 1;
+            for (const mb of dctData) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+                for (let i = 0; i < 64; i++) {
+                    const vCb = Math.abs(mb.Cb[i]);
+                    const vCr = Math.abs(mb.Cr[i]);
+                    if (vCb > maxVal) maxVal = vCb;
+                    if (vCr > maxVal) maxVal = vCr;
+                }
+            }
+            
+            // Afficher les blocs Y transformés
+            for (const mb of dctData) {
+                const blockPositions = [
+                    [0, 0], [8, 0], [0, 8], [8, 8]
+                ];
+                
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = block[y * 8 + x];
+                            // Visualisation logarithmique
+                            const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            
+                            // DC en rouge, AC en niveau de gris
+                            if (x === 0 && y === 0) {
+                                imageData.data[idx] = intensity;
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 0;
+                            } else {
+                                imageData.data[idx] = intensity;
+                                imageData.data[idx + 1] = intensity;
+                                imageData.data[idx + 2] = intensity;
+                            }
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            // Grille
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.3)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+        
+        // ============================================================
+        // SÉLECTION BLOC POUR DÉTAIL
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!dctComputed) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = Math.floor(e.clientX - rect.left);
+            const y = Math.floor(e.clientY - rect.top);
+            
+            const blockX = Math.floor(x / 8);
+            const blockY = Math.floor(y / 8);
+            
+            // Trouver le macrobloc et le bloc correspondant
+            const mbX = Math.floor(blockX / 2);
+            const mbY = Math.floor(blockY / 2);
+            const mbIndex = mbY * MB_COLS + mbX;
+            
+            const localBlockX = blockX % 2;
+            const localBlockY = blockY % 2;
+            const blockIndex = localBlockY * 2 + localBlockX;
+            
+            if (mbIndex < dctMacroblocs.length) {
+                const mb = dctMacroblocs[mbIndex];
+                const block = mb.Y[blockIndex];
+                
+                displayBlockDetail(block, mbIndex, blockIndex, blockX, blockY);
+                
+                // Highlight
+                const ctx = this.getContext('2d');
+                displayDCTBlocks(dctMacroblocs, 'canvasOutput');
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(blockX * 8, blockY * 8, 8, 8);
+            }
+        });
+        
+        function displayBlockDetail(block, mbIndex, blockIndex, blockX, blockY) {
+            const detail = document.getElementById('blockDetail');
+            detail.style.display = 'block';
+            
+            // Statistiques du bloc
+            const dc = block[0];
+            let acSum = 0;
+            let acMax = 0;
+            let nonZero = 0;
+            
+            for (let i = 1; i < 64; i++) {
+                const v = Math.abs(block[i]);
+                acSum += v;
+                if (v > acMax) acMax = v;
+                if (Math.abs(block[i]) > 0.5) nonZero++;
+            }
+            
+            let html = `
+                <strong>Bloc Y${blockIndex} du MB #${mbIndex}</strong><br>
+                Position : (${blockX * 8}, ${blockY * 8})<br>
+                DC : ${dc.toFixed(2)}<br>
+                AC max : ${acMax.toFixed(2)}<br>
+                AC non-nuls : ${nonZero}/63<br><br>
+                <strong>Matrice 8×8 :</strong>
+                <div class="block-detail">
+            `;
+            
+            for (let i = 0; i < 64; i++) {
+                const val = block[i];
+                const cls = (i === 0) ? 'block-cell dc' : 'block-cell';
+                html += `<div class="${cls}">${val.toFixed(0)}</div>`;
+            }
+            
+            html += '</div>';
+            detail.innerHTML = html;
+        }
+        
+        // ============================================================
+        // VÉRIFICATION IDCT
+        // ============================================================
+        
+        function verifyIDCT() {
+            if (!dctComputed) return;
+            
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Reconstruire via IDCT
+            for (const mb of dctMacroblocs) {
+                const blockPositions = [
+                    [0, 0], [8, 0], [0, 8], [8, 8]
+                ];
+                
+                for (let b = 0; b < 4; b++) {
+                    const dctBlock = mb.Y[b];
+                    const pixels = computeBlockIDCT(dctBlock);
+                    
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = Math.round(Math.max(0, Math.min(255, pixels[y * 8 + x] + 128)));
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            imageData.data[idx] = val;
+                            imageData.data[idx + 1] = val;
+                            imageData.data[idx + 2] = val;
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            alert('IDCT appliquée - Comparez avec Canvas 1 pour vérifier la reconstruction.');
+        }
+        
+        function computeBlockIDCT(dct) {
+            const pixels = new Float64Array(64);
+            
+            for (let x = 0; x < 8; x++) {
+                for (let y = 0; y < 8; y++) {
+                    let sum = 0;
+                    
+                    for (let u = 0; u < 8; u++) {
+                        for (let v = 0; v < 8; v++) {
+                            const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
+                            const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
+                            
+                            sum += Cu * Cv * dct[u * 8 + v] * 
+                                   cosTable[u * 8 + x] * 
+                                   cosTable[v * 8 + y];
+                        }
+                    }
+                    
+                    pixels[y * 8 + x] = 0.25 * sum;
+                }
+            }
+            
+            return pixels;
+        }
+        
+        // ============================================================
+        // EXPORT JSON
+        // ============================================================
+        
+        function exportJSON() {
+            if (!dctComputed) return;
+            
+            const output = {
+                format: 'MPEG2_DCT_V1',
+                description: 'Coefficients DCT 8×8 pour encodage MPEG-2',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                macroblocs: {
+                    count: dctMacroblocs.length,
+                    cols: MB_COLS,
+                    rows: MB_ROWS
+                },
+                data: dctMacroblocs.map(mb => ({
+                    index: mb.index,
+                    position: mb.position,
+                    Y: mb.Y,     // 4 blocs de 64 coefficients
+                    Cb: mb.Cb,  // 1 bloc de 64 coefficients
+                    Cr: mb.Cr   // 1 bloc de 64 coefficients
+                }))
+            };
+            
+            const json = JSON.stringify(output);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'coefficients_dct.json';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            initCosTable();
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+        };
+    </script>
+</body>
+</html>

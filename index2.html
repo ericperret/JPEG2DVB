@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : index2.html
+  Objet      : page d'accueil de JPEG2DVB, liens vers les pages de la chaîne
+  Auteur     : Eric PERRET
+  Date       : 2026-10-17
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JPEG2DVB — de l'image à la modulation DVB-S</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 40px;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        h1 { color: #58a6ff; border-bottom: 1px solid #30363d; padding-bottom: 10px; }
+        ul { list-style: none; padding: 0; }
+        li { padding: 12px 0; border-bottom: 1px solid #21262d; }
+        a {
+            color: #58a6ff;
+            text-decoration: none;
+            font-size: 18px;
+        }
+        a:hover { text-decoration: underline; }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #30363d;
+            font-size: 12px;
+            color: #8b949e;
+        }
+        .footer a { font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>JPEG2DVB — de l'image à la modulation DVB-S</h1>
+    <ul>
+        <li><a href="page00-camera.html">Page 00 - Caméra Webcam</a></li>
+        <li><a href="page01-image-to-macroblocs.html">Page 01 - Image → YCbCr → Macroblocs</a></li>
+        <li><a href="page02-dct.html">Page 02 - DCT 8×8</a></li>
+        <li><a href="page03-quantification.html">Page 03 - Quantification</a></li>
+        <li><a href="page04-zigzag.html">Page 04 - Scan Zigzag</a></li>
+        <li><a href="page05-rle-huffman.html">Page 05 - RLE + Huffman (VLC)</a></li>
+        <li><a href="page06-elementary-stream.html">Page 06 - Assemblage Elementary Stream</a></li>
+        <li><a href="page07-pes.html">Page 07 - Empaquetage PES</a></li>
+        <li><a href="page08-ts.html">Page 08 - Empaquetage Transport Stream</a></li>
+        <li><a href="page09-prbs.html">Page 09 - Randomisation PRBS</a></li>
+        <li><a href="page10-reed-solomon.html">Page 10 - Reed-Solomon (204,188)</a></li>
+        <li><a href="page11-interleaving.html">Page 11 - Entrelacement Convolutif</a></li>
+        <li><a href="page12-convolutional_1.html">Page 12 - Codeur Convolutif</a></li>
+        <li><a href="page13-qpsk.html">Page 13 - Mapping QPSK</a></li>
+        <li><a href="page14-srrc-v2.html">Page 14 - Filtre SRRC (State of the Art+)</a></li>
+    </ul>
+    <div class="footer">
+        <a href="https://github.com/ericperret/JPEG2DVB">View on GitHub</a>
+    </div>
+</body>
+</html>

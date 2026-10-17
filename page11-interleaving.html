@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page11-interleaving.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 11 - Entrelacement Convolutif
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 11 - Entrelacement Convolutif</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; text-align: center; }
+        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #00d4ff; color: #000; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #00d4ff; }
+        canvas { border: 2px solid #0f3460; cursor: pointer; }
+        .controls { margin-top: 10px; }
+        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #00d4ff; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        .info { margin-top: 10px; font-size: 12px; color: #888; }
+        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .legend { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; }
+        .legend-color { width: 16px; height: 12px; border-radius: 2px; }
+        .interleave-diagram { font-family: monospace; font-size: 10px; background: #0a0a15; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
+        table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
+        table.info-table th { background: #0f3460; }
+    </style>
+</head>
+<body>
+    <h1>🔀 Page 11 - Entrelacement Convolutif</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Entrelacement Forney (convolutif) selon DVB-S EN 300 421.<br>
+        Disperse les erreurs en rafale pour que le décodeur RS puisse les corriger.<br>
+        <strong>Paramètres :</strong> I=12 branches, M=17 octets de délai par branche<br>
+        <strong>Entrée :</strong> Blocs RS 204 octets — <strong>Sortie :</strong> Flux entrelacé
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Reed-Solomon</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Viterbi</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">QPSK</span>
+    </div>
+    
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Blocs RS</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Blocs RS 204 octets (sortie Page 10)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Forney I=12</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnInterleave" onclick="interleave()" disabled>⚙️ Entrelacer</button>
+            </div>
+            <div class="info">12 branches, délai M×i octets</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>3. SORTIE - Flux Entrelacé</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .bin</button>
+            </div>
+            <div class="info">Octets dispersés temporellement</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#ff4444"></div> Branche 0</div>
+                <div class="legend-item"><div class="legend-color" style="background:#00ff88"></div> Branche 6</div>
+                <div class="legend-item"><div class="legend-color" style="background:#4444ff"></div> Branche 11</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Structure Entrelaceur Forney</h4>
+        <div class="interleave-diagram">
+Entrée (séquentielle)     Registres FIFO (délai)                    Sortie (entrelacée)
+        │                                                                  │
+Octet 0 ──────────────────► Branche 0: délai 0×M=0    ─────────────────► Sortie
+Octet 1 ──────────────────► Branche 1: délai 1×M=17   ─────────────────► Sortie  
+Octet 2 ──────────────────► Branche 2: délai 2×M=34   ─────────────────► Sortie
+  ...                         ...                                         ...
+Octet 11 ─────────────────► Branche 11: délai 11×M=187 ────────────────► Sortie
+Octet 12 ─────────────────► Branche 0: délai 0        ─────────────────► Sortie
+  ...                         (cycle sur 12 branches)
+
+Paramètres DVB-S:
+  I = 12 (nombre de branches)
+  M = 17 (profondeur de base en octets)
+  Délai branche i = i × M octets
+  Délai total = 11 × 17 = 187 octets max
+
+Effet: Une rafale d'erreurs de N octets consécutifs est dispersée
+       sur N/12 octets par bloc RS après désentrelacement
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Paramètres DVB-S</h4>
+        <table class="info-table">
+            <tr><th>Paramètre</th><th>Valeur</th><th>Description</th></tr>
+            <tr><td>I (branches)</td><td>12</td><td>Nombre de registres FIFO</td></tr>
+            <tr><td>M (profondeur)</td><td>17</td><td>Délai de base en octets</td></tr>
+            <tr><td>Délai max</td><td>187 octets</td><td>Branche 11: 11×17</td></tr>
+            <tr><td>Protection rafale</td><td>~12× RS_t = 96 octets</td><td>Rafales jusqu'à 96 octets corrigées</td></tr>
+        </table>
+    </div>
+
+    <script>
+        const WIDTH = 352, HEIGHT = 288;
+        const RS_BLOCK_SIZE = 204;
+        const I = 12;  // Branches
+        const M = 17;  // Profondeur
+        
+        let inputData = null, rsBlocks = [], interleavedData = [], interleaved = false;
+        
+        // FIFO pour chaque branche
+        let fifos = [];
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            displayProcessInit();
+            clearCanvas('canvasOutput');
+        };
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    if (!inputData.format || inputData.format !== 'DVB_RS_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 10.');
+                        return;
+                    }
+                    const binaryString = atob(inputData.binary);
+                    const rsBinary = [];
+                    for (let i = 0; i < binaryString.length; i++) rsBinary.push(binaryString.charCodeAt(i));
+                    
+                    rsBlocks = [];
+                    for (let i = 0; i < rsBinary.length; i += RS_BLOCK_SIZE) {
+                        rsBlocks.push({ index: rsBlocks.length, bytes: rsBinary.slice(i, i + RS_BLOCK_SIZE) });
+                    }
+                    
+                    interleavedData = [];
+                    interleaved = false;
+                    
+                    displayInputRS();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnInterleave').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    document.getElementById('statsInput').style.display = 'block';
+                    document.getElementById('statsInput').innerHTML = `
+                        <strong>RS chargé:</strong><br>
+                        • Blocs: ${rsBlocks.length}<br>
+                        • Taille: ${rsBinary.length.toLocaleString()} octets
+                    `;
+                } catch (err) { alert('Erreur: ' + err.message); }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        function displayInputRS() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${rsBlocks.length} blocs RS (204 oct)`, WIDTH/2, 20);
+            
+            const blocksPerRow = 8, blockW = 40, blockH = 20, startY = 35;
+            for (let i = 0; i < rsBlocks.length && startY + Math.floor(i/blocksPerRow)*(blockH+5) < HEIGHT-20; i++) {
+                const x = 10 + (i%blocksPerRow)*(blockW+3);
+                const y = startY + Math.floor(i/blocksPerRow)*(blockH+5);
+                ctx.fillStyle = `hsl(${(i*30)%360}, 70%, 50%)`;
+                ctx.fillRect(x, y, blockW, blockH);
+                ctx.fillStyle = '#fff';
+                ctx.font = '9px Arial';
+                ctx.fillText(i.toString(), x+blockW/2, y+blockH/2+3);
+            }
+        }
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Entrelaceur Forney I=12, M=17', WIDTH/2, 20);
+            
+            // Dessiner les 12 branches
+            const branchH = 18, startY = 40;
+            for (let i = 0; i < I; i++) {
+                const y = startY + i * branchH;
+                const delay = i * M;
+                const barW = Math.max(5, delay * 1.5);
+                
+                ctx.fillStyle = `hsl(${i*30}, 70%, 40%)`;
+                ctx.fillRect(80, y, barW, branchH-3);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '9px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText(`B${i}`, 10, y+12);
+                ctx.fillText(`${delay}`, 40, y+12);
+                
+                // Flèche
+                ctx.fillStyle = '#666';
+                ctx.fillRect(80+barW, y+7, 20, 2);
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Délai en octets par branche', 10, HEIGHT-10);
+        }
+        
+        function interleave() {
+            if (!rsBlocks.length) return;
+            
+            // Initialiser les FIFOs
+            fifos = [];
+            for (let i = 0; i < I; i++) {
+                fifos.push(new Array(i * M).fill(0)); // Pré-remplir avec des zéros
+            }
+            
+            interleavedData = [];
+            let branchIndex = 0;
+            
+            // Traiter tous les octets
+            for (const block of rsBlocks) {
+                for (const byte of block.bytes) {
+                    // Pousser l'octet dans la FIFO de la branche courante
+                    fifos[branchIndex].push(byte);
+                    // Extraire l'octet le plus ancien
+                    const outByte = fifos[branchIndex].shift();
+                    interleavedData.push({ byte: outByte, branch: branchIndex });
+                    
+                    // Passer à la branche suivante
+                    branchIndex = (branchIndex + 1) % I;
+                }
+            }
+            
+            // Vider les FIFOs (flush avec des zéros)
+            for (let flush = 0; flush < I * M * (I-1); flush++) {
+                fifos[branchIndex].push(0);
+                const outByte = fifos[branchIndex].shift();
+                interleavedData.push({ byte: outByte, branch: branchIndex });
+                branchIndex = (branchIndex + 1) % I;
+            }
+            
+            interleaved = true;
+            displayOutputInterleaved();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            const totalInput = rsBlocks.length * RS_BLOCK_SIZE;
+            document.getElementById('globalStats').style.display = 'block';
+            document.getElementById('globalStats').innerHTML = `
+                <strong>Entrelacement terminé:</strong><br>
+                • Entrée: ${totalInput.toLocaleString()} octets<br>
+                • Sortie: ${interleavedData.length.toLocaleString()} octets (avec flush)<br>
+                • Délai max: ${(I-1)*M} = ${(I-1)*M} octets<br>
+                • Protection rafale: ~${I * 8} octets consécutifs
+            `;
+        }
+        
+        function displayOutputInterleaved() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${interleavedData.length} octets entrelacés`, WIDTH/2, 20);
+            
+            // Visualiser comme une bande colorée par branche
+            const bytesPerRow = WIDTH - 20;
+            const rowH = 3;
+            const startY = 35;
+            
+            for (let i = 0; i < interleavedData.length && startY + Math.floor(i/bytesPerRow)*rowH < HEIGHT-20; i++) {
+                const x = 10 + (i % bytesPerRow);
+                const y = startY + Math.floor(i / bytesPerRow) * rowH;
+                
+                const hue = interleavedData[i].branch * 30;
+                ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+                ctx.fillRect(x, y, 1, rowH-1);
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Couleur = branche source (0-11)', 10, HEIGHT-10);
+        }
+        
+        function exportJSON() {
+            if (!interleaved) return;
+            const bytes = interleavedData.map(d => d.byte);
+            const output = {
+                format: 'DVB_INTERLEAVED_V1',
+                description: 'DVB-S Convolutionally Interleaved',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                interleaving: { I: I, M: M, inputBytes: rsBlocks.length * RS_BLOCK_SIZE, outputBytes: bytes.length },
+                rs: inputData.rs,
+                binary: btoa(String.fromCharCode.apply(null, bytes))
+            };
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'interleaved.json'; a.click();
+        }
+        
+        function exportBinary() {
+            if (!interleaved) return;
+            const bytes = interleavedData.map(d => d.byte);
+            const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'interleaved.bin'; a.click();
+        }
+        
+        function clearCanvas(id) {
+            const ctx = document.getElementById(id).getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+    </script>
+</body>
+</html>

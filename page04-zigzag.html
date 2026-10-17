@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page04-zigzag.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 04 - Scan Zigzag
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 04 - Scan Zigzag</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: crosshair;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .zigzag-table {
+            display: grid;
+            grid-template-columns: repeat(8, 35px);
+            gap: 2px;
+            margin: 10px auto;
+            width: fit-content;
+        }
+        .zigzag-cell {
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-family: monospace;
+            border-radius: 3px;
+            position: relative;
+        }
+        .zigzag-cell .index {
+            position: absolute;
+            top: 1px;
+            left: 2px;
+            font-size: 7px;
+            color: #00d4ff;
+        }
+        .vector-display {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            max-width: 340px;
+            margin: 10px auto;
+        }
+        .vector-cell {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            font-family: monospace;
+            border-radius: 2px;
+        }
+        .animation-speed {
+            margin: 10px 0;
+        }
+        .animation-speed input {
+            width: 150px;
+        }
+        .eob-marker {
+            background: #ff4444 !important;
+            color: #fff !important;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔀 Page 04 - Scan Zigzag</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Réorganise les 64 coefficients du bloc 8×8 en parcours diagonal (zigzag).<br>
+        Ce parcours regroupe les zéros (hautes fréquences) à la fin du vecteur, optimisant le RLE.<br>
+        <strong>Entrée :</strong> Fichier JSON des coefficients quantifiés (sortie Page 03)<br>
+        <strong>Sortie :</strong> Fichier JSON des vecteurs 64 valeurs en ordre zigzag
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">Bloc 8×8</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Parcours Zigzag</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Vecteur [64]</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">DC + AC₁...AC₆₃</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : Blocs quantifiés en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Blocs Quantifiés</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Coefficients quantifiés (matrice 8×8)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Animation du parcours zigzag -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Parcours Zigzag</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnZigzag" onclick="applyZigzag()" disabled>⚙️ Appliquer Zigzag</button>
+                <button id="btnAnimate" onclick="animateZigzag()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="animation-speed">
+                <label>Vitesse : <input type="range" id="speedSlider" min="1" max="100" value="50"></label>
+            </div>
+            <div class="info">Visualisation du parcours diagonal</div>
+        </div>
+        
+        <!-- CANVAS 3 : Vecteurs résultants -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Vecteurs Linéaires</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExport" onclick="exportJSON()" disabled>💾 Exporter JSON</button>
+            </div>
+            <div class="info">Cliquez sur un bloc pour voir son vecteur</div>
+            <div id="statsOutput" class="stats" style="display:none;"></div>
+        </div>
+    </div>
+    
+    <!-- Visualisation détaillée -->
+    <div style="text-align: center; margin-top: 20px;">
+        <h3 style="color: #00d4ff;">Table d'ordre Zigzag (position → index)</h3>
+        <div id="zigzagOrder" class="zigzag-table"></div>
+        
+        <div id="blockDetail" style="display: none; margin-top: 20px;">
+            <h3 style="color: #00d4ff;">Détail du bloc sélectionné</h3>
+            <div style="display: flex; justify-content: center; gap: 40px; flex-wrap: wrap;">
+                <div>
+                    <h4>Matrice 8×8 (avant)</h4>
+                    <div id="matrixBefore" class="zigzag-table"></div>
+                </div>
+                <div style="display: flex; align-items: center; font-size: 30px; color: #00d4ff;">→</div>
+                <div>
+                    <h4>Vecteur [64] (après)</h4>
+                    <div id="vectorAfter" class="vector-display"></div>
+                </div>
+            </div>
+            <div id="runStats" class="stats" style="max-width: 500px; margin: 20px auto;"></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        const BLOCK_SIZE = 8;
+        const MB_SIZE = 16;
+        const MB_COLS = WIDTH / MB_SIZE;
+        const MB_ROWS = HEIGHT / MB_SIZE;
+        
+        // Table de parcours Zigzag (index linéaire → position dans le vecteur)
+        // Ceci donne l'ordre de lecture : position 0 = (0,0), position 1 = (0,1), position 2 = (1,0), etc.
+        const ZIGZAG_ORDER = [
+             0,  1,  8, 16,  9,  2,  3, 10,
+            17, 24, 32, 25, 18, 11,  4,  5,
+            12, 19, 26, 33, 40, 48, 41, 34,
+            27, 20, 13,  6,  7, 14, 21, 28,
+            35, 42, 49, 56, 57, 50, 43, 36,
+            29, 22, 15, 23, 30, 37, 44, 51,
+            58, 59, 52, 45, 38, 31, 39, 46,
+            53, 60, 61, 54, 47, 55, 62, 63
+        ];
+        
+        // Table inverse : pour chaque position (y*8+x), quelle position dans le vecteur zigzag ?
+        const ZIGZAG_INDEX = new Array(64);
+        for (let i = 0; i < 64; i++) {
+            ZIGZAG_INDEX[ZIGZAG_ORDER[i]] = i;
+        }
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let quantizedMacroblocs = [];
+        let zigzagMacroblocs = [];
+        let zigzagApplied = false;
+        let animationId = null;
+        let animationStep = 0;
+        let selectedBlock = null;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            displayZigzagOrder();
+        };
+        
+        // ============================================================
+        // AFFICHAGE TABLE ZIGZAG
+        // ============================================================
+        
+        function displayZigzagOrder() {
+            const container = document.getElementById('zigzagOrder');
+            let html = '';
+            
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const pos = y * 8 + x;
+                    const zigzagPos = ZIGZAG_INDEX[pos];
+                    
+                    // Couleur basée sur la position zigzag
+                    const hue = (zigzagPos / 63) * 240; // Bleu → Rouge
+                    const bg = `hsl(${240 - hue}, 70%, 30%)`;
+                    
+                    html += `<div class="zigzag-cell" style="background: ${bg}">
+                        <span class="index">${zigzagPos}</span>
+                        ${pos}
+                    </div>`;
+                }
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_QUANTIZED_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 03.');
+                        return;
+                    }
+                    
+                    quantizedMacroblocs = inputData.data;
+                    zigzagMacroblocs = [];
+                    zigzagApplied = false;
+                    selectedBlock = null;
+                    
+                    displayQuantizedInput();
+                    displayZigzagPattern();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnZigzag').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExport').disabled = true;
+                    document.getElementById('blockDetail').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>Fichier chargé :</strong><br>
+                        • Macroblocs : ${quantizedMacroblocs.length}<br>
+                        • Blocs 8×8 : ${quantizedMacroblocs.length * 6}<br>
+                        • Vecteurs à générer : ${quantizedMacroblocs.length * 6}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE ENTRÉE
+        // ============================================================
+        
+        function displayQuantizedInput() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            let maxVal = 1;
+            for (const mb of quantizedMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+            }
+            
+            for (const mb of quantizedMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const block = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    for (let y = 0; y < 8; y++) {
+                        for (let x = 0; x < 8; x++) {
+                            const val = block[y * 8 + x];
+                            const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                            
+                            if (val === 0) {
+                                imageData.data[idx] = 0;
+                                imageData.data[idx + 1] = 0;
+                                imageData.data[idx + 2] = 40;
+                            } else {
+                                const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                                imageData.data[idx] = 0;
+                                imageData.data[idx + 1] = intensity;
+                                imageData.data[idx + 2] = 0;
+                            }
+                            imageData.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PATTERN ZIGZAG
+        // ============================================================
+        
+        function displayZigzagPattern() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Dessiner un grand bloc 8×8 avec le parcours zigzag
+            const cellSize = 30;
+            const startX = (WIDTH - 8 * cellSize) / 2;
+            const startY = 30;
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Ordre de parcours Zigzag', WIDTH / 2, 20);
+            
+            // Dessiner les cellules
+            for (let i = 0; i < 64; i++) {
+                const pos = ZIGZAG_ORDER[i];
+                const x = pos % 8;
+                const y = Math.floor(pos / 8);
+                
+                const hue = (i / 63) * 240;
+                ctx.fillStyle = `hsl(${240 - hue}, 70%, 30%)`;
+                ctx.fillRect(startX + x * cellSize, startY + y * cellSize, cellSize - 1, cellSize - 1);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(i.toString(), startX + x * cellSize + cellSize/2, startY + y * cellSize + cellSize/2);
+            }
+            
+            // Dessiner le chemin
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            for (let i = 0; i < 64; i++) {
+                const pos = ZIGZAG_ORDER[i];
+                const x = pos % 8;
+                const y = Math.floor(pos / 8);
+                const cx = startX + x * cellSize + cellSize / 2;
+                const cy = startY + y * cellSize + cellSize / 2;
+                
+                if (i === 0) {
+                    ctx.moveTo(cx, cy);
+                } else {
+                    ctx.lineTo(cx, cy);
+                }
+            }
+            ctx.stroke();
+            
+            // Légende
+            ctx.fillStyle = '#888';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('DC (0) : Composante continue (moyenne du bloc)', 20, startY + 8 * cellSize + 30);
+            ctx.fillText('AC (1-63) : Fréquences croissantes en diagonale', 20, startY + 8 * cellSize + 50);
+            ctx.fillText('Les zéros (hautes fréquences) se retrouvent en fin de vecteur', 20, startY + 8 * cellSize + 70);
+        }
+        
+        // ============================================================
+        // APPLICATION ZIGZAG
+        // ============================================================
+        
+        function applyZigzag() {
+            if (!quantizedMacroblocs.length) return;
+            
+            zigzagMacroblocs = [];
+            
+            for (const mb of quantizedMacroblocs) {
+                const zMB = {
+                    index: mb.index,
+                    position: mb.position,
+                    Y: [],
+                    Cb: null,
+                    Cr: null
+                };
+                
+                // Zigzag sur les 4 blocs Y
+                for (let b = 0; b < 4; b++) {
+                    zMB.Y.push(zigzagScan(mb.Y[b]));
+                }
+                
+                // Zigzag sur Cb et Cr
+                zMB.Cb = zigzagScan(mb.Cb);
+                zMB.Cr = zigzagScan(mb.Cr);
+                
+                zigzagMacroblocs.push(zMB);
+            }
+            
+            zigzagApplied = true;
+            displayZigzagOutput();
+            computeStatistics();
+            
+            document.getElementById('btnExport').disabled = false;
+        }
+        
+        function zigzagScan(block) {
+            const vector = new Array(64);
+            for (let i = 0; i < 64; i++) {
+                vector[i] = block[ZIGZAG_ORDER[i]];
+            }
+            return vector;
+        }
+        
+        // ============================================================
+        // ANIMATION ZIGZAG
+        // ============================================================
+        
+        let animationBlock = null; // Bloc utilisé pour l'animation
+        let animationVector = [];  // Vecteur en cours de remplissage
+        
+        function animateZigzag() {
+            if (animationId) return;
+            
+            // Prendre le premier bloc Y du premier macrobloc pour l'animation
+            if (quantizedMacroblocs.length > 0) {
+                animationBlock = quantizedMacroblocs[0].Y[0];
+            } else {
+                // Bloc de démo si pas de données
+                animationBlock = [];
+                for (let i = 0; i < 64; i++) {
+                    animationBlock[i] = Math.floor(Math.random() * 20) - 10;
+                    if (i > 30) animationBlock[i] = 0; // Simuler des zéros en hautes fréquences
+                }
+            }
+            
+            animationVector = [];
+            animationStep = 0;
+            document.getElementById('btnStop').disabled = false;
+            document.getElementById('btnAnimate').disabled = true;
+            
+            runAnimation();
+        }
+        
+        function runAnimation() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // === PARTIE GAUCHE : Matrice 8×8 source ===
+            const cellSize = 28;
+            const matrixStartX = 20;
+            const matrixStartY = 40;
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Matrice 8×8 (lecture)', matrixStartX + 4 * cellSize, 25);
+            
+            // Dessiner la matrice avec les valeurs
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const pos = y * 8 + x;
+                    const val = animationBlock[pos];
+                    const zigzagPos = ZIGZAG_INDEX[pos];
+                    
+                    // Couleur de fond selon si déjà lu
+                    let bg;
+                    if (zigzagPos < animationStep) {
+                        bg = '#004400'; // Déjà lu = vert foncé
+                    } else if (zigzagPos === animationStep) {
+                        bg = '#ff4400'; // En cours = orange
+                    } else {
+                        bg = val === 0 ? '#001122' : '#0f3460'; // Pas encore lu
+                    }
+                    
+                    ctx.fillStyle = bg;
+                    ctx.fillRect(matrixStartX + x * cellSize, matrixStartY + y * cellSize, cellSize - 1, cellSize - 1);
+                    
+                    // Valeur
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(val.toString(), matrixStartX + x * cellSize + cellSize/2, matrixStartY + y * cellSize + cellSize/2);
+                    
+                    // Petit index zigzag
+                    ctx.fillStyle = '#00d4ff';
+                    ctx.font = '7px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(zigzagPos.toString(), matrixStartX + x * cellSize + 2, matrixStartY + y * cellSize + 2);
+                }
+            }
+            
+            // Dessiner le chemin parcouru
+            ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i <= animationStep; i++) {
+                const pos = ZIGZAG_ORDER[i];
+                const x = pos % 8;
+                const y = Math.floor(pos / 8);
+                const cx = matrixStartX + x * cellSize + cellSize / 2;
+                const cy = matrixStartY + y * cellSize + cellSize / 2;
+                if (i === 0) ctx.moveTo(cx, cy);
+                else ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+            
+            // === FLÈCHE ===
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('→', matrixStartX + 8 * cellSize + 15, matrixStartY + 4 * cellSize);
+            
+            // === PARTIE DROITE : Vecteur en construction ===
+            const vectorStartX = matrixStartX + 8 * cellSize + 35;
+            const vectorStartY = matrixStartY;
+            const vCellW = 16;
+            const vCellH = 20;
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'left';
+            ctx.fillText('Vecteur [64] (écriture)', vectorStartX, 25);
+            
+            // Lire la valeur courante et l'ajouter au vecteur
+            if (animationStep < 64) {
+                const currentPos = ZIGZAG_ORDER[animationStep];
+                animationVector[animationStep] = animationBlock[currentPos];
+            }
+            
+            // Afficher le vecteur (8 colonnes × 8 lignes)
+            for (let i = 0; i < 64; i++) {
+                const vx = i % 8;
+                const vy = Math.floor(i / 8);
+                
+                let bg;
+                if (i < animationStep) {
+                    const val = animationVector[i];
+                    bg = val === 0 ? '#002244' : '#004400';
+                } else if (i === animationStep) {
+                    bg = '#ff4400';
+                } else {
+                    bg = '#1a1a2e';
+                }
+                
+                ctx.fillStyle = bg;
+                ctx.fillRect(vectorStartX + vx * vCellW, vectorStartY + vy * vCellH, vCellW - 1, vCellH - 1);
+                
+                // Bordure pour les cases vides
+                if (i > animationStep) {
+                    ctx.strokeStyle = '#333';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(vectorStartX + vx * vCellW, vectorStartY + vy * vCellH, vCellW - 1, vCellH - 1);
+                }
+                
+                // Valeur si remplie
+                if (i <= animationStep && animationVector[i] !== undefined) {
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '9px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(animationVector[i].toString(), vectorStartX + vx * vCellW + vCellW/2, vectorStartY + vy * vCellH + vCellH/2);
+                }
+                
+                // Index
+                ctx.fillStyle = '#666';
+                ctx.font = '6px monospace';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
+                ctx.fillText(i.toString(), vectorStartX + vx * vCellW + 1, vectorStartY + vy * vCellH + 1);
+            }
+            
+            // === BARRE DE PROGRESSION ===
+            const barY = vectorStartY + 8 * vCellH + 20;
+            ctx.fillStyle = '#0f3460';
+            ctx.fillRect(vectorStartX, barY, 8 * vCellW, 15);
+            ctx.fillStyle = '#00d4ff';
+            ctx.fillRect(vectorStartX, barY, (animationStep + 1) / 64 * 8 * vCellW, 15);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${animationStep + 1} / 64`, vectorStartX + 4 * vCellW, barY + 8);
+            
+            // === LÉGENDE ===
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#888';
+            ctx.fillText('■ Déjà lu    ■ En cours    ■ Zéro', 20, HEIGHT - 40);
+            ctx.fillStyle = '#004400';
+            ctx.fillRect(20, HEIGHT - 50, 10, 10);
+            ctx.fillStyle = '#ff4400';
+            ctx.fillRect(95, HEIGHT - 50, 10, 10);
+            ctx.fillStyle = '#002244';
+            ctx.fillRect(175, HEIGHT - 50, 10, 10);
+            
+            // Info sur la valeur courante
+            if (animationStep < 64) {
+                const currentPos = ZIGZAG_ORDER[animationStep];
+                const currentVal = animationBlock[currentPos];
+                ctx.fillStyle = '#ff0';
+                ctx.font = 'bold 12px monospace';
+                ctx.fillText(`Lecture [${Math.floor(currentPos/8)},${currentPos%8}] = ${currentVal}  →  Écriture [${animationStep}]`, 20, HEIGHT - 15);
+            }
+            
+            animationStep++;
+            
+            if (animationStep < 64) {
+                const speed = 101 - document.getElementById('speedSlider').value;
+                animationId = setTimeout(runAnimation, speed * 5);
+            } else {
+                stopAnimation();
+                // Appliquer automatiquement le zigzag
+                applyZigzag();
+            }
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnStop').disabled = true;
+            document.getElementById('btnAnimate').disabled = false;
+        }
+        
+        // ============================================================
+        // AFFICHAGE SORTIE
+        // ============================================================
+        
+        function displayZigzagOutput() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(WIDTH, HEIGHT);
+            
+            // Visualiser les vecteurs comme des lignes horizontales
+            // Chaque bloc devient une ligne de 64 pixels
+            
+            let maxVal = 1;
+            for (const mb of zigzagMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    for (let i = 0; i < 64; i++) {
+                        const v = Math.abs(mb.Y[b][i]);
+                        if (v > maxVal) maxVal = v;
+                    }
+                }
+            }
+            
+            // Afficher de la même manière que l'entrée pour comparaison
+            for (const mb of zigzagMacroblocs) {
+                const blockPositions = [[0, 0], [8, 0], [0, 8], [8, 8]];
+                
+                for (let b = 0; b < 4; b++) {
+                    const vector = mb.Y[b];
+                    const bx = mb.position.x + blockPositions[b][0];
+                    const by = mb.position.y + blockPositions[b][1];
+                    
+                    // Reconstituer en matrice pour visualisation
+                    for (let i = 0; i < 64; i++) {
+                        const origPos = ZIGZAG_ORDER[i];
+                        const x = origPos % 8;
+                        const y = Math.floor(origPos / 8);
+                        const val = vector[i];
+                        
+                        const idx = ((by + y) * WIDTH + (bx + x)) * 4;
+                        
+                        if (val === 0) {
+                            imageData.data[idx] = 0;
+                            imageData.data[idx + 1] = 0;
+                            imageData.data[idx + 2] = 40;
+                        } else {
+                            const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                            // Couleur basée sur la position zigzag
+                            const hue = (i / 63) * 240;
+                            const rgb = hslToRgb((240 - hue) / 360, 0.7, Math.max(0.3, intensity / 255 * 0.7));
+                            imageData.data[idx] = rgb[0];
+                            imageData.data[idx + 1] = rgb[1];
+                            imageData.data[idx + 2] = rgb[2];
+                        }
+                        imageData.data[idx + 3] = 255;
+                    }
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            drawGrid(ctx);
+        }
+        
+        // ============================================================
+        // STATISTIQUES
+        // ============================================================
+        
+        function computeStatistics() {
+            let totalRuns = 0;
+            let totalEOBs = 0;
+            let avgRunLength = 0;
+            let runLengths = [];
+            
+            for (const mb of zigzagMacroblocs) {
+                for (let b = 0; b < 4; b++) {
+                    const vector = mb.Y[b];
+                    const runs = countRuns(vector);
+                    totalRuns += runs.count;
+                    runLengths.push(...runs.lengths);
+                    if (runs.eobPosition < 63) totalEOBs++;
+                }
+            }
+            
+            if (runLengths.length > 0) {
+                avgRunLength = (runLengths.reduce((a, b) => a + b, 0) / runLengths.length).toFixed(2);
+            }
+            
+            const stats = document.getElementById('statsOutput');
+            stats.style.display = 'block';
+            stats.innerHTML = `
+                <strong>Statistiques Zigzag :</strong><br>
+                • Blocs traités : ${zigzagMacroblocs.length * 6}<br>
+                • Total runs de zéros : ${totalRuns}<br>
+                • Longueur moyenne des runs : ${avgRunLength}<br>
+                • Blocs avec EOB avant 63 : ${totalEOBs} (${(totalEOBs / (zigzagMacroblocs.length * 4) * 100).toFixed(1)}%)
+            `;
+        }
+        
+        function countRuns(vector) {
+            let count = 0;
+            let lengths = [];
+            let currentRun = 0;
+            let eobPosition = 63;
+            
+            // Trouver la position du dernier non-zéro (EOB)
+            for (let i = 63; i >= 0; i--) {
+                if (vector[i] !== 0) {
+                    eobPosition = i;
+                    break;
+                }
+            }
+            
+            // Compter les runs de zéros avant EOB
+            for (let i = 1; i <= eobPosition; i++) {
+                if (vector[i] === 0) {
+                    currentRun++;
+                } else {
+                    if (currentRun > 0) {
+                        count++;
+                        lengths.push(currentRun);
+                        currentRun = 0;
+                    }
+                }
+            }
+            
+            return { count, lengths, eobPosition };
+        }
+        
+        // ============================================================
+        // SÉLECTION ET DÉTAIL BLOC
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!zigzagApplied) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = Math.floor(e.clientX - rect.left);
+            const y = Math.floor(e.clientY - rect.top);
+            
+            const blockX = Math.floor(x / 8);
+            const blockY = Math.floor(y / 8);
+            const mbX = Math.floor(blockX / 2);
+            const mbY = Math.floor(blockY / 2);
+            const mbIndex = mbY * MB_COLS + mbX;
+            const localBlockX = blockX % 2;
+            const localBlockY = blockY % 2;
+            const blockIndex = localBlockY * 2 + localBlockX;
+            
+            if (mbIndex < zigzagMacroblocs.length) {
+                displayBlockDetail(mbIndex, blockIndex);
+                
+                // Highlight
+                displayZigzagOutput();
+                const ctx = this.getContext('2d');
+                ctx.strokeStyle = '#ff0';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(blockX * 8, blockY * 8, 8, 8);
+            }
+        });
+        
+        function displayBlockDetail(mbIndex, blockIndex) {
+            const originalBlock = quantizedMacroblocs[mbIndex].Y[blockIndex];
+            const zigzagVector = zigzagMacroblocs[mbIndex].Y[blockIndex];
+            
+            document.getElementById('blockDetail').style.display = 'block';
+            
+            // Afficher la matrice avant
+            const matrixContainer = document.getElementById('matrixBefore');
+            let matrixHtml = '';
+            for (let y = 0; y < 8; y++) {
+                for (let x = 0; x < 8; x++) {
+                    const val = originalBlock[y * 8 + x];
+                    const zigzagPos = ZIGZAG_INDEX[y * 8 + x];
+                    const hue = (zigzagPos / 63) * 240;
+                    const bg = val === 0 ? '#002' : `hsl(${240 - hue}, 70%, 30%)`;
+                    matrixHtml += `<div class="zigzag-cell" style="background: ${bg}">
+                        <span class="index">${zigzagPos}</span>
+                        ${val}
+                    </div>`;
+                }
+            }
+            matrixContainer.innerHTML = matrixHtml;
+            
+            // Afficher le vecteur après
+            const vectorContainer = document.getElementById('vectorAfter');
+            let vectorHtml = '';
+            let lastNonZero = 63;
+            for (let i = 63; i >= 0; i--) {
+                if (zigzagVector[i] !== 0) {
+                    lastNonZero = i;
+                    break;
+                }
+            }
+            
+            for (let i = 0; i < 64; i++) {
+                const val = zigzagVector[i];
+                let bg;
+                if (i > lastNonZero) {
+                    bg = '#400'; // Après EOB
+                } else if (val === 0) {
+                    bg = '#002';
+                } else {
+                    const hue = (i / 63) * 240;
+                    bg = `hsl(${240 - hue}, 70%, 30%)`;
+                }
+                const cls = i === lastNonZero + 1 && i < 64 ? 'vector-cell eob-marker' : 'vector-cell';
+                vectorHtml += `<div class="${i > lastNonZero ? 'vector-cell eob-marker' : 'vector-cell'}" style="background: ${bg}">${val}</div>`;
+            }
+            vectorContainer.innerHTML = vectorHtml;
+            
+            // Statistiques du run
+            const runs = countRuns(zigzagVector);
+            const runStats = document.getElementById('runStats');
+            runStats.innerHTML = `
+                <strong>Analyse du bloc MB#${mbIndex} Y${blockIndex} :</strong><br>
+                • DC : ${zigzagVector[0]}<br>
+                • Dernier AC non-nul : position ${lastNonZero} (${63 - lastNonZero} zéros finaux)<br>
+                • Runs de zéros internes : ${runs.count}<br>
+                • Prêt pour RLE : DC + ${runs.count + 1} paires (run, level) + EOB
+            `;
+        }
+        
+        // ============================================================
+        // EXPORT JSON
+        // ============================================================
+        
+        function exportJSON() {
+            if (!zigzagApplied) return;
+            
+            const output = {
+                format: 'MPEG2_ZIGZAG_V1',
+                description: 'Vecteurs zigzag 64 valeurs pour encodage MPEG-2',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                quantization: inputData.quantization,
+                macroblocs: {
+                    count: zigzagMacroblocs.length,
+                    cols: MB_COLS,
+                    rows: MB_ROWS
+                },
+                data: zigzagMacroblocs.map(mb => ({
+                    index: mb.index,
+                    position: mb.position,
+                    Y: mb.Y,     // 4 vecteurs de 64 valeurs
+                    Cb: mb.Cb,  // 1 vecteur de 64 valeurs
+                    Cr: mb.Cr   // 1 vecteur de 64 valeurs
+                }))
+            };
+            
+            const json = JSON.stringify(output);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'vectors_zigzag.json';
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        
+        function drawGrid(ctx) {
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.2)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x <= WIDTH; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= HEIGHT; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(WIDTH, y);
+                ctx.stroke();
+            }
+        }
+        
+        function hslToRgb(h, s, l) {
+            let r, g, b;
+            if (s === 0) {
+                r = g = b = l;
+            } else {
+                const hue2rgb = (p, q, t) => {
+                    if (t < 0) t += 1;
+                    if (t > 1) t -= 1;
+                    if (t < 1/6) return p + (q - p) * 6 * t;
+                    if (t < 1/2) return q;
+                    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                    return p;
+                };
+                const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+                const p = 2 * l - q;
+                r = hue2rgb(p, q, h + 1/3);
+                g = hue2rgb(p, q, h);
+                b = hue2rgb(p, q, h - 1/3);
+            }
+            return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+        }
+    </script>
+</body>
+</html>

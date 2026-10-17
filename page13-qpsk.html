@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page13-qpsk.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 13 - Mapping QPSK
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 13 - Mapping QPSK</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
+        h1 { color: #00d4ff; text-align: center; }
+        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #00d4ff; color: #000; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #00d4ff; }
+        canvas { border: 2px solid #0f3460; }
+        .controls { margin-top: 10px; }
+        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #00d4ff; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        .info { margin-top: 10px; font-size: 12px; color: #888; }
+        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .qpsk-diagram { font-family: monospace; font-size: 11px; background: #0a0a15; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
+        table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: center; }
+        table.info-table th { background: #0f3460; }
+    </style>
+</head>
+<body>
+    <h1>📡 Page 13 - Mapping QPSK</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Modulation QPSK (Quadrature Phase Shift Keying) selon DVB-S EN 300 421.<br>
+        <strong>Principe :</strong> 2 bits → 1 symbole complexe (I, Q) sur la constellation.<br>
+        <strong>Mapping Gray :</strong> Symboles adjacents diffèrent d'1 seul bit → minimise erreurs.<br>
+        <strong>Entrée :</strong> Bits codés — <strong>Sortie :</strong> Symboles I/Q normalisés
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">RS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Convolutif</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">QPSK</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">SRRC</span>
+    </div>
+    
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Bits Codés</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Flux convolutif (sortie Page 12)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>2. CONSTELLATION QPSK</h3>
+            <canvas id="canvasConstellation" width="288" height="288"></canvas>
+            <div class="controls">
+                <button id="btnMap" onclick="mapQPSK()" disabled>⚙️ Mapper</button>
+                <button id="btnAnimate" onclick="animateMapping()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">4 symboles, mapping Gray</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>3. SORTIE - Symboles I/Q</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .bin</button>
+            </div>
+            <div class="info">Signaux I et Q normalisés</div>
+        </div>
+    </div>
+    
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Mapping QPSK Gray (DVB-S)</h4>
+        <table class="info-table">
+            <tr>
+                <th>Dibits (b0 b1)</th>
+                <th>I</th>
+                <th>Q</th>
+                <th>Phase</th>
+                <th>Symbole</th>
+            </tr>
+            <tr style="background:#004400">
+                <td><strong>00</strong></td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+45° (π/4)</td>
+                <td>↗</td>
+            </tr>
+            <tr style="background:#440044">
+                <td><strong>01</strong></td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−45° (−π/4)</td>
+                <td>↘</td>
+            </tr>
+            <tr style="background:#444400">
+                <td><strong>10</strong></td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+135° (3π/4)</td>
+                <td>↖</td>
+            </tr>
+            <tr style="background:#004444">
+                <td><strong>11</strong></td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−135° (5π/4)</td>
+                <td>↙</td>
+            </tr>
+        </table>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Constellation QPSK</h4>
+        <div class="qpsk-diagram">
+                              Q (Quadrature)
+                              │
+                    10        │        00
+                   (↖)       │       (↗)
+                  ●          │          ●
+               -0.707,+0.707 │  +0.707,+0.707
+                             │
+        ─────────────────────┼─────────────────────► I (In-phase)
+                             │
+               -0.707,-0.707 │  +0.707,-0.707
+                  ●          │          ●
+                   (↙)       │       (↘)
+                    11        │        01
+                              │
+
+        Mapping Gray: les symboles adjacents (horizontalement ou verticalement)
+        ne diffèrent que d'1 bit → une erreur de symbole = 1 bit erroné en moyenne
+
+        Normalisation: |I|² + |Q|² = 1 (puissance unitaire)
+        → I, Q = ±1/√2 ≈ ±0.7071067811865476
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Paramètres</h4>
+        <table class="info-table">
+            <tr><th>Paramètre</th><th>Valeur</th><th>Description</th></tr>
+            <tr><td>Modulation</td><td>QPSK</td><td>4-PSK, 4 états de phase</td></tr>
+            <tr><td>Bits/symbole</td><td>2</td><td>Efficacité spectrale 2 bps/Hz</td></tr>
+            <tr><td>Mapping</td><td>Gray</td><td>Adjacent = 1 bit différent</td></tr>
+            <tr><td>Amplitude</td><td>1/√2</td><td>Puissance normalisée = 1</td></tr>
+            <tr><td>Phases</td><td>±45°, ±135°</td><td>4 quadrants</td></tr>
+        </table>
+    </div>
+
+    <script>
+        const WIDTH = 352, HEIGHT = 288;
+        const CONST_SIZE = 288;
+        
+        // Mapping QPSK Gray DVB-S (normalisé)
+        const SQRT2_INV = 1 / Math.sqrt(2); // ≈ 0.7071
+        const QPSK_MAP = {
+            0b00: { I: +SQRT2_INV, Q: +SQRT2_INV, phase: 45 },   // ↗
+            0b01: { I: +SQRT2_INV, Q: -SQRT2_INV, phase: -45 },  // ↘
+            0b10: { I: -SQRT2_INV, Q: +SQRT2_INV, phase: 135 },  // ↖
+            0b11: { I: -SQRT2_INV, Q: -SQRT2_INV, phase: -135 }  // ↙
+        };
+        
+        const COLORS = {
+            0b00: '#00ff00',
+            0b01: '#ff00ff',
+            0b10: '#ffff00',
+            0b11: '#00ffff'
+        };
+        
+        let inputData = null, inputBits = [], symbols = [], mapped = false;
+        let animationId = null, animStep = 0;
+        let symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            drawConstellation(null);
+            clearCanvas('canvasOutput');
+        };
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    if (!inputData.format || inputData.format !== 'DVB_CONVOLUTIONAL_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 12.');
+                        return;
+                    }
+                    
+                    // Décoder les octets en bits
+                    const binaryString = atob(inputData.binary);
+                    const bytes = [];
+                    for (let i = 0; i < binaryString.length; i++) bytes.push(binaryString.charCodeAt(i));
+                    
+                    // Extraire les bits (on prend le nombre exact de bits codés)
+                    const totalBits = inputData.convolutional.outputBits;
+                    inputBits = [];
+                    for (let i = 0; i < totalBits; i++) {
+                        const byteIdx = Math.floor(i / 8);
+                        const bitIdx = 7 - (i % 8);
+                        inputBits.push((bytes[byteIdx] >> bitIdx) & 1);
+                    }
+                    
+                    symbols = [];
+                    mapped = false;
+                    symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+                    
+                    displayInputBits();
+                    drawConstellation(null);
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnMap').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    document.getElementById('statsInput').style.display = 'block';
+                    document.getElementById('statsInput').innerHTML = `
+                        <strong>Bits chargés:</strong><br>
+                        • Bits: ${inputBits.length.toLocaleString()}<br>
+                        • Symboles: ${Math.floor(inputBits.length / 2).toLocaleString()}
+                    `;
+                } catch (err) { alert('Erreur: ' + err.message); }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        function displayInputBits() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${inputBits.length.toLocaleString()} bits codés`, WIDTH/2, 20);
+            
+            // Visualiser par paires (dibits)
+            const pairsPerRow = Math.floor((WIDTH - 20) / 3);
+            const rowH = 4;
+            const startY = 35;
+            
+            for (let i = 0; i < inputBits.length - 1; i += 2) {
+                const pairIdx = i / 2;
+                const dibit = (inputBits[i] << 1) | inputBits[i + 1];
+                
+                const x = 10 + (pairIdx % pairsPerRow) * 3;
+                const y = startY + Math.floor(pairIdx / pairsPerRow) * rowH;
+                
+                if (y > HEIGHT - 20) break;
+                
+                ctx.fillStyle = COLORS[dibit];
+                ctx.fillRect(x, y, 2, rowH - 1);
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Couleur = dibit (00/01/10/11)', 10, HEIGHT - 10);
+        }
+        
+        function drawConstellation(highlightDibit) {
+            const canvas = document.getElementById('canvasConstellation');
+            const ctx = canvas.getContext('2d');
+            const size = CONST_SIZE;
+            const center = size / 2;
+            const scale = size * 0.35;
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Grille
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(center, 10);
+            ctx.lineTo(center, size - 10);
+            ctx.moveTo(10, center);
+            ctx.lineTo(size - 10, center);
+            ctx.stroke();
+            
+            // Cercle unité
+            ctx.strokeStyle = '#444';
+            ctx.beginPath();
+            ctx.arc(center, center, scale, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Labels axes
+            ctx.fillStyle = '#888';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('I', size - 15, center - 5);
+            ctx.fillText('Q', center + 10, 15);
+            
+            // Points de la constellation
+            for (let dibit = 0; dibit < 4; dibit++) {
+                const sym = QPSK_MAP[dibit];
+                const x = center + sym.I * scale;
+                const y = center - sym.Q * scale; // Y inversé
+                
+                const isHighlight = highlightDibit === dibit;
+                const radius = isHighlight ? 15 : 10;
+                
+                ctx.fillStyle = isHighlight ? '#fff' : COLORS[dibit];
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Label dibit
+                ctx.fillStyle = isHighlight ? '#000' : '#fff';
+                ctx.font = isHighlight ? 'bold 12px monospace' : '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(dibit.toString(2).padStart(2, '0'), x, y + 4);
+            }
+            
+            // Compteurs si mappé
+            if (mapped) {
+                ctx.font = '10px Arial';
+                ctx.fillStyle = '#888';
+                ctx.textAlign = 'left';
+                ctx.fillText(`00: ${symbolCounts[0]}`, 10, size - 40);
+                ctx.fillText(`01: ${symbolCounts[1]}`, 10, size - 28);
+                ctx.fillText(`10: ${symbolCounts[2]}`, 80, size - 40);
+                ctx.fillText(`11: ${symbolCounts[3]}`, 80, size - 28);
+            }
+        }
+        
+        function mapQPSK() {
+            if (!inputBits.length) return;
+            
+            symbols = [];
+            symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+            
+            // Mapper par paires de bits
+            for (let i = 0; i < inputBits.length - 1; i += 2) {
+                const dibit = (inputBits[i] << 1) | inputBits[i + 1];
+                const sym = QPSK_MAP[dibit];
+                symbols.push({
+                    dibit: dibit,
+                    I: sym.I,
+                    Q: sym.Q,
+                    phase: sym.phase
+                });
+                symbolCounts[dibit]++;
+            }
+            
+            mapped = true;
+            drawConstellation(null);
+            displayOutputSymbols();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            document.getElementById('globalStats').style.display = 'block';
+            document.getElementById('globalStats').innerHTML = `
+                <strong>Mapping terminé:</strong><br>
+                • Bits entrée: ${inputBits.length.toLocaleString()}<br>
+                • Symboles QPSK: ${symbols.length.toLocaleString()}<br>
+                • Distribution: 00=${symbolCounts[0]} (${(symbolCounts[0]/symbols.length*100).toFixed(1)}%), 
+                  01=${symbolCounts[1]} (${(symbolCounts[1]/symbols.length*100).toFixed(1)}%), 
+                  10=${symbolCounts[2]} (${(symbolCounts[2]/symbols.length*100).toFixed(1)}%), 
+                  11=${symbolCounts[3]} (${(symbolCounts[3]/symbols.length*100).toFixed(1)}%)<br>
+                • I/Q amplitude: ±${SQRT2_INV.toFixed(6)}
+            `;
+        }
+        
+        function animateMapping() {
+            if (animationId || !inputBits.length) return;
+            
+            symbols = [];
+            symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+            animStep = 0;
+            
+            const totalSymbols = Math.floor(inputBits.length / 2);
+            const symbolsPerFrame = Math.max(1, Math.floor(totalSymbols / 150));
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                let lastDibit = 0;
+                
+                for (let s = 0; s < symbolsPerFrame && animStep < totalSymbols; s++) {
+                    const i = animStep * 2;
+                    lastDibit = (inputBits[i] << 1) | inputBits[i + 1];
+                    const sym = QPSK_MAP[lastDibit];
+                    symbols.push({
+                        dibit: lastDibit,
+                        I: sym.I,
+                        Q: sym.Q,
+                        phase: sym.phase
+                    });
+                    symbolCounts[lastDibit]++;
+                    animStep++;
+                }
+                
+                // Mettre à jour la constellation avec le dernier symbole
+                drawConstellation(lastDibit);
+                
+                // Afficher progression
+                const canvas = document.getElementById('canvasConstellation');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#0f3460';
+                ctx.fillRect(10, CONST_SIZE - 15, CONST_SIZE - 20, 10);
+                ctx.fillStyle = '#00d4ff';
+                ctx.fillRect(10, CONST_SIZE - 15, (CONST_SIZE - 20) * (animStep / totalSymbols), 10);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${animStep.toLocaleString()} / ${totalSymbols.toLocaleString()}`, CONST_SIZE/2, 25);
+                
+                if (animStep < totalSymbols) {
+                    animationId = setTimeout(animate, 30);
+                } else {
+                    mapped = true;
+                    stopAnimation();
+                    displayOutputSymbols();
+                    document.getElementById('btnExportJSON').disabled = false;
+                    document.getElementById('btnExportBin').disabled = false;
+                    
+                    document.getElementById('globalStats').style.display = 'block';
+                    document.getElementById('globalStats').innerHTML = `
+                        <strong>Mapping terminé:</strong><br>
+                        • Symboles QPSK: ${symbols.length.toLocaleString()}<br>
+                        • Distribution: 00=${symbolCounts[0]}, 01=${symbolCounts[1]}, 10=${symbolCounts[2]}, 11=${symbolCounts[3]}
+                    `;
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        function displayOutputSymbols() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${symbols.length.toLocaleString()} symboles I/Q`, WIDTH/2, 20);
+            
+            // Tracer I et Q comme signaux
+            const startY_I = 80;
+            const startY_Q = 190;
+            const sigHeight = 50;
+            const samplesShow = Math.min(symbols.length, WIDTH - 20);
+            const step = symbols.length > WIDTH - 20 ? symbols.length / (WIDTH - 20) : 1;
+            
+            // Labels
+            ctx.fillStyle = '#ff8800';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('I (In-phase)', 10, startY_I - sigHeight - 5);
+            ctx.fillStyle = '#00aaff';
+            ctx.fillText('Q (Quadrature)', 10, startY_Q - sigHeight - 5);
+            
+            // Axes
+            ctx.strokeStyle = '#444';
+            ctx.beginPath();
+            ctx.moveTo(10, startY_I);
+            ctx.lineTo(WIDTH - 10, startY_I);
+            ctx.moveTo(10, startY_Q);
+            ctx.lineTo(WIDTH - 10, startY_Q);
+            ctx.stroke();
+            
+            // Signaux
+            ctx.lineWidth = 1;
+            
+            // I
+            ctx.strokeStyle = '#ff8800';
+            ctx.beginPath();
+            for (let i = 0; i < samplesShow; i++) {
+                const symIdx = Math.floor(i * step);
+                const x = 10 + i;
+                const y = startY_I - symbols[symIdx].I * sigHeight;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Q
+            ctx.strokeStyle = '#00aaff';
+            ctx.beginPath();
+            for (let i = 0; i < samplesShow; i++) {
+                const symIdx = Math.floor(i * step);
+                const x = 10 + i;
+                const y = startY_Q - symbols[symIdx].Q * sigHeight;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Échelle
+            ctx.fillStyle = '#888';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('+0.71', 8, startY_I - sigHeight + 10);
+            ctx.fillText('-0.71', 8, startY_I + sigHeight - 5);
+            ctx.fillText('+0.71', 8, startY_Q - sigHeight + 10);
+            ctx.fillText('-0.71', 8, startY_Q + sigHeight - 5);
+        }
+        
+        function exportJSON() {
+            if (!mapped) return;
+            
+            // Exporter I et Q comme tableaux séparés
+            const I_values = symbols.map(s => s.I);
+            const Q_values = symbols.map(s => s.Q);
+            
+            const output = {
+                format: 'DVB_QPSK_V1',
+                description: 'DVB-S QPSK Mapped Symbols',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                qpsk: {
+                    mapping: 'Gray',
+                    symbolCount: symbols.length,
+                    amplitude: SQRT2_INV,
+                    distribution: symbolCounts
+                },
+                convolutional: inputData.convolutional,
+                // Stocker I/Q en Float32 base64
+                I: floatArrayToBase64(new Float32Array(I_values)),
+                Q: floatArrayToBase64(new Float32Array(Q_values))
+            };
+            
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'qpsk_symbols.json';
+            a.click();
+        }
+        
+        function exportBinary() {
+            if (!mapped) return;
+            
+            // Exporter I/Q entrelacés en Float32
+            const buffer = new Float32Array(symbols.length * 2);
+            for (let i = 0; i < symbols.length; i++) {
+                buffer[i * 2] = symbols[i].I;
+                buffer[i * 2 + 1] = symbols[i].Q;
+            }
+            
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'qpsk_iq.bin';
+            a.click();
+        }
+        
+        function floatArrayToBase64(floatArray) {
+            const bytes = new Uint8Array(floatArray.buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function clearCanvas(id) {
+            const ctx = document.getElementById(id).getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+    </script>
+</body>
+</html>

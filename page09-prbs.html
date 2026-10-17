@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page09-prbs.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 09 - Randomisation PRBS
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 09 - Randomisation PRBS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 {
+            color: #00d4ff;
+            text-align: center;
+        }
+        .description {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #00d4ff;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #0f3460;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #00d4ff;
+            color: #000;
+        }
+        .pipeline-step.done {
+            background: #006644;
+        }
+        .pipeline-arrow {
+            color: #00d4ff;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        canvas {
+            border: 2px solid #0f3460;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #0f3460;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #00d4ff;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .stats {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1100px;
+            margin: 20px auto;
+        }
+        .hex-display {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 120px;
+            overflow-y: auto;
+            word-break: break-all;
+            text-align: left;
+        }
+        .hex-display .sync { color: #ff4444; font-weight: bold; }
+        .hex-display .sync-inv { color: #ff00ff; font-weight: bold; }
+        .hex-display .data { color: #00d4ff; }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+        }
+        .legend-color {
+            width: 16px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        .section-detail {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .section-detail h4 {
+            margin-top: 0;
+            color: #00d4ff;
+        }
+        .field-list {
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .field-list .field-name { color: #ff8800; }
+        .field-list .field-value { color: #00ff88; }
+        .prbs-diagram {
+            font-family: monospace;
+            font-size: 11px;
+            background: #0a0a15;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .register-display {
+            font-family: monospace;
+            font-size: 14px;
+            background: #0a0a15;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .register-display .bit-1 { color: #00ff88; }
+        .register-display .bit-0 { color: #666; }
+        table.info-table {
+            border-collapse: collapse;
+            font-size: 11px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        table.info-table th, table.info-table td {
+            border: 1px solid #333;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        table.info-table th {
+            background: #0f3460;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎲 Page 09 - Randomisation PRBS</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Dispersion d'énergie (Energy Dispersal) selon DVB-S EN 300 421.<br>
+        XOR du flux TS avec une séquence pseudo-aléatoire PRBS pour éviter les longues suites de 0 ou 1.<br>
+        <strong>Polynôme :</strong> 1 + X¹⁴ + X¹⁵ — <strong>Init :</strong> 100101010000000 au début de chaque super-trame (8 paquets)<br>
+        <strong>Entrée :</strong> Fichier JSON du TS (sortie Page 08)<br>
+        <strong>Sortie :</strong> Flux TS randomisé
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Reed-Solomon</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Viterbi</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">QPSK</span>
+    </div>
+    
+    <div class="canvas-container">
+        <!-- CANVAS 1 : TS en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Transport Stream</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">TS MPEG-2 (sortie Page 08)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Visualisation PRBS -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - PRBS Generator</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnRandomize" onclick="randomize()" disabled>⚙️ Randomiser</button>
+                <button id="btnAnimate" onclick="animatePRBS()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">Registre LFSR 15 bits</div>
+        </div>
+        
+        <!-- CANVAS 3 : TS randomisé -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - TS Randomisé</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .ts</button>
+            </div>
+            <div class="info">Cliquez sur un paquet pour comparer</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#ff00ff"></div> Sync inversé (0xB8)</div>
+                <div class="legend-item"><div class="legend-color" style="background:#00d4ff"></div> Données XOR PRBS</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Détails -->
+    <div class="detail-section">
+        <div id="packetDetail" class="section-detail" style="display:none;">
+            <h4 id="detailTitle">Comparaison Paquet</h4>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Avant randomisation :</strong>
+                    <div id="detailBefore" class="hex-display"></div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Après randomisation :</strong>
+                    <div id="detailAfter" class="hex-display"></div>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <strong>Séquence PRBS appliquée :</strong>
+                <div id="detailPRBS" class="hex-display"></div>
+            </div>
+            <div id="detailStats" style="margin-top: 10px; font-size: 11px; color: #888;"></div>
+        </div>
+        
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Registre LFSR (Linear Feedback Shift Register)</h4>
+        <div class="prbs-diagram">
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         Polynôme: 1 + X¹⁴ + X¹⁵                                 │
+│                                                                                 │
+│    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐               │
+│    │ 1 │ 2 │ 3 │ 4 │ 5 │ 6 │ 7 │ 8 │ 9 │10 │11 │12 │13 │14 │15 │──→ Sortie     │
+│    └─┬─┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴───┴─┬─┴─┬─┴───┘               │
+│      │                                               │   │                      │
+│      │                        ┌──────────────────────┘   │                      │
+│      │                        │                          │                      │
+│      │                       XOR ←──────────────────────┘                       │
+│      │                        │                                                 │
+│      └────────────────────────┘                                                 │
+│                                                                                 │
+│    Initialisation: 100101010000000 (0x4A80) au début de chaque super-trame     │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
+  • Paquet 1: sync = 0x47 → 0xB8 (inversé), PRBS réinitialisé
+  • Paquets 2-8: sync = 0x47 (non modifié), PRBS continue
+  • Les 187 octets de données sont XORés avec PRBS
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Fonctionnement</h4>
+        <table class="info-table">
+            <tr>
+                <th>Élément</th>
+                <th>Valeur</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Polynôme PRBS</td>
+                <td>1 + X¹⁴ + X¹⁵</td>
+                <td>Feedback des bits 14 et 15 (XOR)</td>
+            </tr>
+            <tr>
+                <td>Registre</td>
+                <td>15 bits</td>
+                <td>Période = 2¹⁵ - 1 = 32767 bits</td>
+            </tr>
+            <tr>
+                <td>Initialisation</td>
+                <td>100101010000000</td>
+                <td>= 0x4A80, reset tous les 8 paquets</td>
+            </tr>
+            <tr>
+                <td>Sync byte paquet 1</td>
+                <td>0x47 → 0xB8</td>
+                <td>Inversé pour synchronisation super-trame</td>
+            </tr>
+            <tr>
+                <td>Sync bytes 2-8</td>
+                <td>0x47 (inchangé)</td>
+                <td>Non randomisés mais comptés</td>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONSTANTES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        
+        const TS_PACKET_SIZE = 188;
+        const SUPER_FRAME_SIZE = 8; // 8 paquets TS par super-trame
+        
+        // PRBS : polynôme 1 + X^14 + X^15
+        const PRBS_INIT = 0x4A80; // 100101010000000 en binaire
+        
+        // Sync bytes
+        const SYNC_BYTE = 0x47;
+        const SYNC_BYTE_INVERTED = 0xB8;
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let tsPackets = [];
+        let randomizedPackets = [];
+        let prbsSequences = []; // Séquences PRBS pour chaque paquet
+        let randomized = false;
+        let selectedPacket = null;
+        let animationId = null;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            displayProcessInit();
+            clearCanvas('canvasOutput');
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_TS_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 08.');
+                        return;
+                    }
+                    
+                    // Décoder le binaire base64
+                    const binaryString = atob(inputData.binary);
+                    const tsBinary = [];
+                    for (let i = 0; i < binaryString.length; i++) {
+                        tsBinary.push(binaryString.charCodeAt(i));
+                    }
+                    
+                    // Reconstruire les paquets
+                    tsPackets = [];
+                    for (let i = 0; i < tsBinary.length; i += TS_PACKET_SIZE) {
+                        tsPackets.push({
+                            index: tsPackets.length,
+                            bytes: tsBinary.slice(i, i + TS_PACKET_SIZE)
+                        });
+                    }
+                    
+                    randomizedPackets = [];
+                    prbsSequences = [];
+                    randomized = false;
+                    selectedPacket = null;
+                    
+                    displayInputTS();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnRandomize').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('packetDetail').style.display = 'none';
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>TS chargé :</strong><br>
+                        • Paquets : ${tsPackets.length}<br>
+                        • Super-trames : ${Math.ceil(tsPackets.length / SUPER_FRAME_SIZE)}<br>
+                        • Taille : ${tsBinary.length.toLocaleString()} octets
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE TS ENTRÉE
+        // ============================================================
+        
+        function displayInputTS() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${tsPackets.length} paquets TS`, WIDTH / 2, 20);
+            
+            // Afficher les paquets groupés par super-trames
+            const packetsPerRow = 8; // 1 super-trame par ligne
+            const packetWidth = Math.floor((WIDTH - 20) / packetsPerRow);
+            const packetHeight = 15;
+            const startY = 35;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const superFrame = Math.floor(i / SUPER_FRAME_SIZE);
+                const posInSuperFrame = i % SUPER_FRAME_SIZE;
+                
+                const x = 10 + posInSuperFrame * packetWidth;
+                const y = startY + superFrame * (packetHeight + 8);
+                
+                if (y + packetHeight > HEIGHT - 20) break;
+                
+                // Couleur selon position dans super-trame
+                if (posInSuperFrame === 0) {
+                    ctx.fillStyle = '#ff6600'; // Premier paquet
+                } else {
+                    ctx.fillStyle = '#0066aa';
+                }
+                
+                ctx.fillRect(x, y, packetWidth - 2, packetHeight);
+                
+                // Numéro de super-trame
+                if (posInSuperFrame === 0) {
+                    ctx.fillStyle = '#888';
+                    ctx.font = '9px Arial';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`SF${superFrame}`, x - 2, y + packetHeight / 2 + 3);
+                }
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Orange = 1er paquet super-trame (sync inversé)', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PROCESS
+        // ============================================================
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('Générateur PRBS', WIDTH / 2, 25);
+            
+            // Dessiner le registre
+            drawRegister(ctx, PRBS_INIT, 50);
+            
+            // Explication
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            
+            let y = 130;
+            ctx.fillText('Fonctionnement:', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('1. Init registre = 0x4A80', 20, y + 18);
+            ctx.fillText('2. Sortie = bit 15', 20, y + 33);
+            ctx.fillText('3. Feedback = bit14 XOR bit15', 20, y + 48);
+            ctx.fillText('4. Décalage à droite', 20, y + 63);
+            ctx.fillText('5. XOR avec donnée TS', 20, y + 78);
+            
+            y += 100;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('Super-trame (8 paquets):', 20, y);
+            ctx.fillStyle = '#888';
+            ctx.fillText('• Paquet 1: sync 0x47→0xB8, reset PRBS', 20, y + 15);
+            ctx.fillText('• Paquets 2-8: sync inchangé', 20, y + 30);
+        }
+        
+        function drawRegister(ctx, value, y) {
+            const bitWidth = 20;
+            const startX = (WIDTH - 15 * bitWidth) / 2;
+            
+            ctx.font = '10px monospace';
+            
+            for (let i = 14; i >= 0; i--) {
+                const bit = (value >> i) & 1;
+                const x = startX + (14 - i) * bitWidth;
+                
+                // Case
+                ctx.fillStyle = bit ? '#00aa00' : '#333';
+                ctx.fillRect(x, y, bitWidth - 2, 25);
+                ctx.strokeStyle = '#666';
+                ctx.strokeRect(x, y, bitWidth - 2, 25);
+                
+                // Bit
+                ctx.fillStyle = bit ? '#fff' : '#666';
+                ctx.textAlign = 'center';
+                ctx.fillText(bit.toString(), x + bitWidth / 2 - 1, y + 16);
+                
+                // Numéro
+                ctx.fillStyle = '#888';
+                ctx.font = '8px monospace';
+                ctx.fillText((15 - i).toString(), x + bitWidth / 2 - 1, y + 35);
+                ctx.font = '10px monospace';
+            }
+            
+            // Valeur hex
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`0x${value.toString(16).toUpperCase().padStart(4, '0')}`, WIDTH / 2, y + 55);
+            
+            // Marqueurs feedback
+            ctx.fillStyle = '#ff8800';
+            ctx.font = '9px Arial';
+            const x14 = startX + 0 * bitWidth + bitWidth / 2;
+            const x15 = startX + 1 * bitWidth + bitWidth / 2;
+            ctx.fillText('↓XOR', (x14 + x15) / 2, y - 5);
+        }
+        
+        // ============================================================
+        // RANDOMISATION PRBS
+        // ============================================================
+        
+        function randomize() {
+            if (!tsPackets.length) return;
+            
+            randomizedPackets = [];
+            prbsSequences = [];
+            
+            let prbsRegister = PRBS_INIT;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const posInSuperFrame = i % SUPER_FRAME_SIZE;
+                const isFirstInSuperFrame = posInSuperFrame === 0;
+                
+                // Reset PRBS au début de chaque super-trame
+                if (isFirstInSuperFrame) {
+                    prbsRegister = PRBS_INIT;
+                }
+                
+                const originalBytes = tsPackets[i].bytes;
+                const randomizedBytes = new Array(TS_PACKET_SIZE);
+                const prbsBytes = new Array(TS_PACKET_SIZE);
+                
+                // Sync byte
+                if (isFirstInSuperFrame) {
+                    randomizedBytes[0] = SYNC_BYTE_INVERTED; // 0xB8
+                } else {
+                    randomizedBytes[0] = SYNC_BYTE; // 0x47
+                }
+                prbsBytes[0] = 0x00; // Sync non randomisé
+                
+                // Générer 8 bits PRBS pour le sync (mais ne pas les utiliser)
+                // On fait tourner le registre quand même pour la synchro
+                for (let bit = 0; bit < 8; bit++) {
+                    prbsRegister = prbsStep(prbsRegister);
+                }
+                
+                // Randomiser les 187 octets suivants
+                for (let j = 1; j < TS_PACKET_SIZE; j++) {
+                    let prbsByte = 0;
+                    for (let bit = 7; bit >= 0; bit--) {
+                        const prbsBit = (prbsRegister >> 14) & 1; // Bit de sortie
+                        prbsByte |= (prbsBit << bit);
+                        prbsRegister = prbsStep(prbsRegister);
+                    }
+                    prbsBytes[j] = prbsByte;
+                    randomizedBytes[j] = originalBytes[j] ^ prbsByte;
+                }
+                
+                randomizedPackets.push({
+                    index: i,
+                    bytes: randomizedBytes,
+                    isFirstInSuperFrame: isFirstInSuperFrame,
+                    superFrame: Math.floor(i / SUPER_FRAME_SIZE)
+                });
+                
+                prbsSequences.push(prbsBytes);
+            }
+            
+            randomized = true;
+            displayOutputRandomized();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            // Stats
+            const globalStats = document.getElementById('globalStats');
+            globalStats.style.display = 'block';
+            
+            // Calculer la dispersion
+            let zerosBeforeTotal = 0, zerosAfterTotal = 0;
+            let onesBeforeTotal = 0, onesAfterTotal = 0;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                for (let j = 0; j < TS_PACKET_SIZE; j++) {
+                    const before = tsPackets[i].bytes[j];
+                    const after = randomizedPackets[i].bytes[j];
+                    for (let b = 0; b < 8; b++) {
+                        if ((before >> b) & 1) onesBeforeTotal++; else zerosBeforeTotal++;
+                        if ((after >> b) & 1) onesAfterTotal++; else zerosAfterTotal++;
+                    }
+                }
+            }
+            
+            const totalBits = tsPackets.length * TS_PACKET_SIZE * 8;
+            
+            globalStats.innerHTML = `
+                <strong>Randomisation terminée :</strong><br>
+                • Paquets traités : ${tsPackets.length}<br>
+                • Super-trames : ${Math.ceil(tsPackets.length / SUPER_FRAME_SIZE)}<br>
+                • Syncs inversés (0xB8) : ${Math.ceil(tsPackets.length / SUPER_FRAME_SIZE)}<br><br>
+                <strong>Dispersion d'énergie :</strong><br>
+                • Avant: ${((onesBeforeTotal / totalBits) * 100).toFixed(1)}% de 1, ${((zerosBeforeTotal / totalBits) * 100).toFixed(1)}% de 0<br>
+                • Après: ${((onesAfterTotal / totalBits) * 100).toFixed(1)}% de 1, ${((zerosAfterTotal / totalBits) * 100).toFixed(1)}% de 0
+            `;
+        }
+        
+        function prbsStep(register) {
+            // Polynôme 1 + X^14 + X^15
+            // Feedback = bit14 XOR bit15
+            const bit14 = (register >> 13) & 1;
+            const bit15 = (register >> 14) & 1;
+            const feedback = bit14 ^ bit15;
+            
+            // Décalage à droite, nouveau bit à gauche
+            return ((register << 1) | feedback) & 0x7FFF;
+        }
+        
+        // ============================================================
+        // ANIMATION PRBS
+        // ============================================================
+        
+        function animatePRBS() {
+            if (animationId) return;
+            
+            let step = 0;
+            let register = PRBS_INIT;
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                const canvas = document.getElementById('canvasProcess');
+                const ctx = canvas.getContext('2d');
+                
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                ctx.font = 'bold 14px Arial';
+                ctx.fillStyle = '#00d4ff';
+                ctx.textAlign = 'center';
+                ctx.fillText(`PRBS Step ${step}`, WIDTH / 2, 25);
+                
+                // Dessiner le registre actuel
+                drawRegister(ctx, register, 50);
+                
+                // Afficher le bit de sortie
+                const outputBit = (register >> 14) & 1;
+                ctx.fillStyle = outputBit ? '#00ff00' : '#666';
+                ctx.font = 'bold 20px monospace';
+                ctx.fillText(`Sortie: ${outputBit}`, WIDTH / 2, 130);
+                
+                // Feedback
+                const bit14 = (register >> 13) & 1;
+                const bit15 = (register >> 14) & 1;
+                ctx.fillStyle = '#ff8800';
+                ctx.font = '12px monospace';
+                ctx.fillText(`Feedback: ${bit14} XOR ${bit15} = ${bit14 ^ bit15}`, WIDTH / 2, 155);
+                
+                // Historique des bits
+                ctx.fillStyle = '#888';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText('Séquence générée:', 20, 180);
+                
+                // Faire le pas
+                register = prbsStep(register);
+                step++;
+                
+                if (step < 100) {
+                    animationId = setTimeout(animate, 100);
+                } else {
+                    stopAnimation();
+                    randomize();
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        // ============================================================
+        // AFFICHAGE TS RANDOMISÉ
+        // ============================================================
+        
+        function displayOutputRandomized() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#00d4ff';
+            ctx.textAlign = 'center';
+            ctx.fillText('TS Randomisé', WIDTH / 2, 20);
+            
+            // Afficher les paquets
+            const packetsPerRow = 8;
+            const packetWidth = Math.floor((WIDTH - 20) / packetsPerRow);
+            const packetHeight = 15;
+            const startY = 35;
+            
+            for (let i = 0; i < randomizedPackets.length; i++) {
+                const packet = randomizedPackets[i];
+                const superFrame = packet.superFrame;
+                const posInSuperFrame = i % SUPER_FRAME_SIZE;
+                
+                const x = 10 + posInSuperFrame * packetWidth;
+                const y = startY + superFrame * (packetHeight + 8);
+                
+                if (y + packetHeight > HEIGHT - 20) break;
+                
+                // Couleur selon sync
+                if (packet.isFirstInSuperFrame) {
+                    ctx.fillStyle = '#ff00ff'; // Sync inversé
+                } else {
+                    ctx.fillStyle = '#00aaaa'; // Randomisé
+                }
+                
+                ctx.fillRect(x, y, packetWidth - 2, packetHeight);
+                
+                // Sélection
+                if (selectedPacket === i) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, packetWidth - 2, packetHeight);
+                }
+                
+                // Stocker pour clic
+                packet.displayX = x;
+                packet.displayY = y;
+                packet.displayWidth = packetWidth;
+                packet.displayHeight = packetHeight;
+            }
+            
+            ctx.fillStyle = '#888';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Magenta = sync 0xB8 | Cyan = données XOR PRBS', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // CLIC SUR PAQUET
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!randomized) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = 0; i < randomizedPackets.length; i++) {
+                const packet = randomizedPackets[i];
+                if (x >= packet.displayX && x < packet.displayX + packet.displayWidth &&
+                    y >= packet.displayY && y < packet.displayY + packet.displayHeight) {
+                    selectedPacket = i;
+                    displayOutputRandomized();
+                    displayPacketComparison(i);
+                    return;
+                }
+            }
+        });
+        
+        function displayPacketComparison(index) {
+            const detailDiv = document.getElementById('packetDetail');
+            detailDiv.style.display = 'block';
+            
+            const original = tsPackets[index].bytes;
+            const randomizedBytes = randomizedPackets[index].bytes;
+            const prbs = prbsSequences[index];
+            
+            const isFirst = randomizedPackets[index].isFirstInSuperFrame;
+            
+            document.getElementById('detailTitle').textContent = 
+                `Paquet #${index} — Super-trame ${randomizedPackets[index].superFrame} ` +
+                `(${isFirst ? '1er paquet, sync inversé' : 'continuation'})`;
+            
+            // Avant
+            const beforeDiv = document.getElementById('detailBefore');
+            let beforeHtml = '';
+            for (let i = 0; i < Math.min(48, TS_PACKET_SIZE); i++) {
+                const hex = original[i].toString(16).padStart(2, '0').toUpperCase();
+                if (i === 0) {
+                    beforeHtml += `<span class="sync">${hex}</span> `;
+                } else {
+                    beforeHtml += hex + ' ';
+                }
+                if ((i + 1) % 16 === 0) beforeHtml += '\n';
+            }
+            if (TS_PACKET_SIZE > 48) beforeHtml += '...';
+            beforeDiv.innerHTML = beforeHtml;
+            
+            // Après
+            const afterDiv = document.getElementById('detailAfter');
+            let afterHtml = '';
+            for (let i = 0; i < Math.min(48, TS_PACKET_SIZE); i++) {
+                const hex = randomizedBytes[i].toString(16).padStart(2, '0').toUpperCase();
+                if (i === 0) {
+                    afterHtml += `<span class="${isFirst ? 'sync-inv' : 'sync'}">${hex}</span> `;
+                } else {
+                    afterHtml += `<span class="data">${hex}</span> `;
+                }
+                if ((i + 1) % 16 === 0) afterHtml += '\n';
+            }
+            if (TS_PACKET_SIZE > 48) afterHtml += '...';
+            afterDiv.innerHTML = afterHtml;
+            
+            // PRBS
+            const prbsDiv = document.getElementById('detailPRBS');
+            let prbsHtml = '';
+            for (let i = 0; i < Math.min(48, TS_PACKET_SIZE); i++) {
+                const hex = prbs[i].toString(16).padStart(2, '0').toUpperCase();
+                prbsHtml += hex + ' ';
+                if ((i + 1) % 16 === 0) prbsHtml += '\n';
+            }
+            if (TS_PACKET_SIZE > 48) prbsHtml += '...';
+            prbsDiv.innerHTML = prbsHtml;
+            
+            // Stats
+            document.getElementById('detailStats').innerHTML = 
+                `Original[1] XOR PRBS[1] = Randomisé[1] : ` +
+                `0x${original[1].toString(16).toUpperCase().padStart(2, '0')} XOR ` +
+                `0x${prbs[1].toString(16).toUpperCase().padStart(2, '0')} = ` +
+                `0x${randomizedBytes[1].toString(16).toUpperCase().padStart(2, '0')}`;
+        }
+        
+        // ============================================================
+        // EXPORT
+        // ============================================================
+        
+        function exportJSON() {
+            if (!randomized) return;
+            
+            let tsBinary = [];
+            for (const packet of randomizedPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const output = {
+                format: 'DVB_RANDOMIZED_V1',
+                description: 'DVB-S Randomized Transport Stream',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                randomization: {
+                    polynomial: '1 + X^14 + X^15',
+                    initValue: '0x4A80',
+                    superFrameSize: SUPER_FRAME_SIZE,
+                    superFrameCount: Math.ceil(randomizedPackets.length / SUPER_FRAME_SIZE),
+                    packetCount: randomizedPackets.length,
+                    totalBytes: tsBinary.length
+                },
+                ts: inputData.ts,
+                binary: btoa(String.fromCharCode.apply(null, tsBinary))
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'randomized_ts.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportBinary() {
+            if (!randomized) return;
+            
+            let tsBinary = [];
+            for (const packet of randomizedPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const blob = new Blob([new Uint8Array(tsBinary)], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'randomized.ts';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+    </script>
+</body>
+</html>
