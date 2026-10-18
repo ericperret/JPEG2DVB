@@ -53,6 +53,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 | 2026-10-17 | Ancien filtre SRRC retiré (seule la v2 est conservée), pages renommées sans suffixe de copie, cartouches, page d'accueil corrigée, README / LISEZMOI réécrits, captures de chaque étape |
 | 2026-10-18 | Charte graphique AZS sur les 15 étapes et la page d'accueil (palette ardoise / ambre / cyan, marque AZS avec lien vers www.azs.fr, polices système) ; sorties vérifiées identiques sur toute la chaîne ; captures refaites |
 | 2026-10-18 | Pages 1.3 : passage automatique entre les étapes — suivante ▶ garde la sortie dans le navigateur (session en cours) et l'étape suivante la charge d'office ; traitement toujours au clic ; sorties identiques à la chaîne fichier par fichier |
+| 2026-10-18 | Pages 03, 04, 06 (1.4) : encadrés sur les écarts avec MPEG-2 (quantification séparée du DC, formule AC et quantiser_scale, balayage alterné, matrices transmises en ordre zigzag dans le Sequence Header) |
 
 ## Licence
 

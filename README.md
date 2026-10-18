@@ -53,6 +53,7 @@ No library, no installation. User interfaces in French.
 | 2026-10-17 | Old SRRC filter removed (only v2 kept), pages renamed without copy suffix, header blocks, home page fixed, README / LISEZMOI rewritten, screenshot of every step |
 | 2026-10-18 | AZS visual identity on the 15 steps and the home page (slate / amber / cyan palette, AZS mark linking back to www.azs.fr, system fonts); outputs checked identical along the whole chain; screenshots refreshed |
 | 2026-10-18 | Pages 1.3: automatic hand-over between steps — next ▶ keeps the output in the browser (current session) and the next step loads it itself; processing stays manual; outputs identical to the file-by-file chain |
+| 2026-10-18 | Pages 03, 04, 06 (1.4): boxed notes on the differences with MPEG-2 (separate DC quantisation, AC formula and quantiser_scale, alternate scan, matrices sent in zigzag order in the sequence header) |
 
 ## License
 
