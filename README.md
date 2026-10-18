@@ -43,8 +43,8 @@ No library, no installation. User interfaces in French.
 ## Usage
 
 1. Open step 00 (webcam) or 01 (image file).
-2. At each step: load the file from the previous step, run the processing (at once or step by step), save the output.
-3. Move on to the next step with that file.
+2. At each step, run the processing (at once or step by step), then click **next ▶**: the output is handed over to the next step, which loads it automatically (banner at the top of the page). Processing always stays a click.
+3. The **Save** / **Load** buttons remain to keep every intermediate file or to resume from a file.
 
 ## History
 
@@ -52,6 +52,7 @@ No library, no installation. User interfaces in French.
 |---|---|
 | 2026-10-17 | Old SRRC filter removed (only v2 kept), pages renamed without copy suffix, header blocks, home page fixed, README / LISEZMOI rewritten, screenshot of every step |
 | 2026-10-18 | AZS visual identity on the 15 steps and the home page (slate / amber / cyan palette, AZS mark linking back to www.azs.fr, system fonts); outputs checked identical along the whole chain; screenshots refreshed |
+| 2026-10-18 | Pages 1.3: automatic hand-over between steps — next ▶ keeps the output in the browser (current session) and the next step loads it itself; processing stays manual; outputs identical to the file-by-file chain |
 
 ## License
 

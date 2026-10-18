@@ -43,8 +43,8 @@ Aucune librairie, aucune installation. Interfaces en français.
 ## Utilisation
 
 1. Ouvrir l'étape 00 (webcam) ou 01 (fichier image).
-2. À chaque étape : charger le fichier de l'étape précédente, lancer le traitement (en une fois ou pas à pas), enregistrer la sortie.
-3. Passer à l'étape suivante avec ce fichier.
+2. À chaque étape, lancer le traitement (en une fois ou pas à pas), puis cliquer sur **suivante ▶** : la sortie est transmise à l'étape suivante, qui la charge d'office (bandeau en haut de page). Le traitement reste toujours au clic.
+3. Les boutons **Exporter** / **Charger** restent disponibles pour garder chaque fichier intermédiaire ou reprendre depuis un fichier.
 
 ## Historique
 
@@ -52,6 +52,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 |---|---|
 | 2026-10-17 | Ancien filtre SRRC retiré (seule la v2 est conservée), pages renommées sans suffixe de copie, cartouches, page d'accueil corrigée, README / LISEZMOI réécrits, captures de chaque étape |
 | 2026-10-18 | Charte graphique AZS sur les 15 étapes et la page d'accueil (palette ardoise / ambre / cyan, marque AZS avec lien vers www.azs.fr, polices système) ; sorties vérifiées identiques sur toute la chaîne ; captures refaites |
+| 2026-10-18 | Pages 1.3 : passage automatique entre les étapes — suivante ▶ garde la sortie dans le navigateur (session en cours) et l'étape suivante la charge d'office ; traitement toujours au clic ; sorties identiques à la chaîne fichier par fichier |
 
 ## Licence
 
