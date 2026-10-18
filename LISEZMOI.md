@@ -31,8 +31,8 @@ Aucune librairie, aucune installation. Interfaces en français.
 | 04 | ▶️ [Zigzag](https://ericperret.github.io/JPEG2DVB/page04-zigzag.html) | Parcours zigzag des 64 coefficients | blocs → vecteurs de 64 | [voir](captures/page04-zigzag.png) |
 | 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | Paires (run, level), tables MPEG-2 B.12 / B.13 (DC) et B.14 (AC), échappement, prédicteurs DC par composante | vecteurs → bitstreams | [voir](captures/page05-rle-huffman.png) |
 | 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | Sequence, GOP, Picture headers, slices MPEG-2 ; matrice et code d'échelle de l'étape 03 ; décodable par ffmpeg / VLC | bitstreams → fichier .es | [voir](captures/page06-elementary-stream.png) |
-| 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | Paquets PES, horodatage PTS | ES → PES | [voir](captures/page07-pes.png) |
-| 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | Paquets de 188 octets, tables PAT et PMT | PES → fichier .ts lisible | [voir](captures/page08-ts.png) |
+| 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | Paquets PES, PTS = PCR initial + 0,7 s (pas de DTS pour une image I), alignement des données | ES → PES | [voir](captures/page07-pes.png) |
+| 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | Paquets de 188 octets, tables PAT et PMT, PCR dans le premier paquet vidéo | PES → fichier .ts lisible | [voir](captures/page08-ts.png) |
 | 09 | ▶️ [PRBS](https://ericperret.github.io/JPEG2DVB/page09-prbs.html) | Dispersion d'énergie, polynôme 1 + X¹⁴ + X¹⁵, super-trame de 8 paquets | TS → TS randomisé | [voir](captures/page09-prbs.png) |
 | 10 | ▶️ [Reed-Solomon](https://ericperret.github.io/JPEG2DVB/page10-reed-solomon.html) | RS(204,188) raccourci de RS(255,239), GF(2⁸) 0x11D, 8 octets corrigibles | 188 → 204 octets | [voir](captures/page10-reed-solomon.png) |
 | 11 | ▶️ [Entrelacement](https://ericperret.github.io/JPEG2DVB/page11-interleaving.html) | Entrelaceur convolutif de Forney, I = 12, M = 17 | blocs RS → flux entrelacé | [voir](captures/page11-interleaving.png) |
@@ -55,6 +55,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 | 2026-10-18 | Pages 1.3 : passage automatique entre les étapes — suivante ▶ garde la sortie dans le navigateur (session en cours) et l'étape suivante la charge d'office ; traitement toujours au clic ; sorties identiques à la chaîne fichier par fichier |
 | 2026-10-18 | Pages 03, 04, 06 (1.4) : encadrés sur les écarts avec MPEG-2 (quantification séparée du DC, formule AC et quantiser_scale, balayage alterné, matrices transmises en ordre zigzag dans le Sequence Header) |
 | 2026-10-18 | Conformité MPEG-2 (pages 02, 03, 05, 06 → 1.5) : DCT sans centrage et en ordre naturel (les coefficients étaient transposés), quantification normative, tables VLC complètes B.12 / B.13 / B.14 avec prédicteurs DC par composante, matrice et code d'échelle écrits dans le flux. L'Elementary Stream et le Transport Stream se décodent désormais avec ffmpeg (PSNR 35,7 dB au facteur 50 ; 30,7 à 48,4 dB du facteur 10 à 100). Pages 07 à 12 (1.4) : export JSON des gros flux corrigé |
+| 2026-10-18 | Pages 07 et 08 (1.5) : horodatage ISO 13818-1 — PCR dans l'adaptation field du premier paquet vidéo (PID annoncé par la PMT), PTS = PCR + 0,7 s, indicateurs data_alignment et random_access, PTS 33 bits sans débordement 32 bits |
 
 ## Licence
 

@@ -31,8 +31,8 @@ No library, no installation. User interfaces in French.
 | 04 | ▶️ [Zigzag](https://ericperret.github.io/JPEG2DVB/page04-zigzag.html) | Zigzag scan of the 64 coefficients | blocks → 64-value vectors | [view](captures/page04-zigzag.png) |
 | 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | (run, level) pairs, MPEG-2 tables B.12 / B.13 (DC) and B.14 (AC), escape, per-component DC predictors | vectors → bitstreams | [view](captures/page05-rle-huffman.png) |
 | 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices; quantiser matrix and scale code from step 03; decodable by ffmpeg / VLC | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
-| 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | PES packets, PTS timestamps | ES → PES | [view](captures/page07-pes.png) |
-| 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | 188-byte packets, PAT and PMT tables | PES → playable .ts file | [view](captures/page08-ts.png) |
+| 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | PES packets, PTS = initial PCR + 0.7 s (no DTS for an I picture), data alignment | ES → PES | [view](captures/page07-pes.png) |
+| 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | 188-byte packets, PAT and PMT tables, PCR in the first video packet | PES → playable .ts file | [view](captures/page08-ts.png) |
 | 09 | ▶️ [PRBS](https://ericperret.github.io/JPEG2DVB/page09-prbs.html) | Energy dispersal, polynomial 1 + X¹⁴ + X¹⁵, 8-packet super-frame | TS → randomised TS | [view](captures/page09-prbs.png) |
 | 10 | ▶️ [Reed-Solomon](https://ericperret.github.io/JPEG2DVB/page10-reed-solomon.html) | RS(204,188) shortened from RS(255,239), GF(2⁸) 0x11D, 8 correctable bytes | 188 → 204 bytes | [view](captures/page10-reed-solomon.png) |
 | 11 | ▶️ [Interleaving](https://ericperret.github.io/JPEG2DVB/page11-interleaving.html) | Forney convolutional interleaver, I = 12, M = 17 | RS blocks → interleaved stream | [view](captures/page11-interleaving.png) |
@@ -55,6 +55,7 @@ No library, no installation. User interfaces in French.
 | 2026-10-18 | Pages 1.3: automatic hand-over between steps — next ▶ keeps the output in the browser (current session) and the next step loads it itself; processing stays manual; outputs identical to the file-by-file chain |
 | 2026-10-18 | Pages 03, 04, 06 (1.4): boxed notes on the differences with MPEG-2 (separate DC quantisation, AC formula and quantiser_scale, alternate scan, matrices sent in zigzag order in the sequence header) |
 | 2026-10-18 | MPEG-2 conformance (pages 02, 03, 05, 06 → 1.5): DCT without centring and in natural order (coefficients were transposed), normative quantisation, complete VLC tables B.12 / B.13 / B.14 with per-component DC predictors, quantiser matrix and scale code written in the stream. The elementary stream and the transport stream now decode with ffmpeg (35.7 dB PSNR at quality 50; 30.7 to 48.4 dB from quality 10 to 100). Pages 07–12 (1.4): JSON export of large streams fixed |
+| 2026-10-18 | Pages 07 and 08 (1.5): ISO 13818-1 timing — PCR in the adaptation field of the first video packet (PID announced by the PMT), PTS = PCR + 0.7 s, data_alignment and random_access indicators, 33-bit PTS without 32-bit overflow |
 
 ## License
 

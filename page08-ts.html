@@ -6,7 +6,7 @@
   Objet      : Page 08 - Empaquetage Transport Stream
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.4
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -17,6 +17,9 @@
                      garde la sortie et l'étape suivante la charge d'office
                1.4  2026-10-18  export JSON des gros flux (conversion base64 par
                      morceaux : dépassement de pile au-delà de ~100 000 octets)
+               1.5  2026-10-18  PCR dans l'adaptation field du premier paquet vidéo
+                     (PID 0x0101 annoncé par la PMT), random_access_indicator ;
+                     ffmpeg trouve l'heure de début du flux
 ================================================================================
 -->
 <html lang="fr">
@@ -218,6 +221,10 @@
             font-family: monospace;
         }
     
+        .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
+        .note-norme strong { color: #f0a63a; }
+        .note-norme b { color: #dfe7ec; }
+        .note-norme code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
         /* ---------- charte AZS (www.azs.fr) ---------- */
         :root { color-scheme: dark; }
         body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
@@ -271,6 +278,7 @@
         <strong>Entrée :</strong> Fichier JSON du PES (sortie Page 07)<br>
         <strong>Sortie :</strong> Fichier .ts compatible lecteurs multimédia
     </div>
+    <div class="note-norme"><strong>Horloge de référence conforme ISO 13818-1 (§2.4.3.4, §2.4.3.5) :</strong><br>• La PMT désigne le PID qui porte le <b>PCR</b> (Program Clock Reference) : ici la vidéo, PID <code>0x0101</code>. Le PCR recale l'horloge 27 MHz du décodeur sur celle de l'émetteur ; sans lui, le PTS de la page 07 n'a pas de référence.<br>• Le PCR est écrit dans l'<b>adaptation field</b> du premier paquet vidéo : base 33 bits à 90 kHz + extension 9 bits (PCR = base × 300 + extension). PCR initial = 0, PTS = 63 000 : l'image s'affiche 0,7 s après.<br>• <code>random_access_indicator</code> = 1 : ce paquet est un point d'entrée (Sequence Header + image I). En diffusion réelle, le PCR est répété au moins toutes les 100 ms.</div>
     
     <div class="pipeline">
         <span class="pipeline-step">PES</span>
@@ -420,6 +428,9 @@ Légende:
         const PID_PAT = 0x0000;
         const PID_PMT = 0x0100;
         const PID_VIDEO = 0x0101;
+        
+        // PCR initial (base 90 kHz) : le PTS de la page 07 vaut PCR_BASE_INIT + 63000 (0,7 s)
+        const PCR_BASE_INIT = 0;
         const PID_NULL = 0x1FFF;
         
         // Table IDs
@@ -594,7 +605,7 @@ Légende:
             ctx.fillText('3. Découper le PES en paquets 188 octets', 20, y);
             ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   • Header 4 octets + payload 184 octets', 20, y + 15);
-            ctx.fillText('   • PUSI=1 sur le 1er paquet PES', 20, y + 30);
+            ctx.fillText('   • 1er paquet : PUSI=1 + PCR (adaptation)', 20, y + 30);
             ctx.fillText('   • Continuity counter incrémenté', 20, y + 45);
             
             y += 65;
@@ -657,6 +668,7 @@ Légende:
                 • PAT : 1 paquet (PID 0x0000)<br>
                 • PMT : 1 paquet (PID 0x0100)<br>
                 • Vidéo : ${videoPackets} paquets (PID 0x0101)<br>
+                • PCR : ${PCR_BASE_INIT * 300} (premier paquet vidéo, PTS 0,7 s plus tard)<br>
                 • Taille totale : ${totalSize.toLocaleString()} octets (${(totalSize / 1024).toFixed(2)} Ko)<br>
                 • Overhead TS : ${((totalSize - pesBinary.length) / pesBinary.length * 100).toFixed(1)}%
             `;
@@ -797,20 +809,13 @@ Légende:
         function createVideoPacket(pesOffset, isFirst) {
             const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
             
+            // Premier paquet : adaptation field avec PCR (1 longueur + 1 flags + 6 PCR = 8 octets)
+            const pcrBytes = isFirst ? 8 : 0;
             const remainingPES = pesBinary.length - pesOffset;
-            const maxPayload = TS_PACKET_SIZE - TS_HEADER_SIZE;
-            let payloadSize = Math.min(remainingPES, maxPayload);
-            let adaptationFieldLength = 0;
-            
-            // Si c'est le dernier paquet et qu'il ne remplit pas, ajouter adaptation field
-            if (payloadSize < maxPayload && remainingPES <= maxPayload) {
-                adaptationFieldLength = maxPayload - payloadSize;
-                if (adaptationFieldLength === 1) {
-                    // Besoin d'au moins 2 octets pour adaptation field
-                    adaptationFieldLength = 2;
-                    payloadSize = maxPayload - 2;
-                }
-            }
+            const maxPayload = TS_PACKET_SIZE - TS_HEADER_SIZE - pcrBytes;
+            const payloadSize = Math.min(remainingPES, maxPayload);
+            // Dernier paquet incomplet : bourrage dans l'adaptation field
+            const adaptationFieldLength = pcrBytes + (maxPayload - payloadSize);
             
             // Header TS
             packet[0] = TS_SYNC_BYTE;
@@ -826,13 +831,19 @@ Légende:
             
             let offset = 4;
             
-            // Adaptation field si nécessaire
+            // Adaptation field (longueur totale = adaptationFieldLength, octet de longueur compris)
             if (hasAdaptation) {
                 packet[offset++] = adaptationFieldLength - 1; // adaptation_field_length
                 if (adaptationFieldLength > 1) {
-                    packet[offset++] = 0x00; // flags (pas de PCR, etc.)
+                    if (isFirst) {
+                        packet[offset++] = 0x50; // random_access_indicator=1, PCR_flag=1
+                        const pcr = encodePCR(PCR_BASE_INIT, 0);
+                        for (let i = 0; i < 6; i++) packet[offset++] = pcr[i];
+                    } else {
+                        packet[offset++] = 0x00; // flags (pas de PCR)
+                    }
                     // Stuffing bytes (déjà 0xFF)
-                    offset += adaptationFieldLength - 2;
+                    offset = 4 + adaptationFieldLength;
                 }
             }
             
@@ -840,6 +851,21 @@ Légende:
             for (let i = 0; i < payloadSize; i++) {
                 packet[offset + i] = pesBinary[pesOffset + i];
             }
+            
+            const fields = {
+                'sync_byte': '0x47',
+                'PID': '0x0101 (Video)',
+                'PUSI': isFirst ? '1 (PES start)' : '0 (continuation)',
+                'AFC': hasAdaptation ? '11 (adaptation + payload)' : '01 (payload only)',
+                'continuity_counter': cc,
+                'adaptation_length': adaptationFieldLength
+            };
+            if (isFirst) {
+                fields['random_access'] = '1 (point d\'accès : Sequence Header)';
+                fields['PCR'] = `base ${PCR_BASE_INIT} × 300 + ext 0 = ${PCR_BASE_INIT * 300} (27 MHz, ${(PCR_BASE_INIT / 90000).toFixed(3)} s)`;
+            }
+            fields['payload_size'] = payloadSize;
+            fields['PES_offset'] = pesOffset;
             
             return {
                 index: tsPackets.length,
@@ -851,17 +877,22 @@ Légende:
                 payloadSize: payloadSize,
                 adaptationFieldLength: adaptationFieldLength,
                 pesOffset: pesOffset,
-                fields: {
-                    'sync_byte': '0x47',
-                    'PID': '0x0101 (Video)',
-                    'PUSI': isFirst ? '1 (PES start)' : '0 (continuation)',
-                    'AFC': hasAdaptation ? '11 (adaptation + payload)' : '01 (payload only)',
-                    'continuity_counter': cc,
-                    'adaptation_length': adaptationFieldLength,
-                    'payload_size': payloadSize,
-                    'PES_offset': pesOffset
-                }
+                pcr: isFirst ? PCR_BASE_INIT * 300 : null,
+                fields: fields
             };
+        }
+        
+        // PCR : base 33 bits (90 kHz) + 6 bits réservés '111111' + extension 9 bits (27 MHz)
+        function encodePCR(base, ext) {
+            const hi = Math.floor(base / 2);            // bits 32..1 de la base
+            return [
+                Math.floor(hi / 16777216) & 0xFF,
+                Math.floor(hi / 65536) & 0xFF,
+                Math.floor(hi / 256) & 0xFF,
+                hi & 0xFF,
+                ((base % 2) << 7) | 0x7E | ((ext >> 8) & 0x01),
+                ext & 0xFF
+            ];
         }
         
         // ============================================================
@@ -1044,6 +1075,8 @@ Légende:
                     packetSize: TS_PACKET_SIZE,
                     packetCount: tsPackets.length,
                     totalBytes: tsBinary.length,
+                    pcrPid: PID_VIDEO,
+                    pcrBaseInit: PCR_BASE_INIT,
                     pids: {
                         PAT: PID_PAT,
                         PMT: PID_PMT,

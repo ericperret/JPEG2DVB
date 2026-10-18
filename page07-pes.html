@@ -6,7 +6,7 @@
   Objet      : Page 07 - Empaquetage PES
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.4
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -17,6 +17,9 @@
                      garde la sortie et l'étape suivante la charge d'office
                1.4  2026-10-18  export JSON des gros flux (conversion base64 par
                      morceaux : dépassement de pile au-delà de ~100 000 octets)
+               1.5  2026-10-18  horodatage conforme ISO 13818-1 : PTS = PCR initial
+                     + 0,7 s (délai de décodage), data_alignment_indicator,
+                     PTS 33 bits sans débordement des opérateurs 32 bits
 ================================================================================
 -->
 <html lang="fr">
@@ -215,6 +218,10 @@
             overflow-x: auto;
         }
     
+        .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
+        .note-norme strong { color: #f0a63a; }
+        .note-norme b { color: #dfe7ec; }
+        .note-norme code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
         /* ---------- charte AZS (www.azs.fr) ---------- */
         :root { color-scheme: dark; }
         body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
@@ -268,6 +275,7 @@
         <strong>Entrée :</strong> Fichier JSON de l'ES (sortie Page 06)<br>
         <strong>Sortie :</strong> Fichier JSON des paquets PES avec headers et timestamps
     </div>
+    <div class="note-norme"><strong>Horodatage conforme ISO 13818-1 (§2.4.3.7, §2.7.5) :</strong><br>• Le <b>PTS</b> (horloge 90 kHz) dit au décodeur quand afficher l'image. Il est fixé à <code>PCR initial + 0,7 s</code> = 0 + 63 000 : le décodeur dispose de 0,7 s pour remplir son tampon et décoder l'image avant de l'afficher. Le PCR (horloge de référence 27 MHz) est inséré en page 08.<br>• Pas de <b>DTS</b> : la norme interdit de le transmettre quand il est égal au PTS, ce qui est le cas d'une image I sans réordonnancement.<br>• <code>data_alignment_indicator</code> = 1 sur le premier paquet : il commence par un start code (Sequence Header).</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Elementary Stream</span>
@@ -413,6 +421,10 @@
         
         // PTS clock: 90 kHz
         const PTS_CLOCK = 90000;
+        
+        // PCR initial (page 08) et délai de décodage : PTS = PCR_BASE_INIT + PTS_DELAY
+        const PCR_BASE_INIT = 0;
+        const PTS_DELAY = 63000;   // 0,7 s à 90 kHz
         
         // Taille max d'un paquet PES (0 = illimité pour vidéo, mais on limite pour l'exemple)
         const MAX_PES_PAYLOAD = 65000;  // Proche de 65535 max
@@ -621,7 +633,7 @@
                 const payloadSize = Math.min(remainingBytes, MAX_PES_PAYLOAD);
                 
                 // Calculer le PTS pour ce paquet (on a une seule frame, donc un seul PTS)
-                const pts = packetIndex === 0 ? 0 : null; // PTS seulement sur le premier paquet
+                const pts = packetIndex === 0 ? PCR_BASE_INIT + PTS_DELAY : null; // PTS seulement sur le premier paquet
                 
                 // Construire le paquet PES
                 const packet = buildPESPacket(
@@ -656,7 +668,8 @@
                 • Taille PES totale : ${totalPESSize.toLocaleString()} octets<br>
                 • Overhead headers : ${overhead} octets (${(overhead / esBinary.length * 100).toFixed(2)}%)<br>
                 • Stream ID : 0xE0 (Video)<br>
-                • PTS base : 0 (début du flux)
+                • PTS : ${PCR_BASE_INIT + PTS_DELAY} (${((PCR_BASE_INIT + PTS_DELAY) / PTS_CLOCK).toFixed(3)} s = PCR initial + 0,7 s)<br>
+                • DTS : non transmis (égal au PTS, image I)
             `;
         }
         
@@ -687,7 +700,8 @@
             
             // 4. Optional PES header
             // Byte 1: '10' + scrambling(2) + priority(1) + alignment(1) + copyright(1) + original(1)
-            header.push(0x80); // 10 000000 = no scrambling, no priority, etc.
+            // data_alignment_indicator (bit 2) = 1 si le paquet commence par un start code
+            header.push(index === 0 ? 0x84 : 0x80);
             
             // Byte 2: PTS_DTS_flags(2) + ESCR(1) + ES_rate(1) + DSM(1) + additional(1) + CRC(1) + extension(1)
             if (hasPTS) {
@@ -726,7 +740,8 @@
                     'packet_start_code': '00 00 01',
                     'stream_id': `0x${streamId.toString(16).toUpperCase()} (${streamId === 0xE0 ? 'Video' : 'Audio'})`,
                     'PES_packet_length': pesPacketLength > 65535 ? '0 (unbounded)' : pesPacketLength,
-                    'PTS_DTS_flags': hasPTS ? '10 (PTS only)' : '00 (none)',
+                    'data_alignment': index === 0 ? '1 (commence par un start code)' : '0',
+                    'PTS_DTS_flags': hasPTS ? '10 (PTS seul, DTS = PTS)' : '00 (none)',
                     'PTS': hasPTS ? `${pts} (${(pts / PTS_CLOCK).toFixed(3)}s)` : 'N/A',
                     'header_data_length': hasPTS ? 5 : 0,
                     'payload_size': payload.length
@@ -738,8 +753,9 @@
             // PTS sur 33 bits, encodé sur 5 octets avec marqueurs
             // Format: '0010' PTS[32:30] '1' PTS[29:15] '1' PTS[14:0] '1'
             
-            const pts32_30 = (pts >> 30) & 0x07;
-            const pts29_15 = (pts >> 15) & 0x7FFF;
+            // 33 bits : Math.floor plutôt que >> (opérateurs limités à 32 bits)
+            const pts32_30 = Math.floor(pts / 1073741824) & 0x07;
+            const pts29_15 = Math.floor(pts / 32768) & 0x7FFF;
             const pts14_0 = pts & 0x7FFF;
             
             const byte0 = 0x21 | (pts32_30 << 1); // 0010 xxx1
@@ -1003,6 +1019,8 @@
                     totalBytes: pesBinary.length,
                     streamId: STREAM_ID_VIDEO,
                     ptsClock: PTS_CLOCK,
+                    pcrBaseInit: PCR_BASE_INIT,
+                    ptsDelay: PTS_DELAY,
                     packets: pesPackets.map(p => ({
                         index: p.index,
                         streamId: p.streamId,
