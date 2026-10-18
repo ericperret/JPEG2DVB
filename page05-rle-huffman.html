@@ -6,8 +6,11 @@
   Objet      : Page 05 - RLE + Huffman (VLC)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
+  Version    : 1.1
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
+  Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
+                     suivante en haut et en bas de page
 ================================================================================
 -->
 <html lang="fr">
@@ -206,8 +209,24 @@
             background: #16213e;
         }
     </style>
+    <style>
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
+        .j2d-nav .j2d-points a.ici { background: #ff8800; }
+        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
 </head>
 <body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page04-zigzag.html">◀ 04 · Zigzag</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 05 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman" class="ici" aria-current="page"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page06-elementary-stream.html">06 · Elementary Stream ▶</a></nav>
     <h1>🗜️ Page 05 - RLE + Huffman (VLC)</h1>
     
     <div class="description">
@@ -1092,5 +1111,6 @@
             }
         }
     </script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page04-zigzag.html">◀ 04 · Zigzag</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 05 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman" class="ici" aria-current="page"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page06-elementary-stream.html">06 · Elementary Stream ▶</a></nav>
 </body>
 </html>
