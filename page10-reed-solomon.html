@@ -6,11 +6,13 @@
   Objet      : Page 10 - Reed-Solomon (204,188)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -19,21 +21,21 @@
     <title>Page 10 - Reed-Solomon (204,188)</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
             margin: 20px;
-            background: #1a1a2e;
-            color: #eee;
+            background: #0e1418;
+            color: #dfe7ec;
         }
         h1 {
-            color: #00d4ff;
+            color: #5cc8d6;
             text-align: center;
         }
         .description {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
-            border-left: 4px solid #00d4ff;
+            border-left: 4px solid #5cc8d6;
         }
         .pipeline {
             display: flex;
@@ -46,19 +48,19 @@
             flex-wrap: wrap;
         }
         .pipeline-step {
-            background: #0f3460;
+            background: #26343e;
             padding: 8px 15px;
             border-radius: 5px;
         }
         .pipeline-step.active {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         .pipeline-step.done {
             background: #006644;
         }
         .pipeline-arrow {
-            color: #00d4ff;
+            color: #5cc8d6;
             font-size: 20px;
         }
         .canvas-container {
@@ -68,24 +70,24 @@
             flex-wrap: wrap;
         }
         .canvas-box {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             text-align: center;
         }
         .canvas-box h3 {
             margin-top: 0;
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         canvas {
-            border: 2px solid #0f3460;
+            border: 2px solid #26343e;
             cursor: pointer;
         }
         .controls {
             margin-top: 10px;
         }
         button {
-            background: #0f3460;
+            background: #26343e;
             color: #fff;
             border: none;
             padding: 10px 20px;
@@ -95,7 +97,7 @@
             font-size: 14px;
         }
         button:hover {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         button:disabled {
@@ -108,10 +110,10 @@
         .info {
             margin-top: 10px;
             font-size: 12px;
-            color: #888;
+            color: #8fa1ad;
         }
         .stats {
-            background: #0f3460;
+            background: #26343e;
             padding: 10px;
             border-radius: 5px;
             margin-top: 15px;
@@ -125,7 +127,7 @@
         .hex-display {
             font-family: monospace;
             font-size: 11px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 10px;
             border-radius: 5px;
             max-height: 120px;
@@ -133,8 +135,8 @@
             word-break: break-all;
             text-align: left;
         }
-        .hex-display .data { color: #00d4ff; }
-        .hex-display .parity { color: #ff8800; }
+        .hex-display .data { color: #5cc8d6; }
+        .hex-display .parity { color: #f0a63a; }
         .legend {
             display: flex;
             flex-wrap: wrap;
@@ -154,26 +156,26 @@
             border-radius: 2px;
         }
         .section-detail {
-            background: #0f3460;
+            background: #26343e;
             padding: 15px;
             border-radius: 8px;
             margin-top: 15px;
         }
         .section-detail h4 {
             margin-top: 0;
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         .field-list {
             font-family: monospace;
             font-size: 11px;
             line-height: 1.6;
         }
-        .field-list .field-name { color: #ff8800; }
+        .field-list .field-name { color: #f0a63a; }
         .field-list .field-value { color: #00ff88; }
         .rs-diagram {
             font-family: monospace;
             font-size: 11px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 15px;
             border-radius: 5px;
             overflow-x: auto;
@@ -190,35 +192,60 @@
             text-align: left;
         }
         table.info-table th {
-            background: #0f3460;
+            background: #26343e;
         }
         .poly-display {
             font-family: monospace;
             font-size: 10px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 10px;
             border-radius: 5px;
             word-break: break-all;
         }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page09-prbs.html">◀ 09 · PRBS</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 10 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon" class="ici" aria-current="page"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page11-interleaving.html">11 · Entrelacement ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page09-prbs.html">◀ 09 · PRBS</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 10 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon" class="ici" aria-current="page"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page11-interleaving.html">11 · Entrelacement ▶</a></nav>
     <h1>🛡️ Page 10 - Reed-Solomon (204,188)</h1>
     
     <div class="description">
@@ -566,11 +593,11 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
             const canvas = document.getElementById('canvasInput');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${tsPackets.length} paquets TS (188 oct)`, WIDTH / 2, 20);
             
@@ -600,7 +627,7 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
                 ctx.fillText(i.toString(), x + packetWidth / 2, y + packetHeight / 2 + 3);
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Chaque paquet → 1 bloc RS', 10, HEIGHT - 10);
@@ -614,11 +641,11 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
             const canvas = document.getElementById('canvasProcess');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 14px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText('Encodage Reed-Solomon', WIDTH / 2, 25);
             
@@ -629,33 +656,33 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
             
             let y = 50;
             ctx.fillText('1. Message m(x) = 188 octets données', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   m(x) = m₁₈₇·x¹⁸⁷ + ... + m₁·x + m₀', 20, y + 15);
             
             y += 40;
             ctx.fillStyle = '#fff';
             ctx.fillText('2. Décaler de 16 positions : m(x)·x¹⁶', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   Faire place pour les 16 octets de parité', 20, y + 15);
             
             y += 40;
             ctx.fillStyle = '#fff';
             ctx.fillText('3. Division polynomiale dans GF(2⁸)', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   r(x) = m(x)·x¹⁶ mod g(x)', 20, y + 15);
             ctx.fillText('   r(x) = reste = 16 octets de parité', 20, y + 30);
             
             y += 50;
             ctx.fillStyle = '#fff';
             ctx.fillText('4. Mot de code = données + parité', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   c(x) = m(x)·x¹⁶ + r(x)', 20, y + 15);
             
             // Visualisation
             y += 45;
             ctx.fillStyle = '#0099cc';
             ctx.fillRect(20, y, 200, 20);
-            ctx.fillStyle = '#ff8800';
+            ctx.fillStyle = '#f0a63a';
             ctx.fillRect(220, y, 50, 20);
             
             ctx.fillStyle = '#fff';
@@ -664,7 +691,7 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
             ctx.fillText('188 octets données', 120, y + 14);
             ctx.fillText('16 parité', 245, y + 14);
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '9px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('= 204 octets total', 280, y + 14);
@@ -760,11 +787,11 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
                 const canvas = document.getElementById('canvasProcess');
                 const ctx = canvas.getContext('2d');
                 
-                ctx.fillStyle = '#1a1a2e';
+                ctx.fillStyle = '#0e1418';
                 ctx.fillRect(0, 0, WIDTH, HEIGHT);
                 
                 ctx.font = 'bold 14px Arial';
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.textAlign = 'center';
                 ctx.fillText(`Encodage bloc 0 - Octet ${step}/${data.length}`, WIDTH / 2, 25);
                 
@@ -794,7 +821,7 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
                 
                 const cellWidth = (WIDTH - 20) / RS_PARITY_SIZE;
                 for (let i = 0; i < RS_PARITY_SIZE; i++) {
-                    ctx.fillStyle = feedback[i] === 0 ? '#333' : '#ff8800';
+                    ctx.fillStyle = feedback[i] === 0 ? '#333' : '#f0a63a';
                     ctx.fillRect(10 + i * cellWidth + 1, regY + 1, cellWidth - 2, 28);
                     
                     ctx.fillStyle = '#fff';
@@ -805,9 +832,9 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
                 }
                 
                 // Barre de progression
-                ctx.fillStyle = '#0f3460';
+                ctx.fillStyle = '#26343e';
                 ctx.fillRect(10, 130, WIDTH - 20, 15);
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.fillRect(10, 130, (WIDTH - 20) * (step / data.length), 15);
                 
                 ctx.fillStyle = '#fff';
@@ -858,11 +885,11 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
             const canvas = document.getElementById('canvasOutput');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${rsBlocks.length} blocs RS (204 oct)`, WIDTH / 2, 20);
             
@@ -887,7 +914,7 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
                 ctx.fillRect(x, y, dataWidth, blockHeight);
                 
                 // Parité (16)
-                ctx.fillStyle = '#ff8800';
+                ctx.fillStyle = '#f0a63a';
                 ctx.fillRect(x + dataWidth, y, blockWidth - dataWidth, blockHeight);
                 
                 // Sélection
@@ -1035,7 +1062,7 @@ Capacité de correction : t = 8 octets erronés par bloc de 204
         function clearCanvas(canvasId) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
         }
     </script>

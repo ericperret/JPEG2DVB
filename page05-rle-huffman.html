@@ -6,11 +6,13 @@
   Objet      : Page 05 - RLE + Huffman (VLC)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -19,21 +21,21 @@
     <title>Page 05 - RLE + Huffman (VLC)</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
             margin: 20px;
-            background: #1a1a2e;
-            color: #eee;
+            background: #0e1418;
+            color: #dfe7ec;
         }
         h1 {
-            color: #00d4ff;
+            color: #5cc8d6;
             text-align: center;
         }
         .description {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
-            border-left: 4px solid #00d4ff;
+            border-left: 4px solid #5cc8d6;
         }
         .pipeline {
             display: flex;
@@ -46,16 +48,16 @@
             flex-wrap: wrap;
         }
         .pipeline-step {
-            background: #0f3460;
+            background: #26343e;
             padding: 8px 15px;
             border-radius: 5px;
         }
         .pipeline-step.active {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         .pipeline-arrow {
-            color: #00d4ff;
+            color: #5cc8d6;
             font-size: 20px;
         }
         .canvas-container {
@@ -65,24 +67,24 @@
             flex-wrap: wrap;
         }
         .canvas-box {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             text-align: center;
         }
         .canvas-box h3 {
             margin-top: 0;
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         canvas {
-            border: 2px solid #0f3460;
+            border: 2px solid #26343e;
             cursor: crosshair;
         }
         .controls {
             margin-top: 10px;
         }
         button {
-            background: #0f3460;
+            background: #26343e;
             color: #fff;
             border: none;
             padding: 10px 20px;
@@ -92,7 +94,7 @@
             font-size: 14px;
         }
         button:hover {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         button:disabled {
@@ -105,10 +107,10 @@
         .info {
             margin-top: 10px;
             font-size: 12px;
-            color: #888;
+            color: #8fa1ad;
         }
         .stats {
-            background: #0f3460;
+            background: #26343e;
             padding: 10px;
             border-radius: 5px;
             margin-top: 15px;
@@ -128,7 +130,7 @@
             margin: 10px 0;
         }
         .rle-pair {
-            background: #0f3460;
+            background: #26343e;
             padding: 5px 10px;
             border-radius: 5px;
             font-family: monospace;
@@ -146,7 +148,7 @@
         .bitstream-display {
             font-family: monospace;
             font-size: 12px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 10px;
             border-radius: 5px;
             word-break: break-all;
@@ -155,17 +157,17 @@
             overflow-y: auto;
         }
         .bitstream-display .vlc {
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         .bitstream-display .value {
-            color: #ff8800;
+            color: #f0a63a;
         }
         .bitstream-display .sign {
             color: #ff4444;
         }
         .compression-bar {
             height: 30px;
-            background: #0f3460;
+            background: #26343e;
             border-radius: 5px;
             margin: 10px 0;
             position: relative;
@@ -203,30 +205,55 @@
             text-align: center;
         }
         table.vlc-table th {
-            background: #0f3460;
+            background: #26343e;
         }
         table.vlc-table tr:nth-child(even) {
-            background: #16213e;
+            background: #18222a;
         }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page04-zigzag.html">◀ 04 · Zigzag</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 05 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman" class="ici" aria-current="page"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page06-elementary-stream.html">06 · Elementary Stream ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page04-zigzag.html">◀ 04 · Zigzag</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 05 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman" class="ici" aria-current="page"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page06-elementary-stream.html">06 · Elementary Stream ▶</a></nav>
     <h1>🗜️ Page 05 - RLE + Huffman (VLC)</h1>
     
     <div class="description">
@@ -555,10 +582,10 @@
             const canvas = document.getElementById('canvasProcess');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('Processus RLE + VLC', WIDTH / 2, 30);
@@ -570,20 +597,20 @@
             
             const y = 60;
             ctx.fillText('1. DC : Codage différentiel (DPCM)', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   DC_diff = DC_current - DC_previous', 20, y + 20);
             ctx.fillText('   → Code VLC selon la taille (nb bits)', 20, y + 35);
             
             ctx.fillStyle = '#fff';
             ctx.fillText('2. AC : Run-Length Encoding', 20, y + 65);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   Parcours du vecteur [1..63]', 20, y + 85);
             ctx.fillText('   → Paires (nb_zeros, valeur_non_nulle)', 20, y + 100);
             ctx.fillText('   → EOB si que des zéros restants', 20, y + 115);
             
             ctx.fillStyle = '#fff';
             ctx.fillText('3. VLC : Huffman par table', 20, y + 145);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('   Chaque paire (run,level) → code binaire', 20, y + 165);
             ctx.fillText('   Codes courts pour paires fréquentes', 20, y + 180);
             ctx.fillText('   ESCAPE + 18bits si paire rare', 20, y + 195);
@@ -926,11 +953,11 @@
                 const canvas = document.getElementById('canvasProcess');
                 const ctx = canvas.getContext('2d');
                 
-                ctx.fillStyle = '#1a1a2e';
+                ctx.fillStyle = '#0e1418';
                 ctx.fillRect(0, 0, WIDTH, HEIGHT);
                 
                 // Titre
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.font = 'bold 14px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText('Animation encodage bloc [0,0]', WIDTH / 2, 20);
@@ -954,7 +981,7 @@
                     } else if (i === step) {
                         bg = '#ff4400'; // En cours
                     } else {
-                        bg = val === 0 ? '#001122' : '#0f3460';
+                        bg = val === 0 ? '#001122' : '#26343e';
                     }
                     
                     ctx.fillStyle = bg;
@@ -975,7 +1002,7 @@
                     const dcDiff = dc - tempLastDC;
                     ctx.fillText(`Étape ${step}: DC = ${dc}, Diff = ${dcDiff}`, 20, infoY);
                     const dcEnc = encodeDC(dcDiff);
-                    ctx.fillStyle = '#00d4ff';
+                    ctx.fillStyle = '#5cc8d6';
                     ctx.fillText(`→ VLC: ${dcEnc.bits}`, 20, infoY + 20);
                     tempLastDC = dc;
                 } else if (step < 64) {
@@ -991,12 +1018,12 @@
                         }
                         ctx.fillText(`Étape ${step}: AC[${step}] = ${val}, run = ${run}`, 20, infoY);
                         const acEnc = encodeAC(run, val);
-                        ctx.fillStyle = '#00d4ff';
+                        ctx.fillStyle = '#5cc8d6';
                         ctx.fillText(`→ VLC (${run},${val}): ${acEnc.bits}`, 20, infoY + 20);
                     }
                 } else {
                     ctx.fillText('Fin du vecteur → EOB', 20, infoY);
-                    ctx.fillStyle = '#00d4ff';
+                    ctx.fillStyle = '#5cc8d6';
                     ctx.fillText(`→ VLC: ${AC_VLC['EOB']}`, 20, infoY + 20);
                 }
                 
@@ -1090,7 +1117,7 @@
         function clearCanvas(canvasId) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
         }
         

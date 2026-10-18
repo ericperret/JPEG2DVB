@@ -6,11 +6,13 @@
   Objet      : Page 09 - Randomisation PRBS
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -19,21 +21,21 @@
     <title>Page 09 - Randomisation PRBS</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
             margin: 20px;
-            background: #1a1a2e;
-            color: #eee;
+            background: #0e1418;
+            color: #dfe7ec;
         }
         h1 {
-            color: #00d4ff;
+            color: #5cc8d6;
             text-align: center;
         }
         .description {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             margin-bottom: 20px;
-            border-left: 4px solid #00d4ff;
+            border-left: 4px solid #5cc8d6;
         }
         .pipeline {
             display: flex;
@@ -46,19 +48,19 @@
             flex-wrap: wrap;
         }
         .pipeline-step {
-            background: #0f3460;
+            background: #26343e;
             padding: 8px 15px;
             border-radius: 5px;
         }
         .pipeline-step.active {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         .pipeline-step.done {
             background: #006644;
         }
         .pipeline-arrow {
-            color: #00d4ff;
+            color: #5cc8d6;
             font-size: 20px;
         }
         .canvas-container {
@@ -68,24 +70,24 @@
             flex-wrap: wrap;
         }
         .canvas-box {
-            background: #16213e;
+            background: #18222a;
             padding: 15px;
             border-radius: 8px;
             text-align: center;
         }
         .canvas-box h3 {
             margin-top: 0;
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         canvas {
-            border: 2px solid #0f3460;
+            border: 2px solid #26343e;
             cursor: pointer;
         }
         .controls {
             margin-top: 10px;
         }
         button {
-            background: #0f3460;
+            background: #26343e;
             color: #fff;
             border: none;
             padding: 10px 20px;
@@ -95,7 +97,7 @@
             font-size: 14px;
         }
         button:hover {
-            background: #00d4ff;
+            background: #5cc8d6;
             color: #000;
         }
         button:disabled {
@@ -108,10 +110,10 @@
         .info {
             margin-top: 10px;
             font-size: 12px;
-            color: #888;
+            color: #8fa1ad;
         }
         .stats {
-            background: #0f3460;
+            background: #26343e;
             padding: 10px;
             border-radius: 5px;
             margin-top: 15px;
@@ -125,7 +127,7 @@
         .hex-display {
             font-family: monospace;
             font-size: 11px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 10px;
             border-radius: 5px;
             max-height: 120px;
@@ -135,7 +137,7 @@
         }
         .hex-display .sync { color: #ff4444; font-weight: bold; }
         .hex-display .sync-inv { color: #ff00ff; font-weight: bold; }
-        .hex-display .data { color: #00d4ff; }
+        .hex-display .data { color: #5cc8d6; }
         .legend {
             display: flex;
             flex-wrap: wrap;
@@ -155,26 +157,26 @@
             border-radius: 2px;
         }
         .section-detail {
-            background: #0f3460;
+            background: #26343e;
             padding: 15px;
             border-radius: 8px;
             margin-top: 15px;
         }
         .section-detail h4 {
             margin-top: 0;
-            color: #00d4ff;
+            color: #5cc8d6;
         }
         .field-list {
             font-family: monospace;
             font-size: 11px;
             line-height: 1.6;
         }
-        .field-list .field-name { color: #ff8800; }
+        .field-list .field-name { color: #f0a63a; }
         .field-list .field-value { color: #00ff88; }
         .prbs-diagram {
             font-family: monospace;
             font-size: 11px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 15px;
             border-radius: 5px;
             overflow-x: auto;
@@ -182,7 +184,7 @@
         .register-display {
             font-family: monospace;
             font-size: 14px;
-            background: #0a0a15;
+            background: #141c22;
             padding: 10px;
             border-radius: 5px;
             text-align: center;
@@ -202,27 +204,52 @@
             text-align: left;
         }
         table.info-table th {
-            background: #0f3460;
+            background: #26343e;
         }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page08-ts.html">◀ 08 · Transport Stream</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 09 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS" class="ici" aria-current="page"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page10-reed-solomon.html">10 · Reed-Solomon ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page08-ts.html">◀ 08 · Transport Stream</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 09 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS" class="ici" aria-current="page"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page10-reed-solomon.html">10 · Reed-Solomon ▶</a></nav>
     <h1>🎲 Page 09 - Randomisation PRBS</h1>
     
     <div class="description">
@@ -483,11 +510,11 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
             const canvas = document.getElementById('canvasInput');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${tsPackets.length} paquets TS`, WIDTH / 2, 20);
             
@@ -517,14 +544,14 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
                 
                 // Numéro de super-trame
                 if (posInSuperFrame === 0) {
-                    ctx.fillStyle = '#888';
+                    ctx.fillStyle = '#8fa1ad';
                     ctx.font = '9px Arial';
                     ctx.textAlign = 'right';
                     ctx.fillText(`SF${superFrame}`, x - 2, y + packetHeight / 2 + 3);
                 }
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Orange = 1er paquet super-trame (sync inversé)', 10, HEIGHT - 10);
@@ -538,11 +565,11 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
             const canvas = document.getElementById('canvasProcess');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 14px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText('Générateur PRBS', WIDTH / 2, 25);
             
@@ -556,7 +583,7 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
             
             let y = 130;
             ctx.fillText('Fonctionnement:', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('1. Init registre = 0x4A80', 20, y + 18);
             ctx.fillText('2. Sortie = bit 15', 20, y + 33);
             ctx.fillText('3. Feedback = bit14 XOR bit15', 20, y + 48);
@@ -566,7 +593,7 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
             y += 100;
             ctx.fillStyle = '#fff';
             ctx.fillText('Super-trame (8 paquets):', 20, y);
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.fillText('• Paquet 1: sync 0x47→0xB8, reset PRBS', 20, y + 15);
             ctx.fillText('• Paquets 2-8: sync inchangé', 20, y + 30);
         }
@@ -593,20 +620,20 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
                 ctx.fillText(bit.toString(), x + bitWidth / 2 - 1, y + 16);
                 
                 // Numéro
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = '#8fa1ad';
                 ctx.font = '8px monospace';
                 ctx.fillText((15 - i).toString(), x + bitWidth / 2 - 1, y + 35);
                 ctx.font = '10px monospace';
             }
             
             // Valeur hex
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.font = '12px monospace';
             ctx.textAlign = 'center';
             ctx.fillText(`0x${value.toString(16).toUpperCase().padStart(4, '0')}`, WIDTH / 2, y + 55);
             
             // Marqueurs feedback
-            ctx.fillStyle = '#ff8800';
+            ctx.fillStyle = '#f0a63a';
             ctx.font = '9px Arial';
             const x14 = startX + 0 * bitWidth + bitWidth / 2;
             const x15 = startX + 1 * bitWidth + bitWidth / 2;
@@ -740,11 +767,11 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
                 const canvas = document.getElementById('canvasProcess');
                 const ctx = canvas.getContext('2d');
                 
-                ctx.fillStyle = '#1a1a2e';
+                ctx.fillStyle = '#0e1418';
                 ctx.fillRect(0, 0, WIDTH, HEIGHT);
                 
                 ctx.font = 'bold 14px Arial';
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.textAlign = 'center';
                 ctx.fillText(`PRBS Step ${step}`, WIDTH / 2, 25);
                 
@@ -760,12 +787,12 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
                 // Feedback
                 const bit14 = (register >> 13) & 1;
                 const bit15 = (register >> 14) & 1;
-                ctx.fillStyle = '#ff8800';
+                ctx.fillStyle = '#f0a63a';
                 ctx.font = '12px monospace';
                 ctx.fillText(`Feedback: ${bit14} XOR ${bit15} = ${bit14 ^ bit15}`, WIDTH / 2, 155);
                 
                 // Historique des bits
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = '#8fa1ad';
                 ctx.font = '10px Arial';
                 ctx.textAlign = 'left';
                 ctx.fillText('Séquence générée:', 20, 180);
@@ -802,11 +829,11 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
             const canvas = document.getElementById('canvasOutput');
             const ctx = canvas.getContext('2d');
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText('TS Randomisé', WIDTH / 2, 20);
             
@@ -849,7 +876,7 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
                 packet.displayHeight = packetHeight;
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Magenta = sync 0xB8 | Cyan = données XOR PRBS', 10, HEIGHT - 10);
@@ -1007,7 +1034,7 @@ Super-trame = 8 paquets TS = 8 × 188 = 1504 octets
         function clearCanvas(canvasId) {
             const canvas = document.getElementById(canvasId);
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
         }
     </script>

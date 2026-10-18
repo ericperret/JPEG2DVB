@@ -6,11 +6,13 @@
   Objet      : Page 12 - Codeur Convolutif
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -18,54 +20,79 @@
     <meta charset="UTF-8">
     <title>Page 12 - Codeur Convolutif</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; text-align: center; }
-        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        h1 { color: #5cc8d6; text-align: center; }
+        .description { background: #18222a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5cc8d6; }
         .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
-        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
-        .pipeline-step.active { background: #00d4ff; color: #000; }
+        .pipeline-step { background: #26343e; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #5cc8d6; color: #000; }
         .pipeline-step.done { background: #006644; }
-        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .pipeline-arrow { color: #5cc8d6; font-size: 20px; }
         .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
-        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
-        .canvas-box h3 { margin-top: 0; color: #00d4ff; }
-        canvas { border: 2px solid #0f3460; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #5cc8d6; }
+        canvas { border: 2px solid #26343e; }
         .controls { margin-top: 10px; }
-        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #00d4ff; color: #000; }
+        button { background: #26343e; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #5cc8d6; color: #000; }
         button:disabled { background: #333; cursor: not-allowed; }
         input[type="file"] { display: none; }
-        select { background: #0f3460; color: #fff; border: none; padding: 8px; border-radius: 5px; }
-        .info { margin-top: 10px; font-size: 12px; color: #888; }
-        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        select { background: #26343e; color: #fff; border: none; padding: 8px; border-radius: 5px; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
         .detail-section { max-width: 1100px; margin: 20px auto; }
-        .conv-diagram { font-family: monospace; font-size: 10px; background: #0a0a15; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .conv-diagram { font-family: monospace; font-size: 10px; background: #141c22; padding: 15px; border-radius: 5px; overflow-x: auto; }
         table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
         table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
-        table.info-table th { background: #0f3460; }
+        table.info-table th { background: #26343e; }
         .register-display { display: flex; justify-content: center; gap: 2px; margin: 10px 0; }
         .reg-bit { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-family: monospace; font-weight: bold; }
         .reg-bit.one { background: #00aa00; color: #fff; }
         .reg-bit.zero { background: #333; color: #666; }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page11-interleaving.html">◀ 11 · Entrelacement</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 12 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif" class="ici" aria-current="page"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page13-qpsk.html">13 · QPSK ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page11-interleaving.html">◀ 11 · Entrelacement</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 12 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif" class="ici" aria-current="page"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page13-qpsk.html">13 · QPSK ▶</a></nav>
     <h1>⚡ Page 12 - Codeur Convolutif</h1>
     
     <div class="description">
@@ -259,11 +286,11 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
         function displayInputData() {
             const canvas = document.getElementById('canvasInput');
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${inputBytes.length} octets entrelacés`, WIDTH/2, 20);
             
@@ -286,7 +313,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 }
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Vert = 1, Gris = 0', 10, HEIGHT - 10);
@@ -295,18 +322,18 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
         function displayProcessInit() {
             const canvas = document.getElementById('canvasProcess');
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText('Codeur Convolutif K=7', WIDTH/2, 20);
             
             // Dessiner le registre
             const regX = 50, regY = 50, cellW = 35, cellH = 30;
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('IN', regX - 20, regY + cellH/2 + 3);
@@ -317,12 +344,12 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 ctx.fillRect(regX + i * cellW, regY, cellW - 2, cellH);
                 ctx.strokeStyle = '#666';
                 ctx.strokeRect(regX + i * cellW, regY, cellW - 2, cellH);
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = '#8fa1ad';
                 ctx.fillText(`D${REG_SIZE - 1 - i}`, regX + i * cellW + cellW/2 - 1, regY + cellH + 15);
             }
             
             // G1 et G2
-            ctx.fillStyle = '#ff8800';
+            ctx.fillStyle = '#f0a63a';
             ctx.font = '11px monospace';
             ctx.textAlign = 'left';
             ctx.fillText('G1 = 171₈ → X', 50, 120);
@@ -340,7 +367,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
             // Taux
             const rate = document.getElementById('codeRate').value;
             const pattern = PUNCTURE_PATTERNS[rate];
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '11px Arial';
             ctx.fillText(`Taux ${rate}: ${pattern.inBits} bit(s) → ${pattern.outBits} bit(s)`, 50, 235);
             
@@ -455,7 +482,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
             function animate() {
                 const canvas = document.getElementById('canvasProcess');
                 const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#1a1a2e';
+                ctx.fillStyle = '#0e1418';
                 ctx.fillRect(0, 0, WIDTH, HEIGHT);
                 
                 // Calculer le bit courant
@@ -475,7 +502,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 
                 // Titre
                 ctx.font = 'bold 12px Arial';
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.textAlign = 'center';
                 ctx.fillText(`Bit ${animStep} / ${inputBytes.length * 8}`, WIDTH/2, 20);
                 
@@ -485,7 +512,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 ctx.textAlign = 'center';
                 ctx.fillText(inputBit.toString(), 30, 60);
                 ctx.font = '10px Arial';
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = '#8fa1ad';
                 ctx.fillText('IN', 30, 75);
                 
                 // Flèche entrée
@@ -509,7 +536,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                     ctx.textAlign = 'center';
                     ctx.fillText(bitVal.toString(), regX + i * cellW + cellW/2 - 1, regY + cellH/2 + 6);
                     
-                    ctx.fillStyle = '#888';
+                    ctx.fillStyle = '#8fa1ad';
                     ctx.font = '9px Arial';
                     ctx.fillText(`D${REG_SIZE - 1 - i}`, regX + i * cellW + cellW/2 - 1, regY + cellH + 12);
                 }
@@ -517,7 +544,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 // Connexions G1 (orange)
                 const g1Taps = [0, 1, 2, 5]; // positions D5, D4, D3, D0 dans le registre
                 const g1Y = 115;
-                ctx.strokeStyle = '#ff8800';
+                ctx.strokeStyle = '#f0a63a';
                 ctx.lineWidth = 2;
                 
                 // Ligne horizontale G1
@@ -527,7 +554,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 ctx.stroke();
                 
                 // Taps G1
-                ctx.fillStyle = '#ff8800';
+                ctx.fillStyle = '#f0a63a';
                 // Entrée
                 ctx.beginPath(); ctx.moveTo(30, 70); ctx.lineTo(30, g1Y); ctx.stroke();
                 ctx.beginPath(); ctx.arc(30, g1Y, 4, 0, Math.PI*2); ctx.fill();
@@ -539,7 +566,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 });
                 
                 // Sortie X
-                ctx.fillStyle = outX ? '#ff8800' : '#663300';
+                ctx.fillStyle = outX ? '#f0a63a' : '#663300';
                 ctx.fillRect(WIDTH - 60, g1Y - 15, 40, 30);
                 ctx.fillStyle = '#fff';
                 ctx.font = 'bold 14px monospace';
@@ -589,9 +616,9 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 ctx.fillText(`Sortie: (${outX},${outY})`, WIDTH/2, 245);
                 
                 // Barre de progression
-                ctx.fillStyle = '#0f3460';
+                ctx.fillStyle = '#26343e';
                 ctx.fillRect(10, HEIGHT - 25, WIDTH - 20, 12);
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.fillRect(10, HEIGHT - 25, (WIDTH - 20) * (animStep / (inputBytes.length * 8)), 12);
                 
                 // Décaler le registre
@@ -621,11 +648,11 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
         function displayOutputEncoded() {
             const canvas = document.getElementById('canvasOutput');
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${encodedBits.length.toLocaleString()} bits codés`, WIDTH/2, 20);
             
@@ -638,11 +665,11 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
                 const x = 10 + (i % bitsPerRow);
                 const y = startY + Math.floor(i / bitsPerRow) * rowH;
                 
-                ctx.fillStyle = encodedBits[i] ? '#ff8800' : '#333';
+                ctx.fillStyle = encodedBits[i] ? '#f0a63a' : '#333';
                 ctx.fillRect(x, y, 1, rowH - 1);
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Orange = 1, Gris = 0', 10, HEIGHT - 10);
@@ -710,7 +737,7 @@ Masques de connexion (notation octale, bit de poids fort = entrée):
         
         function clearCanvas(id) {
             const ctx = document.getElementById(id).getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
         }
     </script>

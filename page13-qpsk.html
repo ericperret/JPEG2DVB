@@ -6,11 +6,13 @@
   Objet      : Page 13 - Mapping QPSK
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -18,49 +20,74 @@
     <meta charset="UTF-8">
     <title>Page 13 - Mapping QPSK</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; text-align: center; }
-        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        h1 { color: #5cc8d6; text-align: center; }
+        .description { background: #18222a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5cc8d6; }
         .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
-        .pipeline-step { background: #0f3460; padding: 8px 15px; border-radius: 5px; }
-        .pipeline-step.active { background: #00d4ff; color: #000; }
+        .pipeline-step { background: #26343e; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #5cc8d6; color: #000; }
         .pipeline-step.done { background: #006644; }
-        .pipeline-arrow { color: #00d4ff; font-size: 20px; }
+        .pipeline-arrow { color: #5cc8d6; font-size: 20px; }
         .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
-        .canvas-box { background: #16213e; padding: 15px; border-radius: 8px; text-align: center; }
-        .canvas-box h3 { margin-top: 0; color: #00d4ff; }
-        canvas { border: 2px solid #0f3460; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #5cc8d6; }
+        canvas { border: 2px solid #26343e; }
         .controls { margin-top: 10px; }
-        button { background: #0f3460; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
-        button:hover { background: #00d4ff; color: #000; }
+        button { background: #26343e; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #5cc8d6; color: #000; }
         button:disabled { background: #333; cursor: not-allowed; }
         input[type="file"] { display: none; }
-        .info { margin-top: 10px; font-size: 12px; color: #888; }
-        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
         .detail-section { max-width: 1100px; margin: 20px auto; }
-        .qpsk-diagram { font-family: monospace; font-size: 11px; background: #0a0a15; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .qpsk-diagram { font-family: monospace; font-size: 11px; background: #141c22; padding: 15px; border-radius: 5px; overflow-x: auto; }
         table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
         table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: center; }
-        table.info-table th { background: #0f3460; }
+        table.info-table th { background: #26343e; }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page12-convolutional_1.html">◀ 12 · Codeur convolutif</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 13 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK" class="ici" aria-current="page"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page14-srrc-v2.html">14 · Filtre SRRC ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page12-convolutional_1.html">◀ 12 · Codeur convolutif</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 13 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK" class="ici" aria-current="page"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page14-srrc-v2.html">14 · Filtre SRRC ▶</a></nav>
     <h1>📡 Page 13 - Mapping QPSK</h1>
     
     <div class="description">
@@ -280,11 +307,11 @@
         function displayInputBits() {
             const canvas = document.getElementById('canvasInput');
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${inputBits.length.toLocaleString()} bits codés`, WIDTH/2, 20);
             
@@ -306,7 +333,7 @@
                 ctx.fillRect(x, y, 2, rowH - 1);
             }
             
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('Couleur = dibit (00/01/10/11)', 10, HEIGHT - 10);
@@ -319,7 +346,7 @@
             const center = size / 2;
             const scale = size * 0.35;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, size, size);
             
             // Grille
@@ -339,7 +366,7 @@
             ctx.stroke();
             
             // Labels axes
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '12px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('I', size - 15, center - 5);
@@ -369,7 +396,7 @@
             // Compteurs si mappé
             if (mapped) {
                 ctx.font = '10px Arial';
-                ctx.fillStyle = '#888';
+                ctx.fillStyle = '#8fa1ad';
                 ctx.textAlign = 'left';
                 ctx.fillText(`00: ${symbolCounts[0]}`, 10, size - 40);
                 ctx.fillText(`01: ${symbolCounts[1]}`, 10, size - 28);
@@ -453,9 +480,9 @@
                 // Afficher progression
                 const canvas = document.getElementById('canvasConstellation');
                 const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#0f3460';
+                ctx.fillStyle = '#26343e';
                 ctx.fillRect(10, CONST_SIZE - 15, CONST_SIZE - 20, 10);
-                ctx.fillStyle = '#00d4ff';
+                ctx.fillStyle = '#5cc8d6';
                 ctx.fillRect(10, CONST_SIZE - 15, (CONST_SIZE - 20) * (animStep / totalSymbols), 10);
                 
                 ctx.fillStyle = '#fff';
@@ -496,11 +523,11 @@
         function displayOutputSymbols() {
             const canvas = document.getElementById('canvasOutput');
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
             
             ctx.font = 'bold 12px Arial';
-            ctx.fillStyle = '#00d4ff';
+            ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
             ctx.fillText(`${symbols.length.toLocaleString()} symboles I/Q`, WIDTH/2, 20);
             
@@ -512,7 +539,7 @@
             const step = symbols.length > WIDTH - 20 ? symbols.length / (WIDTH - 20) : 1;
             
             // Labels
-            ctx.fillStyle = '#ff8800';
+            ctx.fillStyle = '#f0a63a';
             ctx.font = '11px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('I (In-phase)', 10, startY_I - sigHeight - 5);
@@ -532,7 +559,7 @@
             ctx.lineWidth = 1;
             
             // I
-            ctx.strokeStyle = '#ff8800';
+            ctx.strokeStyle = '#f0a63a';
             ctx.beginPath();
             for (let i = 0; i < samplesShow; i++) {
                 const symIdx = Math.floor(i * step);
@@ -556,7 +583,7 @@
             ctx.stroke();
             
             // Échelle
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '9px Arial';
             ctx.textAlign = 'right';
             ctx.fillText('+0.71', 8, startY_I - sigHeight + 10);
@@ -625,7 +652,7 @@
         
         function clearCanvas(id) {
             const ctx = document.getElementById(id).getContext('2d');
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, WIDTH, HEIGHT);
         }
     </script>

@@ -6,11 +6,13 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
                      suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
 ================================================================================
 -->
 <html lang="fr">
@@ -18,57 +20,83 @@
     <meta charset="UTF-8">
     <title>Page 14 - Filtre SRRC (State of the Art+)</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a2e; color: #eee; }
-        h1 { color: #00d4ff; text-align: center; }
-        h1 span { font-size: 14px; color: #ff8800; }
-        .description { background: #16213e; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #00d4ff; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        h1 { color: #5cc8d6; text-align: center; }
+        h1 span { font-size: 14px; color: #f0a63a; }
+        .description { background: #18222a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5cc8d6; }
         .canvas-row { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; margin-bottom: 15px; }
-        .canvas-box { background: #16213e; padding: 12px; border-radius: 8px; text-align: center; }
-        .canvas-box h3 { margin: 0 0 8px 0; color: #00d4ff; font-size: 13px; }
-        canvas { border: 2px solid #0f3460; }
+        .canvas-box { background: #18222a; padding: 12px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin: 0 0 8px 0; color: #5cc8d6; font-size: 13px; }
+        canvas { border: 2px solid #26343e; }
         .controls { margin-top: 8px; }
-        button { background: #0f3460; color: #fff; border: none; padding: 8px 16px; margin: 3px; border-radius: 5px; cursor: pointer; font-size: 12px; }
-        button:hover { background: #00d4ff; color: #000; }
+        button { background: #26343e; color: #fff; border: none; padding: 8px 16px; margin: 3px; border-radius: 5px; cursor: pointer; font-size: 12px; }
+        button:hover { background: #5cc8d6; color: #000; }
         button:disabled { background: #333; cursor: not-allowed; }
         input[type="file"] { display: none; }
-        select { background: #0f3460; color: #fff; border: none; padding: 5px 8px; border-radius: 5px; font-size: 11px; }
-        .info { margin-top: 6px; font-size: 10px; color: #888; }
-        .stats { background: #0f3460; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 11px; text-align: left; }
+        select { background: #26343e; color: #fff; border: none; padding: 5px 8px; border-radius: 5px; font-size: 11px; }
+        .info { margin-top: 6px; font-size: 10px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px; border-radius: 5px; margin-top: 10px; font-size: 11px; text-align: left; }
         .param-row { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 8px 0; flex-wrap: wrap; }
         .param-item { display: flex; align-items: center; gap: 4px; font-size: 11px; }
-        .param-item label { color: #888; }
-        .metrics-panel { background: #0a1628; border: 2px solid #00d4ff; border-radius: 8px; padding: 15px; margin: 15px auto; max-width: 800px; }
-        .metrics-panel h3 { color: #00d4ff; margin: 0 0 10px 0; text-align: center; }
+        .param-item label { color: #8fa1ad; }
+        .metrics-panel { background: #0e1418; border: 2px solid #5cc8d6; border-radius: 8px; padding: 15px; margin: 15px auto; max-width: 800px; }
+        .metrics-panel h3 { color: #5cc8d6; margin: 0 0 10px 0; text-align: center; }
         .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-        .metric { background: #16213e; padding: 10px; border-radius: 5px; text-align: center; }
+        .metric { background: #18222a; padding: 10px; border-radius: 5px; text-align: center; }
         .metric-value { font-size: 24px; font-weight: bold; color: #00ff88; }
-        .metric-label { font-size: 10px; color: #888; }
+        .metric-label { font-size: 10px; color: #8fa1ad; }
         .metric.warning .metric-value { color: #ffaa00; }
         .metric.error .metric-value { color: #ff4444; }
         .detail-section { max-width: 1100px; margin: 20px auto; }
         table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
         table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: left; }
-        table.info-table th { background: #0f3460; }
-        .precision-badge { display: inline-block; background: #ff8800; color: #000; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+        table.info-table th { background: #26343e; }
+        .precision-badge { display: inline-block; background: #f0a63a; color: #000; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+    
+        @media (max-width:640px){ table.info-table{display:block;overflow-x:auto;max-width:100%} }
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
     </style>
     <style>
         /* barre de navigation de la chaîne JPEG2DVB */
-        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #16213e; border: 1px solid #0f3460; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
         .j2d-nav.bas { margin: 24px auto 0; }
-        .j2d-nav a { color: #00d4ff; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
-        .j2d-nav a:hover { background: #00d4ff; color: #000; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
         .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
         .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
-        .j2d-nav .j2d-etape { color: #ff8800; font-weight: bold; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
         .j2d-nav .j2d-points { display: flex; gap: 4px; }
-        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #0f3460; }
-        .j2d-nav .j2d-points a.ici { background: #ff8800; }
-        .j2d-nav .j2d-points a:hover { background: #00d4ff; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
     <h1>📻 Page 14 - Filtre SRRC <span>★ State of the Art+ ★</span></h1>
     
     <div class="description">
@@ -419,7 +447,7 @@
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, W, H);
             
             const sps = parseInt(document.getElementById('sps').value);
@@ -454,7 +482,7 @@
             ctx.lineWidth = 1;
             
             // Marquer instants symbole
-            ctx.fillStyle = '#ff8800';
+            ctx.fillStyle = '#f0a63a';
             const span = parseInt(document.getElementById('span').value);
             for (let s = 0; s <= span; s++) {
                 const i = s * sps;
@@ -467,7 +495,7 @@
             }
             
             // Labels
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '9px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('0', margin, H - 5);
@@ -480,7 +508,7 @@
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, W, H);
             
             // FFT du filtre (zero-padded)
@@ -541,7 +569,7 @@
             ctx.setLineDash([]);
             
             // Labels
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '8px Arial';
             ctx.textAlign = 'right';
             ctx.fillText('0dB', margin - 3, margin + 10);
@@ -635,7 +663,7 @@
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, W, H);
             
             const sps = parseInt(document.getElementById('sps').value);
@@ -685,7 +713,7 @@
             ctx.setLineDash([]);
             
             // Labels
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '9px Arial';
             ctx.textAlign = 'center';
             ctx.fillText('T', margin + plotW / 4, H - 5);
@@ -698,7 +726,7 @@
             const ctx = canvas.getContext('2d');
             const size = canvas.width;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, size, size);
             
             const center = size / 2;
@@ -752,7 +780,7 @@
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, W, H);
             
             // FFT sur un segment
@@ -808,7 +836,7 @@
             ctx.fill();
             
             // Labels
-            ctx.fillStyle = '#888';
+            ctx.fillStyle = '#8fa1ad';
             ctx.font = '8px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('0dB', margin + 2, margin + 10);
@@ -899,7 +927,7 @@
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height;
             
-            ctx.fillStyle = '#1a1a2e';
+            ctx.fillStyle = '#0e1418';
             ctx.fillRect(0, 0, W, H);
             
             const centerX = W / 2, centerY = H / 2;
@@ -1012,7 +1040,7 @@
         function clearAllCanvas() {
             ['canvasInput', 'canvasImpulse', 'canvasFreq', 'canvasEye', 'canvasConstellation', 'canvasSpectrum'].forEach(id => {
                 const ctx = document.getElementById(id).getContext('2d');
-                ctx.fillStyle = '#1a1a2e';
+                ctx.fillStyle = '#0e1418';
                 ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
             });
         }
