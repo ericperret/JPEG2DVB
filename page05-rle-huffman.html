@@ -6,7 +6,7 @@
   Objet      : Page 05 - RLE + Huffman (VLC)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.3
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -15,6 +15,9 @@
                      cyan, marque AZS avec lien vers www.azs.fr, polices système)
                1.3  2026-10-18  passage automatique des données : « suivante ▶ »
                      garde la sortie et l'étape suivante la charge d'office
+               1.5  2026-10-18  VLC conformes MPEG-2 : tables B.12 / B.13 (DC luma /
+                     chroma), B.14 complète (AC), échappement 6 + 12 bits, un
+                     prédicteur DC par composante remis à 128 à chaque slice
 ================================================================================
 -->
 <html lang="fr">
@@ -213,6 +216,10 @@
             background: #18222a;
         }
     
+        .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
+        .note-norme strong { color: #f0a63a; }
+        .note-norme b { color: #dfe7ec; }
+        .note-norme code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
         /* ---------- charte AZS (www.azs.fr) ---------- */
         :root { color-scheme: dark; }
         body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
@@ -267,6 +274,7 @@
         <strong>Entrée :</strong> Fichier JSON des vecteurs zigzag (sortie Page 04)<br>
         <strong>Sortie :</strong> Fichier JSON contenant les bitstreams de chaque bloc
     </div>
+    <div class="note-norme"><strong>Codage conforme MPEG-2 (ISO 13818-2 §7.2, annexe B) :</strong><br>• <b>DC</b> : différence avec le DC précédent de la même composante (Y, Cb, Cr ont chacune leur prédicteur, remis à 128 au début de chaque slice) ; taille codée par la table B.12 (luminance) ou B.13 (chrominance), suivie de la valeur.<br>• <b>AC</b> : paires (run, level) codées par la table B.14 complète, suivies du bit de signe ; paire absente de la table → <code>ESCAPE</code> (000001) + run sur 6 bits + level sur 12 bits. Chaque bloc se termine par <code>EOB</code> (10).</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Vecteur [64]</span>
@@ -342,7 +350,7 @@
         </div>
         
         <div style="margin-top: 20px;">
-            <h4 style="color: #00d4ff;">Table VLC AC (extrait simplifié MPEG-2)</h4>
+            <h4 style="color: #00d4ff;">Table VLC AC (extrait de la table B.14 MPEG-2)</h4>
             <table class="vlc-table" id="vlcTable"></table>
         </div>
     </div>
@@ -360,62 +368,55 @@
         const MB_ROWS = HEIGHT / MB_SIZE;
         
         // ============================================================
-        // TABLES VLC SIMPLIFIÉES (basées sur MPEG-2)
+        // TABLES VLC MPEG-2 (ISO 13818-2, annexe B)
         // ============================================================
         
-        // Table pour DC luminance (différence DPCM)
-        // Format: size -> code VLC
+        // Table B.12 : dct_dc_size_luminance (taille de la différence DC → code)
         const DC_VLC_LUMA = {
-            0: '100',           // size 0
-            1: '00',            // size 1
-            2: '01',            // size 2
-            3: '101',           // size 3
-            4: '110',           // size 4
-            5: '1110',          // size 5
-            6: '11110',         // size 6
-            7: '111110',        // size 7
-            8: '1111110',       // size 8
-            9: '11111110',      // size 9
-            10: '111111110',    // size 10
-            11: '1111111110'    // size 11
+            0: '100', 1: '00', 2: '01', 3: '101', 4: '110', 5: '1110',
+            6: '11110', 7: '111110', 8: '1111110', 9: '11111110',
+            10: '111111110', 11: '111111111'
         };
         
-        // Table VLC pour AC (run, level) - simplifiée
-        // Format: "run,level" -> code VLC
-        // En réalité MPEG-2 a une table beaucoup plus grande
+        // Table B.13 : dct_dc_size_chrominance
+        const DC_VLC_CHROMA = {
+            0: '00', 1: '01', 2: '10', 3: '110', 4: '1110', 5: '11110',
+            6: '111110', 7: '1111110', 8: '11111110', 9: '111111110',
+            10: '1111111110', 11: '1111111111'
+        };
+        
+        // Table B.14 : coefficients AC, intra_vlc_format = 0 ("run,level" → code,
+        // sans le bit de signe s qui suit). Hors table : ESCAPE + run 6 bits + level 12 bits.
         const AC_VLC = {
-            'EOB': '10',                    // End of Block
-            '0,1': '11',                    // run=0, level=1
-            '0,2': '0100',
-            '0,3': '00101',
-            '0,4': '0000110',
-            '0,5': '00100110',
-            '0,6': '00100001',
-            '0,7': '000000100',
-            '1,1': '011',                   // run=1, level=1
-            '1,2': '000110',
-            '1,3': '00100101',
-            '1,4': '000000111',
-            '2,1': '00101',
-            '2,2': '0000101',
-            '2,3': '000000110',
-            '3,1': '00111',
-            '3,2': '00100100',
-            '4,1': '00110',
-            '4,2': '000000101',
-            '5,1': '000111',
-            '6,1': '0000111',
-            '7,1': '0000100',
-            '8,1': '00100111',
-            '9,1': '00100011',
-            '10,1': '00100010',
-            '11,1': '00100000',
-            '12,1': '000000010',
-            '13,1': '000000011',
-            '14,1': '000000001',
-            '15,1': '000000000',
-            // Escape code pour les paires non dans la table
-            'ESCAPE': '000001'
+            'EOB': '10', 'ESCAPE': '000001',
+            '0,1': '11', '1,1': '011', '0,2': '0100', '2,1': '0101', '0,3': '00101',
+            '3,1': '00111', '4,1': '00110', '1,2': '000110', '5,1': '000111',
+            '6,1': '000101', '7,1': '000100', '0,4': '0000110', '2,2': '0000100',
+            '8,1': '0000111', '9,1': '0000101',
+            '0,5': '00100110', '0,6': '00100001', '1,3': '00100101', '3,2': '00100100',
+            '10,1': '00100111', '11,1': '00100011', '12,1': '00100010', '13,1': '00100000',
+            '0,7': '0000001010', '1,4': '0000001100', '2,3': '0000001011', '4,2': '0000001111',
+            '5,2': '0000001001', '14,1': '0000001110', '15,1': '0000001101', '16,1': '0000001000',
+            '0,8': '000000011101', '0,9': '000000011000', '0,10': '000000010011', '0,11': '000000010000',
+            '1,5': '000000011011', '2,4': '000000010100', '3,3': '000000011100', '4,3': '000000010010',
+            '6,2': '000000011110', '7,2': '000000010101', '8,2': '000000010001', '17,1': '000000011111',
+            '18,1': '000000011010', '19,1': '000000011001', '20,1': '000000010111', '21,1': '000000010110',
+            '0,12': '0000000011010', '0,13': '0000000011001', '0,14': '0000000011000', '0,15': '0000000010111',
+            '1,6': '0000000010110', '1,7': '0000000010101', '2,5': '0000000010100', '3,4': '0000000010011',
+            '5,3': '0000000010010', '9,2': '0000000010001', '10,2': '0000000010000', '22,1': '0000000011111',
+            '23,1': '0000000011110', '24,1': '0000000011101', '25,1': '0000000011100', '26,1': '0000000011011',
+            '0,16': '00000000011111', '0,17': '00000000011110', '0,18': '00000000011101', '0,19': '00000000011100',
+            '0,20': '00000000011011', '0,21': '00000000011010', '0,22': '00000000011001', '0,23': '00000000011000',
+            '0,24': '00000000010111', '0,25': '00000000010110', '0,26': '00000000010101', '0,27': '00000000010100',
+            '0,28': '00000000010011', '0,29': '00000000010010', '0,30': '00000000010001', '0,31': '00000000010000',
+            '0,32': '000000000011000', '0,33': '000000000010111', '0,34': '000000000010110', '0,35': '000000000010101',
+            '0,36': '000000000010100', '0,37': '000000000010011', '0,38': '000000000010010', '0,39': '000000000010001',
+            '0,40': '000000000010000', '1,8': '000000000011111', '1,9': '000000000011110', '1,10': '000000000011101',
+            '1,11': '000000000011100', '1,12': '000000000011011', '1,13': '000000000011010', '1,14': '000000000011001',
+            '1,15': '0000000000010011', '1,16': '0000000000010010', '1,17': '0000000000010001', '1,18': '0000000000010000',
+            '6,3': '0000000000010100', '11,2': '0000000000011010', '12,2': '0000000000011001', '13,2': '0000000000011000',
+            '14,2': '0000000000010111', '15,2': '0000000000010110', '16,2': '0000000000010101', '27,1': '0000000000011111',
+            '28,1': '0000000000011110', '29,1': '0000000000011101', '30,1': '0000000000011100', '31,1': '0000000000011011'
         };
         
         // ============================================================
@@ -427,7 +428,9 @@
         let encodedMacroblocs = [];
         let encoded = false;
         let animationId = null;
-        let lastDC = 0; // Pour DPCM
+        // Prédicteurs DC (DPCM) : un par composante, remis à 128 en début de slice
+        // (intra_dc_precision = 0) ; la page 06 crée une slice par rangée de macroblocs
+        let dcPred = { Y: 128, Cb: 128, Cr: 128 };
         
         // Statistiques
         let totalOriginalBits = 0;
@@ -489,7 +492,7 @@
                     zigzagMacroblocs = inputData.data;
                     encodedMacroblocs = [];
                     encoded = false;
-                    lastDC = 0;
+                    dcPred = { Y: 128, Cb: 128, Cr: 128 };
                     
                     displayZigzagInput();
                     displayProcessInit();
@@ -629,9 +632,11 @@
             
             encodedMacroblocs = [];
             totalEncodedBits = 0;
-            lastDC = 0;
+            dcPred = { Y: 128, Cb: 128, Cr: 128 };
             
             for (const mb of zigzagMacroblocs) {
+                // nouvelle slice = nouvelle rangée de macroblocs : prédicteurs remis à 128
+                if (mb.index % MB_COLS === 0) { dcPred = { Y: 128, Cb: 128, Cr: 128 }; }
                 const encMB = {
                     index: mb.index,
                     position: mb.position,
@@ -642,14 +647,14 @@
                 
                 // Encoder les 4 blocs Y
                 for (let b = 0; b < 4; b++) {
-                    const result = encodeBlock(mb.Y[b]);
+                    const result = encodeBlock(mb.Y[b], 'Y');
                     encMB.Y.push(result);
                     totalEncodedBits += result.bitstream.length;
                 }
                 
                 // Encoder Cb et Cr
-                encMB.Cb = encodeBlock(mb.Cb);
-                encMB.Cr = encodeBlock(mb.Cr);
+                encMB.Cb = encodeBlock(mb.Cb, 'Cb');
+                encMB.Cr = encodeBlock(mb.Cr, 'Cr');
                 totalEncodedBits += encMB.Cb.bitstream.length + encMB.Cr.bitstream.length;
                 
                 encodedMacroblocs.push(encMB);
@@ -662,16 +667,17 @@
             document.getElementById('btnExport').disabled = false;
         }
         
-        function encodeBlock(vector) {
+        function encodeBlock(vector, comp) {
+            comp = comp || 'Y';
             let bitstream = '';
             const rle = [];
             
-            // 1. Encoder DC (DPCM)
+            // 1. Encoder DC (DPCM, prédicteur propre à la composante)
             const dc = vector[0];
-            const dcDiff = dc - lastDC;
-            lastDC = dc;
+            const dcDiff = dc - dcPred[comp];
+            dcPred[comp] = dc;
             
-            const dcEncoded = encodeDC(dcDiff);
+            const dcEncoded = encodeDC(dcDiff, comp !== 'Y');
             bitstream += dcEncoded.bits;
             rle.push({ type: 'DC', value: dcDiff, bits: dcEncoded.bits });
             
@@ -684,15 +690,7 @@
                 if (val === 0) {
                     runLength++;
                 } else {
-                    // Gérer les runs > 15 (escape multiple si nécessaire)
-                    while (runLength > 15) {
-                        // Escape pour 15 zéros
-                        const escBits = AC_VLC['ESCAPE'] + toBinary(15, 6) + toBinary(0, 12);
-                        bitstream += escBits;
-                        rle.push({ type: 'ESCAPE', run: 15, level: 0, bits: escBits });
-                        runLength -= 16;
-                    }
-                    
+                    // run 0 à 62 : codé directement (table B.14 ou ESCAPE, run sur 6 bits)
                     const acEncoded = encodeAC(runLength, val);
                     bitstream += acEncoded.bits;
                     rle.push({ type: 'AC', run: runLength, level: val, bits: acEncoded.bits, escape: acEncoded.escape });
@@ -711,7 +709,7 @@
             };
         }
         
-        function encodeDC(dcDiff) {
+        function encodeDC(dcDiff, chroma) {
             // Calculer la taille nécessaire
             const absVal = Math.abs(dcDiff);
             let size = 0;
@@ -720,7 +718,8 @@
             }
             
             // Code VLC pour la taille
-            const vlcCode = DC_VLC_LUMA[Math.min(size, 11)] || DC_VLC_LUMA[11];
+            const table = chroma ? DC_VLC_CHROMA : DC_VLC_LUMA;
+            const vlcCode = table[Math.min(size, 11)];
             
             // Valeur en complément à 1 si négatif
             let valueBits = '';
@@ -948,7 +947,7 @@
             // Animation sur le premier bloc
             const vector = zigzagMacroblocs[0].Y[0];
             let step = 0;
-            let tempLastDC = 0;
+            let tempLastDC = 128; // prédicteur DC de début de slice
             
             document.getElementById('btnAnimate').disabled = true;
             document.getElementById('btnStop').disabled = false;
@@ -1068,8 +1067,9 @@
                 image: inputData.image,
                 quantization: inputData.quantization,
                 encoding: {
-                    dcTable: 'MPEG2_DC_LUMA',
-                    acTable: 'MPEG2_AC_SIMPLIFIED',
+                    dcTable: 'MPEG2_B12_B13',
+                    acTable: 'MPEG2_B14',
+                    dcPredictorReset: 'slice (rangée de macroblocs)',
                     totalOriginalBits: totalOriginalBits,
                     totalEncodedBits: totalEncodedBits,
                     compressionRatio: (totalEncodedBits / totalOriginalBits * 100).toFixed(2) + '%'

@@ -26,11 +26,11 @@ No library, no installation. User interfaces in French.
 |---|---|---|---|---|
 | 00 | ▶️ [Camera](https://ericperret.github.io/JPEG2DVB/page00-camera.html) | Image capture from the webcam | webcam → image | [view](captures/page00-camera.png) |
 | 01 | ▶️ [Macroblocks](https://ericperret.github.io/JPEG2DVB/page01-image-to-macroblocs.html) | RGB → YCbCr 4:2:0, 16×16 macroblocks (4 Y + 1 Cb + 1 Cr) | image → macroblock JSON | [view](captures/page01-image-to-macroblocs.png) |
-| 02 | ▶️ [DCT](https://ericperret.github.io/JPEG2DVB/page02-dct.html) | Centring −128, 8×8 2D DCT | macroblocks → coefficients | [view](captures/page02-dct.png) |
-| 03 | ▶️ [Quantisation](https://ericperret.github.io/JPEG2DVB/page03-quantification.html) | Division by the quantisation matrix (lossy) | coefficients → quantised integers | [view](captures/page03-quantification.png) |
+| 02 | ▶️ [DCT](https://ericperret.github.io/JPEG2DVB/page02-dct.html) | 8×8 2D DCT, MPEG-2 intra (no centring, DC = 8 × mean), natural order F[v][u] | macroblocks → coefficients | [view](captures/page02-dct.png) |
+| 03 | ▶️ [Quantisation](https://ericperret.github.io/JPEG2DVB/page03-quantification.html) | MPEG-2 quantisation: DC / 8, AC = 16·F / (W·quantiser_scale); matrix and scale code passed on to step 06 | coefficients → quantised integers | [view](captures/page03-quantification.png) |
 | 04 | ▶️ [Zigzag](https://ericperret.github.io/JPEG2DVB/page04-zigzag.html) | Zigzag scan of the 64 coefficients | blocks → 64-value vectors | [view](captures/page04-zigzag.png) |
-| 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | (run, level) pairs, variable-length codes | vectors → bitstreams | [view](captures/page05-rle-huffman.png) |
-| 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
+| 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | (run, level) pairs, MPEG-2 tables B.12 / B.13 (DC) and B.14 (AC), escape, per-component DC predictors | vectors → bitstreams | [view](captures/page05-rle-huffman.png) |
+| 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices; quantiser matrix and scale code from step 03; decodable by ffmpeg / VLC | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
 | 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | PES packets, PTS timestamps | ES → PES | [view](captures/page07-pes.png) |
 | 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | 188-byte packets, PAT and PMT tables | PES → playable .ts file | [view](captures/page08-ts.png) |
 | 09 | ▶️ [PRBS](https://ericperret.github.io/JPEG2DVB/page09-prbs.html) | Energy dispersal, polynomial 1 + X¹⁴ + X¹⁵, 8-packet super-frame | TS → randomised TS | [view](captures/page09-prbs.png) |
@@ -54,6 +54,7 @@ No library, no installation. User interfaces in French.
 | 2026-10-18 | AZS visual identity on the 15 steps and the home page (slate / amber / cyan palette, AZS mark linking back to www.azs.fr, system fonts); outputs checked identical along the whole chain; screenshots refreshed |
 | 2026-10-18 | Pages 1.3: automatic hand-over between steps — next ▶ keeps the output in the browser (current session) and the next step loads it itself; processing stays manual; outputs identical to the file-by-file chain |
 | 2026-10-18 | Pages 03, 04, 06 (1.4): boxed notes on the differences with MPEG-2 (separate DC quantisation, AC formula and quantiser_scale, alternate scan, matrices sent in zigzag order in the sequence header) |
+| 2026-10-18 | MPEG-2 conformance (pages 02, 03, 05, 06 → 1.5): DCT without centring and in natural order (coefficients were transposed), normative quantisation, complete VLC tables B.12 / B.13 / B.14 with per-component DC predictors, quantiser matrix and scale code written in the stream. The elementary stream and the transport stream now decode with ffmpeg (35.7 dB PSNR at quality 50; 30.7 to 48.4 dB from quality 10 to 100). Pages 07–12 (1.4): JSON export of large streams fixed |
 
 ## License
 

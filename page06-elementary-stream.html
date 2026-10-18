@@ -6,7 +6,7 @@
   Objet      : Page 06 - Assemblage Elementary Stream
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.4
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -16,6 +16,10 @@
                1.3  2026-10-18  passage automatique des données : « suivante ▶ »
                      garde la sortie et l'étape suivante la charge d'office
                1.4  2026-10-18  encadré « écarts / précisions norme MPEG-2 »
+               1.5  2026-10-18  matrice intra et quantiser_scale_code repris de la
+                     page 03 (matrice personnalisée écrite en ordre zigzag),
+                     extra_bit_picture ; flux vérifié avec un décodeur MPEG-2 ;
+                     export JSON des gros flux (base64 par morceaux)
 ================================================================================
 -->
 <html lang="fr">
@@ -257,7 +261,7 @@
         <strong>Entrée :</strong> Fichier JSON des bitstreams VLC (sortie Page 05)<br>
         <strong>Sortie :</strong> Fichier binaire ES (.es) + JSON avec métadonnées
     </div>
-    <div class="note-norme"><strong>Matrices de quantification dans le flux (ISO 13818-2 §6.2.2.1) :</strong><br>• Ce flux écrit <code>load_intra_quantiser_matrix = 0</code> : un décodeur utilise donc la <b>matrice intra par défaut</b>, et <code>quantiser_scale_code = 16</code> dans les slices. Une matrice personnalisée serait transmise dans le Sequence Header, <b>64 valeurs en ordre zigzag</b> (et non en ordre naturel).<br>• Pour qu'un décodeur standard reconstruise fidèlement l'image, la page 03 doit avoir utilisé la matrice MPEG-2 intra et une échelle cohérente avec ce <code>quantiser_scale_code</code> ; avec la matrice JPEG ou un autre facteur qualité, le flux reste valide mais l'image décodée sera plus claire ou plus sombre dans ses détails.</div>
+    <div class="note-norme"><strong>Paramètres de quantification dans le flux (ISO 13818-2 §6.2.2.1, §6.3.16) :</strong><br>• La <b>matrice intra</b> choisie en page 03 est reprise : matrice MPEG-2 par défaut → <code>load_intra_quantiser_matrix = 0</code> ; autre matrice → bit à 1 suivi des <b>64 valeurs en ordre zigzag</b> dans le Sequence Header.<br>• Le <code>quantiser_scale_code</code> de la page 03 est écrit dans chaque slice. Le décodeur reconstruit donc exactement les coefficients que la page 03 a quantifiés : le flux est décodable par un lecteur MPEG-2 standard (ffmpeg, VLC).</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Bitstreams</span>
@@ -663,6 +667,23 @@
         // CONSTRUCTION DES HEADERS
         // ============================================================
         
+        // ordre zigzag (balayage 0) pour l'écriture de la matrice
+        const ZZ_ORDER = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
+            12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+            35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
+            58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+        // paramètres de quantification transmis depuis la page 03 (à défaut : matrice
+        // par défaut et quantiser_scale_code 8, réglage « qualité 50 » de la page 03)
+        function quantParams() {
+            const q = (inputData && inputData.quantization) || {};
+            const W = q.intra_quantiser_matrix;
+            return {
+                code: q.quantiser_scale_code || 8,
+                W: W,
+                custom: !!(W && W.length === 64 && q.default_matrix === false)
+            };
+        }
+        
         function buildSequenceHeader() {
             const bits = new BitWriter();
             bits.writeBits(0x000001B3, 32);
@@ -674,8 +695,16 @@
             bits.writeBits(1, 1);      // marker
             bits.writeBits(112, 10);   // vbv buffer
             bits.writeBits(0, 1);      // constrained
-            bits.writeBits(0, 1);      // load intra matrix
-            bits.writeBits(0, 1);      // load non-intra matrix
+            // matrice intra : par défaut (bit 0) ou personnalisée (bit 1 + 64 × 8 bits
+            // en ordre zigzag, §6.2.2.1), reprise de la quantification de la page 03
+            const qz = quantParams();
+            if (qz.custom) {
+                bits.writeBits(1, 1);  // load_intra_quantiser_matrix
+                for (let i = 0; i < 64; i++) bits.writeBits(qz.W[ZZ_ORDER[i]], 8);
+            } else {
+                bits.writeBits(0, 1);  // load_intra_quantiser_matrix
+            }
+            bits.writeBits(0, 1);      // load_non_intra_quantiser_matrix
             
             return {
                 bytes: bits.getBytes(),
@@ -686,7 +715,8 @@
                     'aspect_ratio': '4:3 (2)',
                     'frame_rate': '25 fps (3)',
                     'bit_rate': 'variable (0x3FFFF)',
-                    'vbv_buffer_size': 112
+                    'vbv_buffer_size': 112,
+                    'load_intra_quantiser_matrix': qz.custom ? '1 (64 valeurs en ordre zigzag)' : '0 (matrice par défaut)'
                 }
             };
         }
@@ -750,6 +780,7 @@
             bits.writeBits(0, 10);      // temporal ref
             bits.writeBits(1, 3);       // I-frame
             bits.writeBits(0xFFFF, 16); // vbv delay
+            bits.writeBits(0, 1);       // extra_bit_picture
             
             return {
                 bytes: bits.getBytes(),
@@ -802,7 +833,7 @@
             
             bits.writeBits(0x000001, 24);
             bits.writeBits(sliceCode, 8);
-            bits.writeBits(16, 5);  // quantiser_scale
+            bits.writeBits(quantParams().code, 5);  // quantiser_scale_code (page 03)
             bits.writeBits(0, 1);   // extra_bit_slice
             
             const startMB = sliceRow * MB_WIDTH;
@@ -833,7 +864,7 @@
                 startCode: `00 00 01 ${sliceCode.toString(16).padStart(2, '0').toUpperCase()}`,
                 fields: {
                     'slice_vertical_position': sliceRow + 1,
-                    'quantiser_scale_code': 16,
+                    'quantiser_scale_code': quantParams().code,
                     'macroblocs': `${startMB} - ${Math.min(endMB, encodedMacroblocs.length) - 1}`,
                     'mb_count': Math.min(MB_WIDTH, encodedMacroblocs.length - startMB)
                 }
@@ -1087,7 +1118,7 @@
                         startCode: s.startCode
                     }))
                 },
-                binary: btoa(String.fromCharCode.apply(null, esBinary))
+                binary: (function (b) { let s = ''; for (let i = 0; i < b.length; i += 8192) { s += String.fromCharCode.apply(null, Array.prototype.slice.call(b, i, i + 8192)); } return btoa(s); })(esBinary)
             };
             
             const json = JSON.stringify(output, null, 2);

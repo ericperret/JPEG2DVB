@@ -6,7 +6,7 @@
   Objet      : Page 03 - Quantification
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.4
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -16,6 +16,8 @@
                1.3  2026-10-18  passage automatique des données : « suivante ▶ »
                      garde la sortie et l'étape suivante la charge d'office
                1.4  2026-10-18  encadré « écarts / précisions norme MPEG-2 »
+               1.5  2026-10-18  quantification conforme MPEG-2 : DC / 8, AC = 16·F /
+                     (W·quantiser_scale), code d'échelle 1 à 31 et matrice transmis
 ================================================================================
 -->
 <html lang="fr">
@@ -235,7 +237,7 @@
         <strong>Entrée :</strong> Fichier JSON des coefficients DCT (sortie Page 02)<br>
         <strong>Sortie :</strong> Fichier JSON des coefficients quantifiés (entiers, beaucoup de zéros)
     </div>
-    <div class="note-norme"><strong>Écarts avec la norme MPEG-2 (ISO 13818-2 §7.4) :</strong><br>• <b>Coefficient DC intra</b> : la norme le quantifie à part, par un diviseur fixe lié à <code>intra_dc_precision</code> (8 pour 8 bits), sans matrice ni échelle ; il est ensuite codé en différence avec le bloc précédent (DPCM, page 05). Ici il passe par la matrice × échelle : identique à l'échelle 1 (la matrice vaut 8 en (0,0)), différent au-delà.<br>• <b>Coefficients AC</b> : la norme définit la reconstruction <code>F = (2·QF·W·quantiser_scale) / 32</code> avec ses règles d'arrondi et d'écrêtage, et un <code>quantiser_scale</code> codé sur 5 bits (table linéaire ou non linéaire selon <code>q_scale_type</code>). Ici : <code>round(DCT / (W × échelle))</code>, forme JPEG, équivalente dans le principe.</div>
+    <div class="note-norme"><strong>Quantification conforme MPEG-2 (ISO 13818-2 §7.4) :</strong><br>• <b>DC intra</b> : diviseur fixe 8 (<code>intra_dc_precision = 0</code>, 8 bits) → valeur 0 à 255, indépendante de la matrice et de l'échelle ; codée ensuite en différence avec le bloc précédent (page 05).<br>• <b>AC</b> : <code>QF = round(16·F / (W·quantiser_scale))</code>, inverse exact de la reconstruction du décodeur <code>F = (2·QF·W·quantiser_scale) / 32</code>. Le facteur qualité est converti en <code>quantiser_scale_code</code> (1 à 31, <code>quantiser_scale = 2 × code</code>, table linéaire) ; la matrice W et ce code sont transmis à la page 06, qui les écrit dans le flux.<br>• Matrice JPEG ou plate : transmise comme matrice intra personnalisée (son premier terme, réservé au DC, vaut 8).</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Coeffs DCT</span>
@@ -279,7 +281,7 @@
                 <div class="info">1 = très compressé, 100 = quasi sans perte</div>
             </div>
             <div class="formula">
-                Q_coeff[u][v] = round( DCT[u][v] / (Q[u][v] × scale) )
+                DC : QF = round( F / 8 )<br>AC : QF = round( 16·F[v][u] / (W[v][u] × quantiser_scale) )<br><span id="qsInfo"></span>
             </div>
         </div>
         
@@ -397,6 +399,7 @@
             clearCanvas('canvasOutput');
             updateMatrix();
             displayMatrixVisualization();
+            majInfoQS();
         };
         
         // ============================================================
@@ -511,12 +514,20 @@
         function updateQuality() {
             qualityFactor = parseInt(document.getElementById('qualitySlider').value);
             document.getElementById('qualityValue').textContent = qualityFactor;
+            majInfoQS();
             displayMatrixVisualization();
             displayMatrixOnCanvas();
         }
         
-        function getScaledMatrix() {
-            // Facteur d'échelle basé sur la qualité (comme JPEG)
+        // Paramètres de quantification MPEG-2 (ISO 13818-2 §7.4, q_scale_type = 0) :
+        //   facteur qualité → échelle (courbe JPEG) → quantiser_scale_code légal (1 à 31),
+        //   quantiser_scale = 2 × code ; matrice intra W (W[0] fixé à 8, non utilisé pour le DC)
+        function majInfoQS() {
+            const p = getQuantParams(), el = document.getElementById('qsInfo');
+            if (el) { el.textContent = 'quantiser_scale_code = ' + p.quantiser_scale_code + ' → quantiser_scale = ' + p.quantiser_scale; }
+        }
+        
+        function getQuantParams() {
             let scale;
             if (qualityFactor < 50) {
                 scale = 5000 / qualityFactor;
@@ -524,10 +535,19 @@
                 scale = 200 - qualityFactor * 2;
             }
             scale = scale / 100;
-            
+            const code = Math.max(1, Math.min(31, Math.round(8 * scale)));
+            const W = currentMatrix.map(v => Math.max(1, Math.min(255, v)));
+            W[0] = 8;
+            return { quantiser_scale_code: code, quantiser_scale: 2 * code, W: W };
+        }
+        
+        // Diviseurs effectifs (affichage) : 8 pour le DC, W·quantiser_scale/16 pour les AC
+        function getScaledMatrix() {
+            const p = getQuantParams();
             const scaled = new Array(64);
             for (let i = 0; i < 64; i++) {
-                scaled[i] = Math.max(1, Math.round(currentMatrix[i] * scale));
+                const d = (i === 0) ? 8 : p.W[i] * p.quantiser_scale / 16;
+                scaled[i] = Math.round(d * 10) / 10;
             }
             return scaled;
         }
@@ -570,7 +590,7 @@
             ctx.font = 'bold 14px Arial';
             ctx.fillStyle = '#5cc8d6';
             ctx.textAlign = 'center';
-            ctx.fillText('Matrice Q (×' + (getScaledMatrix()[0] / currentMatrix[0]).toFixed(2) + ')', WIDTH / 2, 20);
+            ctx.fillText('Diviseurs effectifs · quantiser_scale_code ' + getQuantParams().quantiser_scale_code, WIDTH / 2, 20);
             
             for (let y = 0; y < 8; y++) {
                 for (let x = 0; x < 8; x++) {
@@ -589,7 +609,7 @@
                     ctx.font = '10px monospace';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(val.toString(), startX + x * cellSize + cellSize/2, startY + y * cellSize + cellSize/2);
+                    ctx.fillText(String(val), startX + x * cellSize + cellSize/2, startY + y * cellSize + cellSize/2);
                 }
             }
             
@@ -603,7 +623,7 @@
             // Formule
             ctx.fillStyle = '#5cc8d6';
             ctx.font = '12px monospace';
-            ctx.fillText('Qcoeff = round( DCT / Q )', 20, startY + 8 * cellSize + 80);
+            ctx.fillText('AC : QF = round(16·F / (W·qs))   DC : F / 8', 20, startY + 8 * cellSize + 80);
         }
         
         // ============================================================
@@ -659,13 +679,20 @@
             document.getElementById('btnDequant').disabled = false;
         }
         
-        function quantizeBlock(dctBlock, qMatrix) {
+        function quantizeBlock(dctBlock) {
+            const p = getQuantParams();
             const quantized = new Array(64);
             let zeros = 0;
             
             for (let i = 0; i < 64; i++) {
-                // Division et arrondi
-                quantized[i] = Math.round(dctBlock[i] / qMatrix[i]);
+                if (i === 0) {
+                    // DC intra : diviseur fixe 8 (intra_dc_precision = 0, 8 bits), 0 à 255
+                    quantized[0] = Math.max(0, Math.min(255, Math.round(dctBlock[0] / 8)));
+                } else {
+                    // AC intra : QF = 16·F / (W·quantiser_scale), arrondi symétrique, ±2047
+                    const q = 16 * dctBlock[i] / (p.W[i] * p.quantiser_scale);
+                    quantized[i] = Math.max(-2047, Math.min(2047, Math.sign(q) * Math.round(Math.abs(q)))) || 0;
+                }
                 
                 // Compter les zéros AC (pas le DC)
                 if (i > 0 && quantized[i] === 0) {
@@ -844,9 +871,14 @@
                 
                 for (let b = 0; b < 4; b++) {
                     // Dequantifier
+                    // quantification inverse (§7.4.2) : DC × 8, AC = (2·QF·W·qs)/32
+                    // tronqué vers zéro, saturé à [-2048, 2047]
+                    const qp = getQuantParams();
                     const dequant = new Float64Array(64);
-                    for (let i = 0; i < 64; i++) {
-                        dequant[i] = mb.Y[b][i] * scaledQ[i];
+                    dequant[0] = mb.Y[b][0] * 8;
+                    for (let i = 1; i < 64; i++) {
+                        const f = Math.trunc(2 * mb.Y[b][i] * qp.W[i] * qp.quantiser_scale / 32);
+                        dequant[i] = Math.max(-2048, Math.min(2047, f));
                     }
                     
                     // IDCT
@@ -857,7 +889,7 @@
                     
                     for (let y = 0; y < 8; y++) {
                         for (let x = 0; x < 8; x++) {
-                            const val = Math.max(0, Math.min(255, Math.round(pixels[y * 8 + x] + 128)));
+                            const val = Math.max(0, Math.min(255, Math.round(pixels[y * 8 + x])));
                             const idx = ((by + y) * WIDTH + (bx + x)) * 4;
                             imageData.data[idx] = val;
                             imageData.data[idx + 1] = val;
@@ -881,7 +913,7 @@
                         for (let v = 0; v < 8; v++) {
                             const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
                             const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
-                            sum += Cu * Cv * dct[u * 8 + v] * cosTable[u * 8 + x] * cosTable[v * 8 + y];
+                            sum += Cu * Cv * dct[v * 8 + u] * cosTable[u * 8 + x] * cosTable[v * 8 + y];
                         }
                     }
                     pixels[y * 8 + x] = 0.25 * sum;
@@ -906,6 +938,13 @@
                 quantization: {
                     matrix: document.getElementById('matrixSelect').value,
                     quality: qualityFactor,
+                    // paramètres MPEG-2 repris par la page 06 (Sequence Header, slices)
+                    intra_dc_precision: 0,
+                    q_scale_type: 0,
+                    quantiser_scale_code: getQuantParams().quantiser_scale_code,
+                    quantiser_scale: getQuantParams().quantiser_scale,
+                    intra_quantiser_matrix: getQuantParams().W,   // ordre naturel F[v][u]
+                    default_matrix: document.getElementById('matrixSelect').value === 'mpeg2_intra',
                     scaledMatrix: Array.from(getScaledMatrix())
                 },
                 macroblocs: {

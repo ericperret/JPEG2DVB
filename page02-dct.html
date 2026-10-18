@@ -6,7 +6,7 @@
   Objet      : Page 02 - DCT 8×8
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.3
+  Version    : 1.5
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -15,6 +15,9 @@
                      cyan, marque AZS avec lien vers www.azs.fr, polices système)
                1.3  2026-10-18  passage automatique des données : « suivante ▶ »
                      garde la sortie et l'étape suivante la charge d'office
+               1.5  2026-10-18  DCT conforme MPEG-2 intra : sans centrage (DC =
+                     8 × moyenne), coefficients rangés en ordre naturel F[v][u]
+                     (ils étaient transposés, le zigzag lisait donc à l'envers)
 ================================================================================
 -->
 <html lang="fr">
@@ -159,6 +162,10 @@
             background: #4a0000;
         }
     
+        .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
+        .note-norme strong { color: #f0a63a; }
+        .note-norme b { color: #dfe7ec; }
+        .note-norme code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
         /* ---------- charte AZS (www.azs.fr) ---------- */
         :root { color-scheme: dark; }
         body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
@@ -212,11 +219,12 @@
         <strong>Entrée :</strong> Fichier JSON des macroblocs (sortie Page 01)<br>
         <strong>Sortie :</strong> Fichier JSON des coefficients DCT pour chaque bloc
     </div>
+    <div class="note-norme"><strong>DCT conforme MPEG-2 intra (ISO 13818-2 §7.5, annexe A) :</strong><br>• Pas de centrage à −128 (c'est une convention JPEG) : les pixels 0 à 255 sont transformés tels quels, le <b>DC vaut 8 × la moyenne du bloc</b> (0 à 2040) et sera divisé par 8 en page 03.<br>• Coefficients rangés en ordre naturel <code>F[v][u]</code> : ligne = fréquence verticale, colonne = fréquence horizontale, comme le suppose le balayage zigzag de la page 04.</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Macroblocs</span>
         <span class="pipeline-arrow">→</span>
-        <span class="pipeline-step">Centrage -128</span>
+        <span class="pipeline-step">Pixels 0-255</span>
         <span class="pipeline-arrow">→</span>
         <span class="pipeline-step active">DCT 2D</span>
         <span class="pipeline-arrow">→</span>
@@ -232,7 +240,7 @@
                 <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
                 <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
             </div>
-            <div class="info">Valeurs pixels [0-255] centrées → [-128, +127]</div>
+            <div class="info">Pixels [0-255] sans centrage (MPEG-2 intra) : DC = 8 × moyenne</div>
             <div id="statsInput" class="stats" style="display:none;"></div>
         </div>
         
@@ -482,11 +490,9 @@
         }
         
         function computeBlockDCT(block) {
-            // Centrage des valeurs : [0,255] → [-128, 127]
-            const centered = new Float64Array(64);
-            for (let i = 0; i < 64; i++) {
-                centered[i] = block[i] - 128;
-            }
+            // MPEG-2 intra (ISO 13818-2 §7.4) : pas de centrage, les pixels [0,255]
+            // entrent tels quels ; le DC vaut alors 8 × la moyenne du bloc (0 à 2040).
+            const centered = block;
             
             // DCT-II 2D
             const dct = new Float64Array(64);
@@ -506,7 +512,9 @@
                     const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
                     const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
                     
-                    dct[u * 8 + v] = 0.25 * Cu * Cv * sum;
+                    // rangement en ordre naturel : ligne = fréquence verticale v,
+                    // colonne = fréquence horizontale u (F[v][u], index v*8+u)
+                    dct[v * 8 + u] = 0.25 * Cu * Cv * sum;
                 }
             }
             
@@ -536,12 +544,12 @@
             let maxVal = 1;
             for (const mb of dctData) {
                 for (let b = 0; b < 4; b++) {
-                    for (let i = 0; i < 64; i++) {
+                    for (let i = 1; i < 64; i++) {
                         const v = Math.abs(mb.Y[b][i]);
                         if (v > maxVal) maxVal = v;
                     }
                 }
-                for (let i = 0; i < 64; i++) {
+                for (let i = 1; i < 64; i++) {
                     const vCb = Math.abs(mb.Cb[i]);
                     const vCr = Math.abs(mb.Cr[i]);
                     if (vCb > maxVal) maxVal = vCb;
@@ -564,7 +572,9 @@
                         for (let x = 0; x < 8; x++) {
                             const val = block[y * 8 + x];
                             // Visualisation logarithmique
-                            const intensity = Math.floor(Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255);
+                            const intensity = (x === 0 && y === 0)
+                                ? Math.floor(Math.min(255, val / 2040 * 255))   // DC = 8 × moyenne
+                                : Math.floor(Math.min(255, Math.log(1 + Math.abs(val)) / Math.log(1 + maxVal) * 255));
                             const idx = ((by + y) * WIDTH + (bx + x)) * 4;
                             
                             // DC en rouge, AC en niveau de gris
@@ -703,7 +713,7 @@
                     
                     for (let y = 0; y < 8; y++) {
                         for (let x = 0; x < 8; x++) {
-                            const val = Math.round(Math.max(0, Math.min(255, pixels[y * 8 + x] + 128)));
+                            const val = Math.round(Math.max(0, Math.min(255, pixels[y * 8 + x])));
                             const idx = ((by + y) * WIDTH + (bx + x)) * 4;
                             imageData.data[idx] = val;
                             imageData.data[idx + 1] = val;
@@ -731,7 +741,7 @@
                             const Cu = (u === 0) ? 1 / Math.SQRT2 : 1;
                             const Cv = (v === 0) ? 1 / Math.SQRT2 : 1;
                             
-                            sum += Cu * Cv * dct[u * 8 + v] * 
+                            sum += Cu * Cv * dct[v * 8 + u] * 
                                    cosTable[u * 8 + x] * 
                                    cosTable[v * 8 + y];
                         }
