@@ -72,6 +72,7 @@ Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite a
 | 2026-10-19 | Pages 2.0 : flux multi-images (conteneur .j2d, DCT en virgule fixe, régulation de débit TM5, multiplexage à débit constant, traitement par blocs, SRRC en virgule fixe et écriture au fil de l'eau). Conformité EN 300 421 corrigée sur trois étapes : générateur PRBS (initialisation et sortie), ordre des octets de parité Reed-Solomon, registre du codeur convolutif. Vérifié par démodulation avec un récepteur DVB-S indépendant |
 | 2026-10-19 | Pages 2.1 : numéro de version affiché dans la barre de navigation (lu dans le cartouche) ; étape 14 : bouton 💾 Export I/Q .cs16 (entiers 16 bits), en flux comme en mode une image, écriture directe sur le disque en option |
 | 2026-10-19 | Étape 15 (1.0) : réception DVB-S en HTML/JS ; le .cs16 de l'étape 14 redonne le TS de l'étape 08 octet pour octet (6 367 paquets sur 6 367 pour 1 s de flux) |
+| 2026-10-19 | Dossier [vhdl/](vhdl/LISEZMOI.md) : portage FPGA en VHDL-2008, étapes 02 à 14 reproduites au bit près (19 bancs GHDL) ; page 08 en 2.4 : instants du multiplexage en entiers exacts |
 | 2026-10-19 | Pages 01, 12, 14 (2.2) : pré-réglage du projet — 25 images (1 s de flux), FEC 1/2, α = 0,35 ; la chaîne se déroule sans toucher aux paramètres |
 
 ## Licence

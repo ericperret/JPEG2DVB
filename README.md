@@ -72,6 +72,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 | 2026-10-19 | Pages 2.0: multi-picture stream (.j2d container, fixed-point DCT, TM5 rate control, constant-rate multiplex, block processing, fixed-point SRRC written to disk on the fly). EN 300 421 conformance fixed in three steps: PRBS generator (initialisation and output), Reed-Solomon parity byte order, convolutional encoder register. Checked by demodulation with an independent DVB-S receiver |
 | 2026-10-19 | Pages 2.1: version number shown in the navigation bar (read from the header block); step 14: 💾 Export I/Q .cs16 button (16-bit integers), for streams as for a single picture, direct write to disk as an option |
 | 2026-10-19 | Step 15 (1.0): DVB-S reception in HTML/JS; the step-14 .cs16 gives back the step-08 TS byte for byte (6,367 packets out of 6,367 for 1 s of stream) |
+| 2026-10-19 | [vhdl/](vhdl/README.md) folder: FPGA port in VHDL-2008, steps 02 to 14 reproduced bit for bit (19 GHDL testbenches); page 08 at 2.4: multiplexer timing in exact integers |
 | 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
 
 ## License
