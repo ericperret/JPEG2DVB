@@ -6,7 +6,7 @@
   Objet      : Page 01 - Image → YCbCr → Macroblocs
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.1
+  Version    : 2.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -18,6 +18,7 @@
                2.0  2026-10-19  flux multi-images : N images (1 à 1500) à partir de l'image
                      ou de la mire, carré mobile et compteur binaire, sortie .j2d
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
+               2.2  2026-10-19  pré-réglage projet : 25 images (1 s de flux) par défaut
 ================================================================================
 -->
 <html lang="fr">
@@ -206,7 +207,7 @@
         <strong>Fonction :</strong> Conversion d'une image RGB en composantes YCbCr avec sous-échantillonnage 4:2:0, 
         puis découpage en macroblocs 16×16 pixels (standard MPEG-2).<br>
         <strong>Entrée :</strong> Fichier image (PNG, JPEG, etc.)<br>
-        <strong>Sortie :</strong> Fichier JSON contenant tous les macroblocs (4 blocs Y + 1 Cb + 1 Cr par macrobloc)
+        <strong>Sortie :</strong> macroblocs (4 blocs Y + 1 Cb + 1 Cr par macrobloc) : 25 images par défaut (1 s), conteneur .j2d ; 1 image : fichier JSON
     </div>
     
     <div class="pipeline">
@@ -228,7 +229,7 @@
             <div class="controls">
                 <button onclick="document.getElementById('fileInput').click()">📁 Charger Image</button>
                 <button onclick="generateMire()">🎨 Générer Mire</button>
-                <span class="multi-ctl"><label>Images <input type="number" id="nbImages" value="1" min="1" max="1500" style="width:64px"></label><label><input type="checkbox" id="mobile" checked> mobile</label></span>
+                <span class="multi-ctl"><label>Images <input type="number" id="nbImages" value="25" min="1" max="1500" style="width:64px"></label><label><input type="checkbox" id="mobile" checked> mobile</label></span>
                 <input type="file" id="fileInput" accept="image/*" onchange="loadImage(this.files)">
             </div>
             <div class="info">352×288 pixels (CIF)</div>

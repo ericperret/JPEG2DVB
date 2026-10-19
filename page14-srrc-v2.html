@@ -6,7 +6,7 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.1
+  Version    : 2.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -20,6 +20,7 @@
                2.1  2026-10-19  bouton 💾 Export I/Q .cs16 (int16), en flux comme en mode
                      une image ; écriture directe sur le disque en option (décochée) ;
                      numéro de version affiché dans la barre de navigation
+               2.2  2026-10-19  pré-réglage projet : α = 0,35 (EN 300 421) par défaut
 ================================================================================
 -->
 <html lang="fr">
@@ -130,7 +131,7 @@
         • Coefficients <span class="precision-badge">Float64</span> double précision (vs Float32 en 1995)<br>
         • Fenêtrage Kaiser (β optimal) pour lobes secondaires -60 dB<br>
         • Diagramme de l'œil temps réel — Spectre FFT — Mesure EVM<br>
-        <strong>Config SCPC optimisée :</strong> α=0.5 (doux), Span=12 (précis), SPS=8 (qualité broadcast)
+        <strong>Réglage DVB-S (EN 300 421) :</strong> α=0.35, Span=12 (précis), SPS=8 (qualité broadcast)
     </div>
     
     <!-- Paramètres -->
@@ -141,8 +142,8 @@
             <select id="rolloff" onchange="updateFilter()">
                 <option value="0.20">0.20 (sharp)</option>
                 <option value="0.25">0.25</option>
-                <option value="0.35">0.35 (DVB-S std)</option>
-                <option value="0.50" selected>0.50 (SCPC doux)</option>
+                <option value="0.35" selected>0.35 (DVB-S std)</option>
+                <option value="0.50">0.50 (SCPC doux)</option>
             </select>
         </div>
         <div class="param-item">

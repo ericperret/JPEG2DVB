@@ -50,7 +50,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 
 Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite aussi une séquence d'images.
 
-1. **Étape 01** : régler **Images** (1 à 1500) puis ⚙️ Convertir. L'image (ou la mire) est répétée avec un carré mobile (+8 pixels par image) et un compteur binaire de 12 bits. Au-delà d'une image, les sorties sont des conteneurs binaires `.j2d` (en-tête JSON + tableaux typés), chargés par les étapes suivantes comme les JSON.
+1. **Étape 01** : **Images** vaut 25 par défaut (1 s de flux, réglable de 1 à 1500), puis ⚙️ Convertir. L'image (ou la mire) est répétée avec un carré mobile (+8 pixels par image) et un compteur binaire de 12 bits. Au-delà d'une image, les sorties sont des conteneurs binaires `.j2d` (en-tête JSON + tableaux typés), chargés par les étapes suivantes comme les JSON.
 2. **Étape 02** : option **virgule fixe**, DCT entière (coefficients sur 13 bits, deux passes, 32 bits suffisent), référence bit à bit du FPGA, à ±1 de la DCT flottante arrondie.
 3. **Étape 03** : régulation de débit TM5 par slice (rangée de macroblocs). Le débit symbole, le FEC et la part vidéo du multiplex donnent la cible par image ; les bits sont comptés exactement (tables VLC, en-têtes, alignements) ; le quantiser_scale_code de chaque slice est écrit dans le flux.
 4. **Étapes 06 à 08** : suite d'images I (GOP fermé de 12, Sequence Header répété), un PES par image, PTS = ((n+1)/25 + 0,1 s) × 90 000, multiplexage à débit constant au débit utile du canal (9,216 Mbit/s à 10 MS/s en FEC 1/2) : PAT et PMT toutes les 80 ms, PCR toutes les 30 ms, paquets nuls. Contrôles affichés : tampon du décodeur, arrivée de chaque image avant son PTS, intervalles PCR et PSI.
@@ -70,6 +70,7 @@ Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite a
 | 2026-10-18 | Pages 07 et 08 (1.5) : horodatage ISO 13818-1 — PCR dans l'adaptation field du premier paquet vidéo (PID annoncé par la PMT), PTS = PCR + 0,7 s, indicateurs data_alignment et random_access, PTS 33 bits sans débordement 32 bits |
 | 2026-10-19 | Pages 2.0 : flux multi-images (conteneur .j2d, DCT en virgule fixe, régulation de débit TM5, multiplexage à débit constant, traitement par blocs, SRRC en virgule fixe et écriture au fil de l'eau). Conformité EN 300 421 corrigée sur trois étapes : générateur PRBS (initialisation et sortie), ordre des octets de parité Reed-Solomon, registre du codeur convolutif. Vérifié par démodulation avec un récepteur DVB-S indépendant |
 | 2026-10-19 | Pages 2.1 : numéro de version affiché dans la barre de navigation (lu dans le cartouche) ; étape 14 : bouton 💾 Export I/Q .cs16 (entiers 16 bits), en flux comme en mode une image, écriture directe sur le disque en option |
+| 2026-10-19 | Pages 01, 12, 14 (2.2) : pré-réglage du projet — 25 images (1 s de flux), FEC 1/2, α = 0,35 ; la chaîne se déroule sans toucher aux paramètres |
 
 ## Licence
 

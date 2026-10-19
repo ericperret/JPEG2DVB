@@ -50,7 +50,7 @@ No library, no installation. User interfaces in French.
 
 To harden the algorithm before the FPGA port, the whole chain also processes a sequence of pictures.
 
-1. **Step 01**: set **Images** (1 to 1500), then ⚙️ Convert. The picture (or test pattern) is repeated with a moving square (+8 pixels per picture) and a 12-bit binary counter. Beyond one picture, outputs are binary `.j2d` containers (JSON header + typed arrays), loaded by the next steps like the JSON files.
+1. **Step 01**: **Images** defaults to 25 (1 s of stream, adjustable from 1 to 1500), then ⚙️ Convert. The picture (or test pattern) is repeated with a moving square (+8 pixels per picture) and a 12-bit binary counter. Beyond one picture, outputs are binary `.j2d` containers (JSON header + typed arrays), loaded by the next steps like the JSON files.
 2. **Step 02**: **fixed-point** option, integer DCT (13-bit coefficients, two passes, 32 bits are enough), bit-exact reference for the FPGA, within ±1 of the rounded floating-point DCT.
 3. **Step 03**: TM5 rate control per slice (row of macroblocks). Symbol rate, FEC and video share of the multiplex give the target per picture; bits are counted exactly (VLC tables, headers, alignment); each slice's quantiser_scale_code is written in the stream.
 4. **Steps 06 to 08**: sequence of I pictures (closed GOP of 12, repeated sequence header), one PES per picture, PTS = ((n+1)/25 + 0.1 s) × 90,000, constant-rate multiplex at the channel's useful bit rate (9.216 Mbit/s at 10 MS/s, FEC 1/2): PAT and PMT every 80 ms, PCR every 30 ms, null packets. Displayed checks: decoder buffer, arrival of each picture before its PTS, PCR and PSI intervals.
@@ -70,6 +70,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 | 2026-10-18 | Pages 07 and 08 (1.5): ISO 13818-1 timing — PCR in the adaptation field of the first video packet (PID announced by the PMT), PTS = PCR + 0.7 s, data_alignment and random_access indicators, 33-bit PTS without 32-bit overflow |
 | 2026-10-19 | Pages 2.0: multi-picture stream (.j2d container, fixed-point DCT, TM5 rate control, constant-rate multiplex, block processing, fixed-point SRRC written to disk on the fly). EN 300 421 conformance fixed in three steps: PRBS generator (initialisation and output), Reed-Solomon parity byte order, convolutional encoder register. Checked by demodulation with an independent DVB-S receiver |
 | 2026-10-19 | Pages 2.1: version number shown in the navigation bar (read from the header block); step 14: 💾 Export I/Q .cs16 button (16-bit integers), for streams as for a single picture, direct write to disk as an option |
+| 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
 
 ## License
 
