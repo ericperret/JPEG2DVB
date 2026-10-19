@@ -2,21 +2,29 @@
 ================================================================================
   Nom        : gen_vlc.js
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
-  Objet      : génère rtl/vlc_tab_pkg.vhd (tables VLC MPEG-2 B.12, B.13, B.14)
+  Objet      : génère le paquetage vlc_tab_pkg de vhdl/jpeg2dvb_fpga.vhd (tables VLC MPEG-2 B.12, B.13, B.14)
                à partir de la page 05 de JPEG2DVB, pour que le VHDL et la
                référence partagent exactement les mêmes codes
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : Node.js (aucune dépendance)
   Licence    : CC BY-NC 4.0
   Usage      : node gen_vlc.js [chemin de page05-rle-huffman.html]
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 ================================================================================
 */
 'use strict';
 const fs = require('fs'), path = require('path');
-const P05 = process.argv[2] || path.join(__dirname, '..', '..', 'page05-rle-huffman.html');
+const P05 = process.argv[2] || path.join(__dirname, '..', 'page05-rle-huffman.html');
+function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
+    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
+    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
+    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
+    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
+}
+
 const h = fs.readFileSync(P05, 'utf8');
 function objet(nom) {
     const m = new RegExp('const ' + nom + ' = (\\{[\\s\\S]*?\\});').exec(h);
@@ -49,13 +57,14 @@ const pkg = `--=================================================================
 --  Objet      : tables VLC MPEG-2 intra : B.12 (taille DC luminance), B.13
 --               (taille DC chrominance), B.14 (coefficients AC, intra_vlc_format
 --               = 0, ${n} paires run / niveau, sans le bit de signe)
---               (fichier généré par scripts/gen_vlc.js depuis la page 05)
+--               (fichier généré par fpga_test/gen_vlc.js depuis la page 05)
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -93,5 +102,5 @@ ${cas}            when others => null;
     end function;
 end package body vlc_tab_pkg;
 `;
-fs.writeFileSync(path.join(__dirname, '..', 'rtl', 'vlc_tab_pkg.vhd'), pkg);
+section('vlc_tab_pkg.vhd', pkg);
 console.log('vlc_tab_pkg.vhd :', n, 'codes AC');

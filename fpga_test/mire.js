@@ -4,21 +4,29 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : dessine la mire 16 couleurs du FPGA (352 × 288, frontières de
                couleur sur coordonnées paires), l'écrit en PNG pour la page 01
-               de JPEG2DVB, et génère rtl/mire_pkg.vhd : image en indices
+               de JPEG2DVB, et génère le paquetage mire_pkg de vhdl/jpeg2dvb_fpga.vhd : image en indices
                4 bits et palette Y, Cb, Cr calculée avec les formules de la
                page 01 (BT.601, arrondi Math.round, chrominance en Float32)
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : Node.js (zlib intégré, aucune dépendance)
   Licence    : CC BY-NC 4.0
-  Usage      : node mire.js          → ref/mire.png et rtl/mire_pkg.vhd
+  Usage      : node mire.js          → mire.png et paquetage mire_pkg de vhdl/jpeg2dvb_fpga.vhd
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 ================================================================================
 */
 'use strict';
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const W = 352, H = 288;
+function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
+    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
+    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
+    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
+    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
+}
+
 
 // palette : 8 barres, 6 gris intermédiaires, ambre AZS, ardoise
 const PAL = [
@@ -60,7 +68,7 @@ const brut = Buffer.alloc(H * (1 + W * 3));
 for (let y = 0; y < H; y++) { brut[y * (1 + W * 3)] = 0; for (let x = 0; x < W; x++) { const p = PAL[img[y * W + x]]; brut.set(p, y * (1 + W * 3) + 1 + x * 3); } }
 const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2;
 const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), bloc('IHDR', ihdr), bloc('IDAT', zlib.deflateSync(brut)), bloc('IEND', Buffer.alloc(0))]);
-fs.writeFileSync(path.join(__dirname, '..', 'ref', 'mire.png'), png);
+fs.writeFileSync(path.join(__dirname, 'mire.png'), png);
 
 // palette Y, Cb, Cr : formules de la page 01 (plansDepuisRGBA)
 const clamp = v => Math.max(0, Math.min(255, Math.round(v)));
@@ -78,13 +86,14 @@ const vhd = `--=================================================================
 --               hexadécimal par pixel) et palette Y, Cb, Cr ; frontières de
 --               couleur sur coordonnées paires, la chrominance 4:2:0 d'un bloc
 --               2 × 2 est donc celle de la palette
---               (fichier généré par scripts/mire.js ; même image : ref/mire.png)
+--               (fichier généré par fpga_test/mire.js ; même image : fpga_test/mire.png)
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -126,5 +135,5 @@ package body mire_pkg is
     constant MIRE_ROM : rom_t := vers_rom;
 end package body mire_pkg;
 `;
-fs.writeFileSync(path.join(__dirname, '..', 'rtl', 'mire_pkg.vhd'), vhd);
+section('mire_pkg.vhd', vhd);
 console.log('mire.png', png.length, 'octets ; palette', JSON.stringify(pal));

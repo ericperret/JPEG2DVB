@@ -7,30 +7,31 @@
                conteneurs .j2d de JPEG2DVB 2.x, en fichiers binaires simples
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : Node.js (aucune dépendance)
   Licence    : CC BY-NC 4.0
   Usage      : node refs_video.js DOSSIER
                DOSSIER : sorties des étapes 01 à 08 d'un même traitement (étape 02
                en DCT entière, étape 03 en régulation TM5, versions 3.0)
-  Sorties    : ref/mb0.bin   macroblocs de l'image 0 (octets, 396 × 384)
-               ref/dct0.bin  coefficients DCT de l'image 0 (int16 LE)
-               ref/q0.bin    coefficients quantifiés, ordre naturel (int16 LE)
-               ref/zz0.bin   vecteurs zigzag (int16 LE)
-               ref/vlc.bin   bits VLC des macroblocs, toutes images, bout à bout
-               ref/mbbits.bin longueur en bits de chaque macrobloc (uint16 LE)
-               ref/qcode.bin quantiser_scale_code de chaque slice (octets)
-               ref/es.bin    flux élémentaire MPEG-2 (toutes images)
-               ref/es_au.bin début de chaque image dans es.bin (uint32 LE)
-               ref/ts_v.bin  Transport Stream de l'étape 08 (2.4) pour ces images
+  Sorties    : mb0.bin   macroblocs de l'image 0 (octets, 396 × 384)
+               dct0.bin  coefficients DCT de l'image 0 (int16 LE)
+               q0.bin    coefficients quantifiés, ordre naturel (int16 LE)
+               zz0.bin   vecteurs zigzag (int16 LE)
+               vlc.bin   bits VLC des macroblocs, toutes images, bout à bout
+               mbbits.bin longueur en bits de chaque macrobloc (uint16 LE)
+               qcode.bin quantiser_scale_code de chaque slice (octets)
+               es.bin    flux élémentaire MPEG-2 (toutes images)
+               es_au.bin début de chaque image dans es.bin (uint32 LE)
+               ts_v.bin  Transport Stream de l'étape 08 (2.4) pour ces images
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  étapes 02 et 03 en 3.0 : DCT entière, régulation TM5
                                 (q0.bin quantifié avec le code de chaque rangée)
+               1.2  2026-10-19  dossier fpga_test/
 ================================================================================
 */
 'use strict';
 const fs = require('fs'), path = require('path');
-const SRC = process.argv[2], REF = path.join(__dirname, '..', 'ref');
+const SRC = process.argv[2], REF = __dirname;
 if (!SRC) { console.error('usage : node refs_video.js DOSSIER'); process.exit(1); }
 
 const TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array, u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };

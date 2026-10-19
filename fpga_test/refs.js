@@ -7,7 +7,7 @@
                coefficients SRRC
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : Node.js (aucune dépendance)
   Licence    : CC BY-NC 4.0
   Usage      : node refs.js DOSSIER_JPEG2DVB
@@ -17,13 +17,21 @@
                interleaved.bin (11), convolutional.bin (12), qpsk_iq_s8.bin (13),
                dvbs_iq_s16_*.cs16 et dvbs_iq_s16_*.json (14)
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 ================================================================================
 */
 'use strict';
 const fs = require('fs'), path = require('path');
 const SRC = process.argv[2];
 if (!SRC) { console.error('usage : node refs.js DOSSIER_JPEG2DVB'); process.exit(1); }
-const ICI = __dirname, REF = path.join(ICI, '..', 'ref'), RTL = path.join(ICI, '..', 'rtl');
+const ICI = __dirname, REF = ICI;
+function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
+    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
+    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
+    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
+    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
+}
+
 
 // Toutes les fonctions de la chaîne arrière sont causales : un préfixe de
 // l'entrée donne un préfixe de la sortie (à la marge du filtre SRRC près).
@@ -53,16 +61,17 @@ const pkg = `--=================================================================
 --  Nom        : srrc_coef_pkg.vhd
 --  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
 --  Objet      : coefficients du filtre SRRC en forme polyphase, entiers 16 bits
---               (fichier généré par scripts/refs.js depuis l'étape 14 de JPEG2DVB)
+--               (fichier généré par fpga_test/refs.js depuis l'étape 14 de JPEG2DVB)
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Paramètres : α = ${desc.srrc.rolloff}, ${desc.srrc.span} symboles, ${desc.srrc.samplesPerSymbol} échantillons par symbole,
 --               fenêtre ${desc.srrc.window}, ${desc.srrc.taps} coefficients, échelle E = ${desc.srrc.echelle.toFixed(4)}
 --  Principe   : échantillon n·8 + r = somme sur d de C(r)(d) · s(n − 6 + d),
 --               symboles s = ±1 ; la somme des |C(r)(d)| ne dépasse pas 0,95 × 32 767
 --  Licence    : CC BY-NC 4.0
 --  Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  dossier fpga_test/ ; paquetage écrit dans vhdl/jpeg2dvb_fpga.vhd
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -77,5 +86,5 @@ ${lignes}
     );
 end package srrc_coef_pkg;
 `;
-fs.writeFileSync(path.join(RTL, 'srrc_coef_pkg.vhd'), pkg);
+section('srrc_coef_pkg.vhd', pkg);
 console.log('srrc_coef_pkg.vhd généré');

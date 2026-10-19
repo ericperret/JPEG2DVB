@@ -10,7 +10,7 @@
 
 🇫🇷 [Version française : LISEZMOI.md](LISEZMOI.md)
 
-VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF100TC FPGA, specification v0.4). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB (`ref/` folder) and compares the module output byte by byte, or sample by sample.
+VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF100TC FPGA, specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
 
 Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interfaces (flow control exercised with random gaps in every testbench).
 
@@ -31,7 +31,7 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identical |
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0.35, 8 phases × 13 16-bit coefficients, no multiplier | 14 (`.cs16`) | `tb_srrc` | ✔ 160,000 samples |
 | `tx_backend` | Back-end chain: TS → I/Q (steps 09 to 14 assembled) | 08 → 14 | `tb_backend` | ✔ 160,000 samples, one per clock |
-| `mire_gen` + `mire_pkg` | Animated 16-colour test pattern, moving square and counter, 4:2:0 macroblocks | 01 (`ref/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
+| `mire_gen` + `mire_pkg` | Animated 16-colour test pattern, moving square and counter, 4:2:0 macroblocks | 01 (`fpga_test/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
 | `video_enc` | Front end: test pattern → DCT → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 769 TS packets |
 | `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
 
@@ -41,7 +41,7 @@ Every module passes `ghdl --synth` without latches (synthesisability check; the 
 
 ```
 sudo apt-get install ghdl        # GHDL 4.x
-cd vhdl
+cd fpga_test
 ./run_tests.sh                   # all testbenches + synthesis check
 ./run_tests.sh conv              # testbenches whose name contains "conv"
 ```
@@ -50,11 +50,11 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 
 ## References
 
-`ref/` holds excerpts of JPEG2DVB 2.x outputs:
+`fpga_test/` holds the test tools (`run_tests.sh`, Node scripts) and excerpts of JPEG2DVB 2.x outputs:
 
-- back end: 64 TS packets of a one-second stream (photo, 25 pictures, FEC 1/2, α = 0.35) and their outputs at steps 09 to 14; `node scripts/refs.js FOLDER` extracts them and generates `rtl/srrc_coef_pkg.vhd`; the 2/3 to 7/8 references come from page 12 set to those rates;
-- video: 3 pictures, fixed-point DCT, fixed quantiser code; `node scripts/refs_video.js FOLDER`; codes 1 and 31 come from page 03;
-- `node scripts/gen_vlc.js` regenerates the VLC tables from page 05.
+- back end: 64 TS packets of a one-second stream (photo, 25 pictures, FEC 1/2, α = 0.35) and their outputs at steps 09 to 14; `node refs.js FOLDER` extracts them and rewrites the `srrc_coef_pkg` package in `jpeg2dvb_fpga.vhd`; the 2/3 to 7/8 references come from page 12 set to those rates;
+- video: 3 pictures of `dur.png`, integer DCT, TM5 rate control; `node refs_video.js FOLDER`; codes 1 and 31 come from page 03;
+- `node gen_vlc.js` regenerates the VLC tables from page 05.
 
 ## Throughput
 
@@ -76,7 +76,8 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | Date | Change |
 |---|---|
 | 2026-10-19 | Back end (09 to 14) and video side (02 to 08) bit-exact, 19 testbenches; JPEG2DVB page 08 at 2.4 (multiplexer timing in exact integers) |
-| 2026-10-19 | Animated test pattern (`scripts/mire.js`: PNG for page 01 and `rtl/mire_pkg.vhd`), `video_enc` front end and `dvbs_tx` complete transmitter: from the test pattern to I/Q samples, identical to JPEG2DVB; 22 testbenches |
+| 2026-10-19 | Animated test pattern (`mire.js`: PNG for page 01 and `mire_pkg` package), `video_enc` front end and `dvbs_tx` complete transmitter: from the test pattern to I/Q samples, identical to JPEG2DVB; 22 testbenches |
+| 2026-10-19 | TM5 rate control (`rate_ctrl`, references regenerated; testbenches to be adapted). Sources merged into `jpeg2dvb_fpga.vhd` and `jpeg2dvb_fpga_tb.vhd`; references, scripts and `run_tests.sh` moved to `fpga_test/` |
 
 ## License
 
