@@ -20,12 +20,7 @@
 'use strict';
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const W = 352, H = 288;
-function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
-    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
-    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
-    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
-    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
-}
+const { section } = require('./fusion');      // paquetage réécrit dans vhdl/jpeg2dvb_fpga.vhd
 
 
 // palette : 8 barres, 6 gris intermédiaires, ambre AZS, ardoise
@@ -118,6 +113,8 @@ ${lignes.join(',\n')});
 end package mire_pkg;
 
 package body mire_pkg is
+    -- vers_rom : E : MIRE (lignes de caractères hexadécimaux) → T : un indice
+    -- de couleur par pixel → S : mémoire morte MIRE_ROM (adresse = 352·y + x)
     function vers_rom return rom_t is
         variable r : rom_t;
         variable c : character;

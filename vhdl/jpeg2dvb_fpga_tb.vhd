@@ -1,35 +1,41 @@
 --==============================================================================
 --  Nom        : jpeg2dvb_fpga_tb.vhd
 --  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : bancs de test GHDL, comparaison au bit près avec les références de fpga_test/
+--  Objet      : bancs de test GHDL : chaque banc lit les références de
+--               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
+--  Version    : 2.0
+--  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 11 unités, dans l'ordre d'analyse ; chacune garde son
---               cartouche, entre les balises « -- >>> nom.vhd » et « -- <<< nom.vhd »
---               (les paquetages générés sont réécrits par les outils de fpga_test/)
---  Historique : 1.0  2026-10-19  fusion des fichiers de vhdl/tb/
+--  Contenu    : 11 unités, dans l'ordre d'analyse :
+--               tb_pkg        lecture des fichiers, générateur pseudo-aléatoire
+--               tb_octets     modules à flux d'octets (09, 10, 11, TS)
+--               tb_conv       codeur convolutif, 5 taux
+--               tb_qpsk       QPSK
+--               tb_srrc       filtre SRRC
+--               tb_backend    chaîne arrière complète
+--               tb_bloc       DCT, quantification, zigzag
+--               tb_vlc        codage VLC
+--               tb_es         flux élémentaire
+--               tb_mire       mire animée
+--               tb_dvbs       tête de chaîne et émetteur complet
+--  Conventions: context jpeg2dvb_ctx (déclaré dans jpeg2dvb_fpga.vhd) ;
+--               trous aléatoires en entrée et en sortie de chaque module ;
+--               process commentés « E : entrées → T : traitement → S : sorties »
+--  Lancement  : fpga_test/run_tests.sh
+--  Historique : 1.0  2026-10-19  bancs créés
+--                    tb_octets 1.1 : multiplexeur TS (G_DUT = 4)
+--               2.0  2026-10-19  fusion propre : cartouche unique, context
+--                                commun, commentaires de fonction
 --==============================================================================
 
--- >>> tb_pkg.vhd
---==============================================================================
---  Nom        : tb_pkg.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : outils des bancs de test : lecture des fichiers binaires de
---               référence produits par JPEG2DVB, aléa reproductible pour
---               éprouver le contrôle de flux (valid / ready)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_pkg : outils des bancs de test : lecture des fichiers binaires de
+--   référence produits par JPEG2DVB, aléa reproductible pour
+--   éprouver le contrôle de flux (valid / ready)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 package tb_pkg is
     -- fichier binaire lu octet par octet
@@ -42,11 +48,13 @@ package tb_pkg is
 end package tb_pkg;
 
 package body tb_pkg is
+    -- octet : E : caractère lu dans un fichier binaire → S : octet
     function octet(c : character) return std_logic_vector is
     begin
         return std_logic_vector(to_unsigned(character'pos(c), 8));
     end function;
 
+    -- alea : E : registre → T : un pas de Galois → S : registre suivant
     function alea(r : std_logic_vector(15 downto 0)) return std_logic_vector is
         variable v : std_logic_vector(15 downto 0) := r;
     begin
@@ -58,29 +66,16 @@ package body tb_pkg is
         return v;
     end function;
 end package body tb_pkg;
--- <<< tb_pkg.vhd
 
--- >>> tb_octets.vhd
---==============================================================================
---  Nom        : tb_octets.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test des modules à flux d'octets (dispersion d'énergie,
---               Reed-Solomon, entrelaceur) : entrée lue dans un fichier de
---               JPEG2DVB, sortie comparée octet par octet au fichier de l'étape
---               suivante ; trous aléatoires côté entrée et côté sortie pour
---               éprouver le contrôle de flux
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.1
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux
---  Historique : 1.0  2026-10-19  création
---               1.1  2026-10-19  multiplexeur TS (G_DUT = 4)
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_octets : banc de test des modules à flux d'octets (dispersion d'énergie,
+--   Reed-Solomon, entrelaceur) : entrée lue dans un fichier de
+--   JPEG2DVB, sortie comparée octet par octet au fichier de l'étape
+--   suivante ; trous aléatoires côté entrée et côté sortie pour
+--   éprouver le contrôle de flux
+--   Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -197,26 +192,14 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_octets.vhd
 
--- >>> tb_conv.vhd
---==============================================================================
---  Nom        : tb_conv.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test du codeur convolutif (taux G_FEC) : entrée = sortie
---               de l'entrelaceur (JPEG2DVB étape 11), sortie comparée bit à bit
---               aux bits codés de l'étape 12 (I puis Q de chaque symbole,
---               regroupés par octets, poids fort en tête)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_conv : banc de test du codeur convolutif (taux G_FEC) : entrée = sortie
+--   de l'entrelaceur (JPEG2DVB étape 11), sortie comparée bit à bit
+--   aux bits codés de l'étape 12 (I puis Q de chaque symbole,
+--   regroupés par octets, poids fort en tête)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -244,6 +227,8 @@ begin
     clk <= not clk after 5 ns;
     dut : entity work.conv_enc generic map (G_FEC => G_FEC) port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data);
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f     : octets_f open read_mode is REF & G_IN;
         variable c : character;
@@ -270,6 +255,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -279,6 +266,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & G_OUT;
         variable c      : character;
@@ -319,25 +308,13 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_conv.vhd
 
--- >>> tb_qpsk.vhd
---==============================================================================
---  Nom        : tb_qpsk.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test de la mise en correspondance QPSK : entrée = bits
---               codés de l'étape 12, sortie comparée aux symboles entiers I, Q
---               (octets signés) de l'étape 13
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_qpsk : banc de test de la mise en correspondance QPSK : entrée = bits
+--   codés de l'étape 12, sortie comparée aux symboles entiers I, Q
+--   (octets signés) de l'étape 13
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -361,6 +338,8 @@ begin
     clk <= not clk after 5 ns;
     dut : entity work.qpsk_map port map (s_valid, s_ready, s_data, m_valid, m_ready, m_i, m_q);
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f     : octets_f open read_mode is REF & G_IN;
         variable c : character;
@@ -383,6 +362,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -392,6 +373,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & G_OUT;
         variable ci, cq : character;
@@ -419,25 +402,13 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_qpsk.vhd
 
--- >>> tb_srrc.vhd
---==============================================================================
---  Nom        : tb_srrc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test du filtre SRRC polyphase : entrée = symboles ±1
---               de l'étape 13, sortie comparée aux échantillons I/Q 16 bits
---               (petit-boutiste, entrelacés) du fichier .cs16 de l'étape 14
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_srrc : banc de test du filtre SRRC polyphase : entrée = symboles ±1
+--   de l'étape 13, sortie comparée aux échantillons I/Q 16 bits
+--   (petit-boutiste, entrelacés) du fichier .cs16 de l'étape 14
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -463,6 +434,8 @@ begin
     clk <= not clk after 5 ns;
     dut : entity work.srrc_poly port map (clk, rst, s_valid, s_ready, s_i, s_q, m_valid, m_ready, m_i, m_q);
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f          : octets_f open read_mode is REF & G_IN;
         variable ci, cq : character;
@@ -494,6 +467,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & G_OUT;
         variable a, b   : character;
@@ -526,26 +501,14 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_srrc.vhd
 
--- >>> tb_backend.vhd
---==============================================================================
---  Nom        : tb_backend.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test de la chaîne arrière complète : paquets TS de
---               l'étape 08 en entrée, échantillons I/Q comparés au fichier
---               .cs16 de l'étape 14 ; sortie à plein débit (un échantillon
---               par cycle demandé, comme vers le sigma-delta)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_backend : banc de test de la chaîne arrière complète : paquets TS de
+--   l'étape 08 en entrée, échantillons I/Q comparés au fichier
+--   .cs16 de l'étape 14 ; sortie à plein débit (un échantillon
+--   par cycle demandé, comme vers le sigma-delta)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -574,6 +537,8 @@ begin
     dut : entity work.tx_backend generic map (G_FEC => 0)
         port map (clk, rst, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_i, m_q);
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f     : octets_f open read_mode is REF & G_IN;
         variable c : character;
@@ -595,6 +560,8 @@ begin
         wait;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f            : octets_f open read_mode is REF & G_OUT;
         variable a, b     : character;
@@ -637,27 +604,15 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_backend.vhd
 
--- >>> tb_bloc.vhd
---==============================================================================
---  Nom        : tb_bloc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test des modules à blocs 8 × 8 du codage vidéo (DCT
---               entière, quantification, zigzag) : entrée et sortie comparées
---               aux fichiers de JPEG2DVB (image 0, 2 376 blocs)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Paramètres : G_DUT 1 = dct8x8_int (entrée octets), 2 = quant_intra,
---               3 = zigzag (entrée int16 LE) ; sortie int16 LE
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_bloc : banc de test des modules à blocs 8 × 8 du codage vidéo (DCT
+--   entière, quantification, zigzag) : entrée et sortie comparées
+--   aux fichiers de JPEG2DVB (image 0, 2 376 blocs)
+--   Paramètres : G_DUT 1 = dct8x8_int (entrée octets), 2 = quant_intra,
+--                3 = zigzag (entrée int16 LE) ; sortie int16 LE
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -693,6 +648,8 @@ begin
         dut : entity work.zigzag port map (clk, rst, s_valid, s_ready, s_coef, m_valid, m_ready, m_data);
     end generate;
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f     : octets_f open read_mode is REF & G_IN;
         variable a, b : character;
@@ -724,6 +681,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -733,6 +692,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & G_OUT;
         variable a, b   : character;
@@ -769,26 +730,14 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_bloc.vhd
 
--- >>> tb_vlc.vhd
---==============================================================================
---  Nom        : tb_vlc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test du codeur VLC : vecteurs zigzag de l'image 0
---               (étape 04) en entrée ; mots de code mis bout à bout et
---               comparés bit à bit aux bits de l'étape 05, longueur de chaque
---               macrobloc comparée à la référence
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_vlc : banc de test du codeur VLC : vecteurs zigzag de l'image 0
+--   (étape 04) en entrée ; mots de code mis bout à bout et
+--   comparés bit à bit aux bits de l'étape 05, longueur de chaque
+--   macrobloc comparée à la référence
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -815,6 +764,8 @@ begin
     clk <= not clk after 5 ns;
     dut : entity work.vlc_enc port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_code, m_lg, m_fin_mb);
 
+    -- source : E : fichier d'entrée → T : une donnée par acceptation, trous
+    --   aléatoires → S : flux vers le module
     source : process
         file f        : octets_f open read_mode is REF & G_IN;
         variable a, b : character;
@@ -835,6 +786,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -844,6 +797,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file fb          : octets_f open read_mode is REF & "vlc.bin";
         file fl          : octets_f open read_mode is REF & "mbbits.bin";
@@ -900,26 +855,14 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_vlc.vhd
 
--- >>> tb_es.vhd
---==============================================================================
---  Nom        : tb_es.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test de l'assemblage du flux élémentaire : bits VLC
---               des macroblocs de l'étape 05 (toutes les images) en entrée,
---               découpés en mots de 1 à 24 bits ; sortie comparée octet par
---               octet au flux élémentaire de l'étape 06 (fin de séquence comprise)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_es : banc de test de l'assemblage du flux élémentaire : bits VLC
+--   des macroblocs de l'étape 05 (toutes les images) en entrée,
+--   découpés en mots de 1 à 24 bits ; sortie comparée octet par
+--   octet au flux élémentaire de l'étape 06 (fin de séquence comprise)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -994,6 +937,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -1003,6 +948,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & "es.bin";
         variable c      : character;
@@ -1036,25 +983,13 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_es.vhd
 
--- >>> tb_mire.vhd
---==============================================================================
---  Nom        : tb_mire.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : banc de test de la mire animée : macroblocs des 2 premières
---               images comparés à ceux de l'étape 01 (fpga_test/mire.png chargée,
---               option « mobile »)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_mire : banc de test de la mire animée : macroblocs des 2 premières
+--   images comparés à ceux de l'étape 01 (fpga_test/mire.png chargée,
+--   option « mobile »)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1075,6 +1010,7 @@ begin
     clk <= not clk after 5 ns;
     dut : entity work.mire_gen port map (clk, rst, m_valid, m_ready, m_data, m_debut);
 
+    -- réinitialisation : rst relâché après deux cycles
     process
     begin
         wait until rising_edge(clk);
@@ -1083,6 +1019,8 @@ begin
         wait;
     end process;
 
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
     pression : process (clk)
         variable r : std_logic_vector(15 downto 0) := x"1D0F";
     begin
@@ -1092,6 +1030,8 @@ begin
         end if;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & "mire_mb.bin";
         variable c      : character;
@@ -1124,28 +1064,16 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_mire.vhd
 
--- >>> tb_dvbs.vhd
---==============================================================================
---  Nom        : tb_dvbs.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : bancs de test de bout en bout, mire animée (fpga_test/mire.png,
---               3 images, DCT en virgule fixe, code d'échelle 8) :
---               G_DUT = 1 : video_enc, paquets TS prélevés au rythme du canal
---               (un par 13 056 cycles), comparés au TS de l'étape 08 ;
---               G_DUT = 2 : dvbs_tx, échantillons I/Q comparés au .cs16 de
---               l'étape 14
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, simulation (GHDL)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- tb_dvbs : bancs de test de bout en bout, mire animée (fpga_test/mire.png,
+--   3 images, DCT en virgule fixe, code d'échelle 8) :
+--   G_DUT = 1 : video_enc, paquets TS prélevés au rythme du canal
+--   (un par 13 056 cycles), comparés au TS de l'étape 08 ;
+--   G_DUT = 2 : dvbs_tx, échantillons I/Q comparés au .cs16 de
+--   l'étape 14
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1192,6 +1120,7 @@ begin
         m_ready <= '1';
     end generate;
 
+    -- réinitialisation : rst relâché après deux cycles
     process
     begin
         wait until rising_edge(clk);
@@ -1200,6 +1129,8 @@ begin
         wait;
     end process;
 
+    -- contrôle : E : sorties acceptées, fichier de référence → T : comparaison
+    --   donnée par donnée, délai maximal → S : verdict OK / ECHEC
     controle : process (clk)
         file f          : octets_f open read_mode is REF & G_OUT;
         variable a, b   : character;
@@ -1245,4 +1176,3 @@ begin
         end if;
     end process;
 end architecture sim;
--- <<< tb_dvbs.vhd

@@ -78,6 +78,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-10-19 | Back end (09 to 14) and video side (02 to 08) bit-exact, 19 testbenches; JPEG2DVB page 08 at 2.4 (multiplexer timing in exact integers) |
 | 2026-10-19 | Animated test pattern (`mire.js`: PNG for page 01 and `mire_pkg` package), `video_enc` front end and `dvbs_tx` complete transmitter: from the test pattern to I/Q samples, identical to JPEG2DVB; 22 testbenches |
 | 2026-10-19 | TM5 rate control (`rate_ctrl`, references regenerated; testbenches to be adapted). Sources merged into `jpeg2dvb_fpga.vhd` and `jpeg2dvb_fpga_tb.vhd`; references, scripts and `run_tests.sh` moved to `fpga_test/` |
+| 2026-10-19 | Clean merge (2.0): one header per file, common VHDL-2008 context `jpeg2dvb_ctx`, every function and process commented; `fpga_test/README.md` lists the role of each test file |
 
 ## License
 

@@ -1,36 +1,68 @@
 --==============================================================================
 --  Nom        : jpeg2dvb_fpga.vhd
 --  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : modules synthétisables de l'émetteur, de la mire aux échantillons I/Q
+--  Objet      : modules synthétisables de l'émetteur DVB-S, de la mire animée
+--               aux échantillons I/Q ; chaque module reproduit au bit près une
+--               étape de JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 2.0
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 22 unités, dans l'ordre d'analyse ; chacune garde son
---               cartouche, entre les balises « -- >>> nom.vhd » et « -- <<< nom.vhd »
---               (les paquetages générés sont réécrits par les outils de fpga_test/)
---  Historique : 1.0  2026-10-19  fusion des fichiers de vhdl/rtl/
+--  Contenu    : 22 unités, dans l'ordre d'analyse :
+--               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
+--               srrc_coef_pkg coefficients SRRC (généré par refs.js)
+--               mire_pkg      image de la mire (généré par mire.js)
+--               vlc_tab_pkg   tables VLC B.12 à B.14 (généré par gen_vlc.js)
+--               prbs_disp     dispersion d'énergie (étape 09)
+--               rs_enc        Reed-Solomon (204,188) (étape 10)
+--               interleaver   entrelaceur de Forney I = 12 (étape 11)
+--               conv_enc      codeur convolutif, 1/2 à 7/8 (étape 12)
+--               qpsk_map      QPSK (étape 13)
+--               srrc_poly     filtre SRRC polyphase × 8 (étape 14)
+--               tx_backend    chaîne arrière, TS → I/Q (09 à 14)
+--               dct8x8_int    DCT 8 × 8 entière (étape 02)
+--               quant_intra   quantification intra (étape 03)
+--               zigzag        balayage zigzag (étape 04)
+--               vlc_enc       codage VLC (étape 05)
+--               bit_packer    mots de longueur variable → octets
+--               es_mux        flux élémentaire (étape 06)
+--               ts_mux        PES et Transport Stream (étapes 07, 08)
+--               rate_ctrl     régulation de débit TM5 (étape 03)
+--               mire_gen      mire animée (étape 01)
+--               video_enc     tête de chaîne, mire → TS (01 à 08)
+--               dvbs_tx       émetteur complet, mire → I/Q
+--  Conventions: flux valid / ready ; bibliothèque ieee seule (context
+--               jpeg2dvb_ctx) ; fonctions et process commentés
+--               « E : entrées → T : traitement → S : sorties » ; les paquetages
+--               générés par fpga_test/ restent entre « -- >>> » et « -- <<< »
+--  Historique : 1.0  2026-10-19  modules créés (étapes 01 à 14 de JPEG2DVB)
+--                    rate_ctrl 1.0 : régulation de débit TM5
+--                    dvbs_pkg 1.1 : budget_image (régulation TM5)
+--                    es_mux 1.1 : slice_ok : attente du code de la
+--                      régulation TM5
+--                    video_enc 1.1 : régulation TM5 (rate_ctrl) :
+--                      un code par rangée
+--                    dvbs_tx 1.1 : régulation TM5 : budget tiré du
+--                      canal (10 MS/s, FEC, 95 % de vidéo), plus
+--                      d'entrée code
+--               2.0  2026-10-19  fusion propre : cartouche unique, context
+--                                commun, commentaires de fonction
 --==============================================================================
 
--- >>> dvbs_pkg.vhd
---==============================================================================
---  Nom        : dvbs_pkg.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : types et fonctions communs de la chaîne DVB-S (EN 300 421) :
---               dispersion d'énergie, corps de Galois GF(2⁸), Reed-Solomon,
---               codeur convolutif, budget de la régulation de débit
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.1
---  Plateforme : VHDL-2008, synthétisable (Libero SoC), bibliothèque ieee seule
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---               1.1  2026-10-19  budget_image (régulation TM5)
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+-- clauses communes à toutes les unités (une ligne « context » par unité)
+context jpeg2dvb_ctx is
+    library ieee;
+    use ieee.std_logic_1164.all;
+    use ieee.numeric_std.all;
+end context jpeg2dvb_ctx;
+
+--------------------------------------------------------------------------------
+-- dvbs_pkg : types et fonctions communs de la chaîne DVB-S (EN 300 421) :
+--   dispersion d'énergie, corps de Galois GF(2⁸), Reed-Solomon,
+--   codeur convolutif, budget de la régulation de débit
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 package dvbs_pkg is
 
@@ -79,6 +111,8 @@ package dvbs_pkg is
 end package dvbs_pkg;
 
 package body dvbs_pkg is
+    -- budget_image : E : Rs, FEC, part vidéo, images/s → T : formule entière de
+    --   l'étape 03 → S : T en bits par image
     function budget_image(rs, fec, part, fps : natural) return natural is
         type n_t is array (0 to 4) of natural;
         constant FN : n_t := (1, 2, 3, 5, 7);
@@ -90,6 +124,8 @@ package body dvbs_pkg is
     end function;
 
 
+    -- prbs_pas : E : registre → T : décalage, étage 14 ⊕ étage 15 réinjecté
+    --   dans l'étage 1 → S : registre suivant
     function prbs_pas(r : prbs_reg_t) return prbs_reg_t is
         variable f : std_logic;
     begin
@@ -97,6 +133,7 @@ package body dvbs_pkg is
         return r(13 downto 0) & f;
     end function;
 
+    -- prbs_pas8 : E : registre → T : huit pas → S : registre après un octet
     function prbs_pas8(r : prbs_reg_t) return prbs_reg_t is
         variable v : prbs_reg_t := r;
     begin
@@ -106,6 +143,8 @@ package body dvbs_pkg is
         return v;
     end function;
 
+    -- prbs_octet : E : registre → T : huit bits de sortie (étage 14 ⊕ 15) → S :
+    --   octet de brouillage, premier bit en poids fort
     function prbs_octet(r : prbs_reg_t) return octet_t is
         variable v : prbs_reg_t := r;
         variable o : octet_t;
@@ -117,6 +156,8 @@ package body dvbs_pkg is
         return o;
     end function;
 
+    -- gf_mul : E : a, b de GF(2⁸) → T : produit polynomial réduit par 0x11D → S
+    --   : a·b
     function gf_mul(a, b : octet_t) return octet_t is
         variable p  : octet_t := (others => '0');
         variable aa : octet_t := a;
@@ -134,6 +175,7 @@ package body dvbs_pkg is
         return p;
     end function;
 
+    -- parite : E : vecteur → T : ou exclusif de tous ses bits → S : parité
     function parite(v : std_logic_vector) return std_logic is
         variable p : std_logic := '0';
     begin
@@ -144,26 +186,17 @@ package body dvbs_pkg is
     end function;
 
 end package body dvbs_pkg;
--- <<< dvbs_pkg.vhd
 
 -- >>> srrc_coef_pkg.vhd
---==============================================================================
---  Nom        : srrc_coef_pkg.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : coefficients du filtre SRRC en forme polyphase, entiers 16 bits
---               (fichier généré par fpga_test/refs.js depuis l'étape 14 de JPEG2DVB)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Paramètres : α = 0.35, 12 symboles, 8 échantillons par symbole,
---               fenêtre kaiser, 97 coefficients, échelle E = 169630.0752
---  Principe   : échantillon n·8 + r = somme sur d de C(r)(d) · s(n − 6 + d),
---               symboles s = ±1 ; la somme des |C(r)(d)| ne dépasse pas 0,95 × 32 767
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
+--------------------------------------------------------------------------------
+-- srrc_coef_pkg : coefficients du filtre SRRC en forme polyphase, entiers 16 bits
+--   (fichier généré par fpga_test/refs.js depuis l'étape 14 de JPEG2DVB)
+--   Paramètres : α = 0.35, 12 symboles, 8 échantillons par symbole,
+--                fenêtre kaiser, 97 coefficients, échelle E = 169630.0752
+--   Principe : échantillon n·8 + r = somme sur d de C(r)(d) · s(n − 6 + d),
+--              symboles s = ±1 ; la somme des |C(r)(d)| ne dépasse pas 0,95 × 32 767
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 package srrc_coef_pkg is
     constant SRRC_SPS  : natural := 8;
@@ -184,24 +217,14 @@ end package srrc_coef_pkg;
 -- <<< srrc_coef_pkg.vhd
 
 -- >>> mire_pkg.vhd
---==============================================================================
---  Nom        : mire_pkg.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : mire 16 couleurs 352 × 288 (indices 4 bits, un caractère
---               hexadécimal par pixel) et palette Y, Cb, Cr ; frontières de
---               couleur sur coordonnées paires, la chrominance 4:2:0 d'un bloc
---               2 × 2 est donc celle de la palette
---               (fichier généré par fpga_test/mire.js ; même image : fpga_test/mire.png)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- mire_pkg : mire 16 couleurs 352 × 288 (indices 4 bits, un caractère
+--   hexadécimal par pixel) et palette Y, Cb, Cr ; frontières de
+--   couleur sur coordonnées paires, la chrominance 4:2:0 d'un bloc
+--   2 × 2 est donc celle de la palette
+--   (fichier généré par fpga_test/mire.js ; même image : fpga_test/mire.png)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 package mire_pkg is
     constant MIRE_L : natural := 352;
@@ -543,23 +566,13 @@ end package body mire_pkg;
 -- <<< mire_pkg.vhd
 
 -- >>> vlc_tab_pkg.vhd
---==============================================================================
---  Nom        : vlc_tab_pkg.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : tables VLC MPEG-2 intra : B.12 (taille DC luminance), B.13
---               (taille DC chrominance), B.14 (coefficients AC, intra_vlc_format
---               = 0, 111 paires run / niveau, sans le bit de signe)
---               (fichier généré par fpga_test/gen_vlc.js depuis la page 05)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+-- vlc_tab_pkg : tables VLC MPEG-2 intra : B.12 (taille DC luminance), B.13
+--   (taille DC chrominance), B.14 (coefficients AC, intra_vlc_format
+--   = 0, 111 paires run / niveau, sans le bit de signe)
+--   (fichier généré par fpga_test/gen_vlc.js depuis la page 05)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 package vlc_tab_pkg is
     type dc_vlc_t is record
@@ -855,28 +868,17 @@ package body vlc_tab_pkg is
 end package body vlc_tab_pkg;
 -- <<< vlc_tab_pkg.vhd
 
--- >>> prbs_disp.vhd
---==============================================================================
---  Nom        : prbs_disp.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : dispersion d'énergie DVB-S (EN 300 421 § 4.4.1), un octet par
---               cycle ; référence bit à bit : JPEG2DVB étape 09
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : flux d'octets valid / ready ; s_sop = 1er octet (synchro 0x47)
+--------------------------------------------------------------------------------
+-- prbs_disp : dispersion d'énergie DVB-S (EN 300 421 § 4.4.1), un octet par
+--   cycle ; référence bit à bit : JPEG2DVB étape 09
+--   Interface : flux d'octets valid / ready ; s_sop = 1er octet (synchro 0x47)
 --               de chaque paquet TS de 188 octets
---  Principe   : groupes de 8 paquets ; paquet 0 : synchro remplacée par 0xB8 et
---               générateur réinitialisé ; paquets 1 à 7 : synchro inchangée, le
---               générateur tourne 8 pas sans être appliqué ; octets 1 à 187 :
---               ou exclusif avec 8 bits de sortie du générateur
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : groupes de 8 paquets ; paquet 0 : synchro remplacée par 0xB8 et
+--              générateur réinitialisé ; paquets 1 à 7 : synchro inchangée, le
+--              générateur tourne 8 pas sans être appliqué ; octets 1 à 187 :
+--              ou exclusif avec 8 bits de sortie du générateur
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity prbs_disp is
@@ -904,6 +906,9 @@ begin
     s_ready <= libre;
     m_valid <= o_valid;
 
+    -- E : octets TS, s_sop → T : tous les 8 paquets synchro 0x47 → 0xB8 et
+    --   registre réinitialisé ; synchros non brouillées (registre avancé),
+    --   autres octets ⊕ PRBS → S : octets dispersés
     process (clk)
     begin
         if rising_edge(clk) then
@@ -933,29 +938,17 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< prbs_disp.vhd
 
--- >>> rs_enc.vhd
---==============================================================================
---  Nom        : rs_enc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : codeur Reed-Solomon RS(204,188) raccourci, t = 8 (EN 300 421
---               § 4.4.2) ; référence bit à bit : JPEG2DVB étape 10
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : paquets de 188 octets (s_sop sur le 1er) ; sortie :
+--------------------------------------------------------------------------------
+-- rs_enc : codeur Reed-Solomon RS(204,188) raccourci, t = 8 (EN 300 421
+--   § 4.4.2) ; référence bit à bit : JPEG2DVB étape 10
+--   Interface : entrée : paquets de 188 octets (s_sop sur le 1er) ; sortie :
 --               paquets de 204 octets, les 16 octets de parité suivent les données
---  Principe   : division de m(x)·x¹⁶ par g(x) dans un registre de 16 octets ;
---               parité émise du coefficient de plus haut degré au plus bas ;
---               l'entrée est suspendue (s_ready = 0) pendant les 16 octets de parité
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : division de m(x)·x¹⁶ par g(x) dans un registre de 16 octets ;
+--              parité émise du coefficient de plus haut degré au plus bas ;
+--              l'entrée est suspendue (s_ready = 0) pendant les 16 octets de parité
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity rs_enc is
@@ -983,6 +976,9 @@ begin
     s_ready <= libre when cnt < 188 else '0';
     m_valid <= o_valid;
 
+    -- E : paquets de 188 octets → T : division par g(x) au fil des octets
+    --   (registre de 16 octets), puis émission des 16 octets de parité → S :
+    --   paquets de 204 octets
     process (clk)
         variable fb : octet_t;
     begin
@@ -1016,31 +1012,19 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< rs_enc.vhd
 
--- >>> interleaver.vhd
---==============================================================================
---  Nom        : interleaver.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : entrelaceur convolutif de Forney, I = 12 branches, M = 17
---               (EN 300 421 § 4.4.2) ; référence bit à bit : JPEG2DVB étape 11
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : flux d'octets valid / ready, s_sop sur la synchro de chaque mot
+--------------------------------------------------------------------------------
+-- interleaver : entrelaceur convolutif de Forney, I = 12 branches, M = 17
+--   (EN 300 421 § 4.4.2) ; référence bit à bit : JPEG2DVB étape 11
+--   Interface : flux d'octets valid / ready, s_sop sur la synchro de chaque mot
 --               RS de 204 octets ; un octet sort pour chaque octet entré
---  Principe   : l'octet k passe par la branche j = k mod 12, une FIFO de j × 17
---               octets ; les 11 FIFO occupent une mémoire de 1 122 octets
---               (adresse de base 17·j(j−1)/2). La synchro passe toujours par la
---               branche 0 : s_sop remet la branche à 0. Après la remise à zéro,
---               la mémoire est mise à 0 (1 122 cycles) comme dans JPEG2DVB.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : l'octet k passe par la branche j = k mod 12, une FIFO de j × 17
+--              octets ; les 11 FIFO occupent une mémoire de 1 122 octets
+--              (adresse de base 17·j(j−1)/2). La synchro passe toujours par la
+--              branche 0 : s_sop remet la branche à 0. Après la remise à zéro,
+--              la mémoire est mise à 0 (1 122 cycles) comme dans JPEG2DVB.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity interleaver is
@@ -1063,6 +1047,8 @@ architecture rtl of interleaver is
     constant M : natural := 17;
     constant TAILLE : natural := M * I * (I - 1) / 2;            -- 1 122
     type base_t is array (0 to I - 1) of natural range 0 to TAILLE;
+    -- bases : E : I, M → T : cumul des longueurs de branche j·M → S : adresse
+    --   de début de chaque branche en mémoire
     function bases return base_t is
         variable b : base_t;
     begin
@@ -1086,6 +1072,8 @@ begin
     s_ready <= libre and not efface;
     m_valid <= o_valid;
 
+    -- E : octets des paquets de 204 → T : branche j = rang mod 12, lecture puis
+    --   écriture dans la FIFO de j·17 octets → S : octets entrelacés
     process (clk)
         variable b : natural range 0 to I - 1;
         variable a : natural range 0 to TAILLE - 1;
@@ -1123,33 +1111,21 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< interleaver.vhd
 
--- >>> conv_enc.vhd
---==============================================================================
---  Nom        : conv_enc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : codeur convolutif K = 7, G1 = 171, G2 = 133 (octal), poinçonnage
---               1/2, 2/3, 3/4, 5/6, 7/8 (EN 300 421 § 4.4.3, tableau 2) ;
---               référence bit à bit : JPEG2DVB étape 12
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : octets (valid / ready), premier bit en poids fort ;
+--------------------------------------------------------------------------------
+-- conv_enc : codeur convolutif K = 7, G1 = 171, G2 = 133 (octal), poinçonnage
+--   1/2, 2/3, 3/4, 5/6, 7/8 (EN 300 421 § 4.4.3, tableau 2) ;
+--   référence bit à bit : JPEG2DVB étape 12
+--   Interface : entrée : octets (valid / ready), premier bit en poids fort ;
 --               sortie : paires de bits (m_data(1) = I, m_data(0) = Q), une paire
 --               par symbole QPSK
---  Principe   : un bit d'entrée par cycle ; X et Y retenus selon le motif de
---               poinçonnage, dans l'ordre X puis Y de chaque instant ; les bits
---               retenus sont regroupés deux par deux (I puis Q). Registre : D0
---               (bit précédent) en bit 5, D5 en bit 0.
---  Paramètre  : G_FEC 0 = 1/2, 1 = 2/3, 2 = 3/4, 3 = 5/6, 4 = 7/8
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : un bit d'entrée par cycle ; X et Y retenus selon le motif de
+--              poinçonnage, dans l'ordre X puis Y de chaque instant ; les bits
+--              retenus sont regroupés deux par deux (I puis Q). Registre : D0
+--              (bit précédent) en bit 5, D5 en bit 0.
+--   Paramètre : G_FEC 0 = 1/2, 1 = 2/3, 2 = 3/4, 3 = 5/6, 4 = 7/8
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity conv_enc is
@@ -1197,6 +1173,8 @@ begin
     s_ready <= '1' when nbits = 0 and rst = '0' else '0';
     m_valid <= o_valid;
 
+    -- E : octets, premier bit en poids fort → T : registre K = 7, sorties X
+    --   (171) et Y (133), poinçonnage selon G_FEC → S : bits codés
     process (clk)
         variable b, x, y : std_logic;
         variable etat    : std_logic_vector(6 downto 0);
@@ -1248,28 +1226,16 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< conv_enc.vhd
 
--- >>> qpsk_map.vhd
---==============================================================================
---  Nom        : qpsk_map.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : mise en correspondance QPSK (EN 300 421 § 4.5, figure 6) :
---               bit 0 → +1, bit 1 → −1 sur chaque voie ; référence bit à bit :
---               JPEG2DVB étape 13 (symboles entiers ±1)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : paire de bits (s_data(1) = I, s_data(0) = Q) ;
+--------------------------------------------------------------------------------
+-- qpsk_map : mise en correspondance QPSK (EN 300 421 § 4.5, figure 6) :
+--   bit 0 → +1, bit 1 → −1 sur chaque voie ; référence bit à bit :
+--   JPEG2DVB étape 13 (symboles entiers ±1)
+--   Interface : entrée : paire de bits (s_data(1) = I, s_data(0) = Q) ;
 --               sortie : I et Q signés sur 2 bits (+1 = "01", −1 = "11") ;
 --               combinatoire, le contrôle de flux traverse le module
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity qpsk_map is
     port (
@@ -1290,35 +1256,23 @@ begin
     m_i     <= "11" when s_data(1) = '1' else "01";
     m_q     <= "11" when s_data(0) = '1' else "01";
 end architecture rtl;
--- <<< qpsk_map.vhd
 
--- >>> srrc_poly.vhd
---==============================================================================
---  Nom        : srrc_poly.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : filtre de mise en forme SRRC, α = 0,35, 8 échantillons par
---               symbole, forme polyphase à coefficients entiers 16 bits ;
---               référence bit à bit : JPEG2DVB étape 14 (fichier .cs16)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : symboles I, Q signés 2 bits (±1) ; sortie : I, Q
+--------------------------------------------------------------------------------
+-- srrc_poly : filtre de mise en forme SRRC, α = 0,35, 8 échantillons par
+--   symbole, forme polyphase à coefficients entiers 16 bits ;
+--   référence bit à bit : JPEG2DVB étape 14 (fichier .cs16)
+--   Interface : entrée : symboles I, Q signés 2 bits (±1) ; sortie : I, Q
 --               signés 16 bits, 8 échantillons par symbole, un par cycle
---  Principe   : registre des 13 derniers symboles (initialement 0, comme les
---               symboles hors flux de JPEG2DVB) ; à l'arrivée du symbole n + 6,
---               les 8 échantillons du symbole n sont calculés :
---               y(8n + r) = Σd C(r)(d) · s(n − 6 + d). Symboles ±1 : additions
---               et soustractions de constantes, aucun multiplieur. La somme des
---               |C| ne dépasse pas 0,95 × 32 767 : pas de saturation.
---               Débit : 8 cycles par symbole (le symbole suivant est accepté
---               pendant le 8e échantillon), soit 80 MHz pour 10 MS/s.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : registre des 13 derniers symboles (initialement 0, comme les
+--              symboles hors flux de JPEG2DVB) ; à l'arrivée du symbole n + 6,
+--              les 8 échantillons du symbole n sont calculés :
+--              y(8n + r) = Σd C(r)(d) · s(n − 6 + d). Symboles ±1 : additions
+--              et soustractions de constantes, aucun multiplieur. La somme des
+--              |C| ne dépasse pas 0,95 × 32 767 : pas de saturation.
+--              Débit : 8 cycles par symbole (le symbole suivant est accepté
+--              pendant le 8e échantillon), soit 80 MHz pour 10 MS/s.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.srrc_coef_pkg.all;
 
 entity srrc_poly is
@@ -1346,6 +1300,9 @@ architecture rtl of srrc_poly is
     signal libre   : std_logic;
     signal pret    : std_logic;
 
+    -- somme : E : derniers symboles ±1, phase → T : coefficients de la phase
+    --   ajoutés ou retranchés selon le signe (sans multiplieur) → S :
+    --   échantillon
     function somme(sh : sym_tab_t; ph : natural) return signed is
         variable acc : integer range -65536 to 65535 := 0;
     begin
@@ -1364,6 +1321,8 @@ begin
     s_ready <= pret;
     m_valid <= o_valid;
 
+    -- E : symboles QPSK → T : un symbole tous les 8 cycles dans la ligne à
+    --   retard, une phase par cycle → S : un échantillon I/Q par cycle
     process (clk)
         variable entre : boolean;
     begin
@@ -1407,31 +1366,19 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< srrc_poly.vhd
 
--- >>> tx_backend.vhd
---==============================================================================
---  Nom        : tx_backend.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : chaîne arrière DVB-S complète, du Transport Stream aux
---               échantillons I/Q mis en forme : dispersion d'énergie →
---               RS(204,188) → entrelaceur → codeur convolutif → QPSK → SRRC ;
---               référence bit à bit : JPEG2DVB, étape 08 en entrée, fichier
---               .cs16 de l'étape 14 en sortie
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : paquets TS de 188 octets (s_sop sur la synchro 0x47) ;
+--------------------------------------------------------------------------------
+-- tx_backend : chaîne arrière DVB-S complète, du Transport Stream aux
+--   échantillons I/Q mis en forme : dispersion d'énergie →
+--   RS(204,188) → entrelaceur → codeur convolutif → QPSK → SRRC ;
+--   référence bit à bit : JPEG2DVB, étape 08 en entrée, fichier
+--   .cs16 de l'étape 14 en sortie
+--   Interface : entrée : paquets TS de 188 octets (s_sop sur la synchro 0x47) ;
 --               sortie : I, Q signés 16 bits, 8 échantillons par symbole
---  Débit      : horloge = 8 × débit symbole (80 MHz pour 10 MS/s) ; le SRRC
---               impose le rythme, le contrôle de flux remonte jusqu'à l'entrée TS
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Débit : horloge = 8 × débit symbole (80 MHz pour 10 MS/s) ; le SRRC
+--           impose le rythme, le contrôle de flux remonte jusqu'à l'entrée TS
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity tx_backend is
@@ -1477,32 +1424,20 @@ begin
     u_srrc : entity work.srrc_poly
         port map (clk, rst, q_valid, q_ready, q_i, q_q, m_valid, m_ready, m_i, m_q);
 end architecture rtl;
--- <<< tx_backend.vhd
 
--- >>> dct8x8_int.vhd
---==============================================================================
---  Nom        : dct8x8_int.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : DCT 8 × 8 entière, MPEG-2 intra (sans centrage) ; référence
---               bit à bit : JPEG2DVB étape 02, option « virgule fixe »
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : 64 pixels d'un bloc (octets non signés), ligne par
+--------------------------------------------------------------------------------
+-- dct8x8_int : DCT 8 × 8 entière, MPEG-2 intra (sans centrage) ; référence
+--   bit à bit : JPEG2DVB étape 02, option « virgule fixe »
+--   Interface : entrée : 64 pixels d'un bloc (octets non signés), ligne par
 --               ligne ; sortie : 64 coefficients signés 16 bits en ordre
 --               naturel F[v][u] (indice 8v + u)
---  Principe   : Ci[k][n] = round(4096 · c(k)/2 · cos((2n+1)kπ/16)), 13 bits ;
---               passe lignes R'[y][u] = (Σx Ci[u][x]·f[y][x] + 32) >> 6 ;
---               passe colonnes F[v][u] = (Σy Ci[v][y]·R'[y][u] + 2¹⁷) >> 18
---               (décalages arithmétiques). Un résultat par cycle et par passe,
---               8 multiplieurs par passe ; 192 cycles par bloc.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : Ci[k][n] = round(4096 · c(k)/2 · cos((2n+1)kπ/16)), 13 bits ;
+--              passe lignes R'[y][u] = (Σx Ci[u][x]·f[y][x] + 32) >> 6 ;
+--              passe colonnes F[v][u] = (Σy Ci[v][y]·R'[y][u] + 2¹⁷) >> 18
+--              (décalages arithmétiques). Un résultat par cycle et par passe,
+--              8 multiplieurs par passe ; 192 cycles par bloc.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity dct8x8_int is
     port (
@@ -1543,6 +1478,9 @@ begin
     s_ready <= '1' when etat = CHARGE and rst = '0' else '0';
     m_valid <= o_valid;
 
+    -- E : pixels 0..255 par blocs de 64 → T : passe lignes (Σ + 32) >> 6, passe
+    --   colonnes (Σ + 2¹⁷) >> 18, coefficients Ci sur 13 bits → S :
+    --   coefficients F[v][u]
     process (clk)
         variable y, u, v : natural range 0 to 7;
         variable acc     : signed(35 downto 0);
@@ -1601,32 +1539,20 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< dct8x8_int.vhd
 
--- >>> quant_intra.vhd
---==============================================================================
---  Nom        : quant_intra.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : quantification MPEG-2 intra, matrice par défaut, q_scale_type 0 ;
---               référence bit à bit : JPEG2DVB étape 03
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : coefficients DCT signés 16 bits, blocs de 64 en ordre
+--------------------------------------------------------------------------------
+-- quant_intra : quantification MPEG-2 intra, matrice par défaut, q_scale_type 0 ;
+--   référence bit à bit : JPEG2DVB étape 03
+--   Interface : entrée : coefficients DCT signés 16 bits, blocs de 64 en ordre
 --               naturel ; code : quantiser_scale_code (1 à 31) lu avec chaque
 --               coefficient ; sortie : coefficients quantifiés signés 16 bits
---  Principe   : DC : (F + 4) >> 3 borné à 0..255 ;
---               AC : ±floor((32|F| + D) / (2D)) borné à 2 047, D = W·2·code
---               (même arrondi que Math.round de la page 03). Division exacte
---               par l'inverse m = floor(2²⁴ / 2D) + 1 tiré d'une table (63 × 31),
---               puis correction d'une unité.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : DC : (F + 4) >> 3 borné à 0..255 ;
+--              AC : ±floor((32|F| + D) / (2D)) borné à 2 047, D = W·2·code
+--              (même arrondi que Math.round de la page 03). Division exacte
+--              par l'inverse m = floor(2²⁴ / 2D) + 1 tiré d'une table (63 × 31),
+--              puis correction d'une unité.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity quant_intra is
     port (
@@ -1655,6 +1581,8 @@ architecture rtl of quant_intra is
         26, 27, 29, 34, 38, 46, 56, 69,
         27, 29, 35, 38, 46, 56, 69, 83);
     type inv_t is array (0 to 63, 1 to 31) of natural range 0 to 2 ** 24;
+    -- inverses : E : matrice W → T : m = ⌊2²⁴ / (4·W·code)⌋ + 1 pour 64
+    --   positions × 31 codes → S : table des inverses
     function inverses return inv_t is
         variable t : inv_t;
     begin
@@ -1675,6 +1603,9 @@ begin
     s_ready <= libre and not rst;
     m_valid <= o_valid;
 
+    -- E : coefficient, code → T : DC (F + 4) >> 3 borné à 0..255 ; AC produit
+    --   par l'inverse puis correction d'une unité, borné à 2 047 → S :
+    --   coefficient quantifié
     process (clk)
         variable c        : natural range 1 to 31;
         variable a        : unsigned(15 downto 0);
@@ -1728,28 +1659,16 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< quant_intra.vhd
 
--- >>> zigzag.vhd
---==============================================================================
---  Nom        : zigzag.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : balayage zigzag (alternate_scan = 0) d'un bloc de 64
---               coefficients ; référence bit à bit : JPEG2DVB étape 04
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : 64 coefficients en ordre naturel ; sortie : les mêmes
+--------------------------------------------------------------------------------
+-- zigzag : balayage zigzag (alternate_scan = 0) d'un bloc de 64
+--   coefficients ; référence bit à bit : JPEG2DVB étape 04
+--   Interface : entrée : 64 coefficients en ordre naturel ; sortie : les mêmes
 --               en ordre zigzag (sortie i = entrée ZZ(i))
---  Principe   : deux mémoires de bloc en alternance : un bloc se charge
---               pendant que le précédent sort, un coefficient par cycle
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : deux mémoires de bloc en alternance : un bloc se charge
+--              pendant que le précédent sort, un coefficient par cycle
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity zigzag is
     port (
@@ -1787,6 +1706,8 @@ begin
     s_ready <= s_rdy;
     m_valid <= o_valid;
 
+    -- E : coefficients en ordre naturel → T : écriture dans un banc pendant la
+    --   lecture de l'autre en ordre zigzag → S : vecteurs de 64
     process (clk)
         variable pl : std_logic_vector(0 to 1);
     begin
@@ -1826,36 +1747,24 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< zigzag.vhd
 
--- >>> vlc_enc.vhd
---==============================================================================
---  Nom        : vlc_enc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : codage entropique MPEG-2 intra des blocs balayés en zigzag :
---               DC différentiel (B.12, B.13), paires run / niveau (B.14),
---               échappement, fin de bloc ; référence bit à bit : JPEG2DVB
---               étape 05
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : vecteurs zigzag de 64 coefficients, 6 blocs par
+--------------------------------------------------------------------------------
+-- vlc_enc : codage entropique MPEG-2 intra des blocs balayés en zigzag :
+--   DC différentiel (B.12, B.13), paires run / niveau (B.14),
+--   échappement, fin de bloc ; référence bit à bit : JPEG2DVB
+--   étape 05
+--   Interface : entrée : vecteurs zigzag de 64 coefficients, 6 blocs par
 --               macrobloc (Y0 à Y3, Cb, Cr), G_COLS macroblocs par slice ;
 --               sortie : mots de code cadrés à droite (m_code, m_lg bits), un
 --               mot au plus par coefficient ; m_fin_mb marque le dernier mot
 --               du macrobloc
---  Principe   : prédicteurs DC (Y, Cb, Cr) remis à 128 au début de chaque
---               slice ; DC : code de taille puis différence (complément à 1 si
---               négative) ; AC : code de B.14 suivi du signe, sinon
---               échappement 000001 + run (6 bits) + niveau (12 bits, complément
---               à 2) ; le code de fin de bloc « 10 » est accolé au dernier mot
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : prédicteurs DC (Y, Cb, Cr) remis à 128 au début de chaque
+--              slice ; DC : code de taille puis différence (complément à 1 si
+--              négative) ; AC : code de B.14 suivi du signe, sinon
+--              échappement 000001 + run (6 bits) + niveau (12 bits, complément
+--              à 2) ; le code de fin de bloc « 10 » est accolé au dernier mot
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.vlc_tab_pkg.all;
 
 entity vlc_enc is
@@ -1899,6 +1808,10 @@ begin
     s_ready <= libre and not rst;
     m_valid <= o_valid;
 
+    -- E : vecteurs zigzag, 6 blocs par macrobloc → T : DC différentiel par
+    --   composante, couples (run, niveau) en B.14 ou échappement 24 bits, fin
+    --   de bloc → S : mots (code, longueur), m_fin sur le dernier mot du
+    --   macrobloc
     process (clk)
         variable v      : integer range -32768 to 32767;
         variable pred   : integer range -2048 to 2047;
@@ -2001,29 +1914,17 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< vlc_enc.vhd
 
--- >>> bit_packer.vhd
---==============================================================================
---  Nom        : bit_packer.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : mise bout à bout de mots binaires de longueur variable (0 à 32
---               bits, cadrés à droite) en octets, poids fort en tête, avec
---               alignement sur l'octet à la demande (bits de bourrage à 0)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : s_code, s_lg, s_align (aligner après ce mot) ;
+--------------------------------------------------------------------------------
+-- bit_packer : mise bout à bout de mots binaires de longueur variable (0 à 32
+--   bits, cadrés à droite) en octets, poids fort en tête, avec
+--   alignement sur l'octet à la demande (bits de bourrage à 0)
+--   Interface : entrée : s_code, s_lg, s_align (aligner après ce mot) ;
 --               sortie : octets (valid / ready)
---  Principe   : accumulateur de 64 bits ; un mot accepté si au plus 24 bits
---               attendent ; un octet sort par cycle dès que 8 bits sont prêts
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : accumulateur de 64 bits ; un mot accepté si au plus 24 bits
+--              attendent ; un octet sort par cycle dès que 8 bits sont prêts
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity bit_packer is
     port (
@@ -2052,6 +1953,8 @@ begin
     s_ready <= rdy;
     m_valid <= o_valid;
 
+    -- E : mot, longueur, alignement → T : accumulation, un octet sort dès que 8
+    --   bits sont prêts, bourrage à 0 sur alignement → S : octets
     process (clk)
         variable a  : unsigned(63 downto 0);
         variable n  : natural range 0 to 71;
@@ -2091,36 +1994,23 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< bit_packer.vhd
 
--- >>> es_mux.vhd
---==============================================================================
---  Nom        : es_mux.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : assemblage du flux élémentaire MPEG-2 vidéo (images I) : en-têtes
---               de séquence, d'extension, de GOP et d'image, slices, bits VLC
---               des macroblocs ; référence bit à bit : JPEG2DVB étape 06
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.1
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : mots VLC du codeur (s_code, s_lg, s_fin_mb sur le
+--------------------------------------------------------------------------------
+-- es_mux : assemblage du flux élémentaire MPEG-2 vidéo (images I) : en-têtes
+--   de séquence, d'extension, de GOP et d'image, slices, bits VLC
+--   des macroblocs ; référence bit à bit : JPEG2DVB étape 06
+--   Interface : entrée : mots VLC du codeur (s_code, s_lg, s_fin_mb sur le
 --               dernier mot de chaque macrobloc) ; slice_code : code d'échelle
 --               de la slice à venir, slice_ok : code prêt (l'en-tête de slice
 --               attend) ; sortie : octets du flux élémentaire
---  Principe   : par image : [Sequence Header, Sequence Extension, GOP Header
---               si n mod 12 = 0] + Picture Header (temporal_reference = n mod 12,
---               vbv_delay 0xFFFF) + Picture Coding Extension, puis une slice par
---               rangée : 0x000001, rang + 1, code (5 bits), extra_bit 0, pour chaque
---               macrobloc « 1 » (adresse) « 1 » (intra) et ses bits VLC, alignement.
---               Après G_IMAGES images (0 = sans fin) : sequence_end_code.
---  Historique : 1.0  2026-10-19  création
---               1.1  2026-10-19  slice_ok : attente du code de la régulation TM5
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : par image : [Sequence Header, Sequence Extension, GOP Header
+--              si n mod 12 = 0] + Picture Header (temporal_reference = n mod 12,
+--              vbv_delay 0xFFFF) + Picture Coding Extension, puis une slice par
+--              rangée : 0x000001, rang + 1, code (5 bits), extra_bit 0, pour chaque
+--              macrobloc « 1 » (adresse) « 1 » (intra) et ses bits VLC, alignement.
+--              Après G_IMAGES images (0 = sans fin) : sequence_end_code.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity es_mux is
     generic (
@@ -2152,6 +2042,7 @@ architecture rtl of es_mux is
     constant COLS : natural := G_LARG / 16;
     constant ROWS : natural := G_HAUT / 16;
 
+    -- slv : E : entier, largeur → S : vecteur non signé
     function slv(v, n : natural) return std_logic_vector is
     begin
         return std_logic_vector(to_unsigned(v, n));
@@ -2216,6 +2107,9 @@ begin
     p_align <= '0' when etat = MB_DONNEES else w_align;
     s_ready <= p_ready when etat = MB_DONNEES else '0';
 
+    -- E : acceptation du packer, fins de macrobloc → T : en-têtes, slices,
+    --   macroblocs ; rang, image, time_code, temporal_reference → S : état
+    --   suivant
     process (clk)
     begin
         if rising_edge(clk) then
@@ -2284,40 +2178,28 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< es_mux.vhd
 
--- >>> ts_mux.vhd
---==============================================================================
---  Nom        : ts_mux.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : mise en paquets PES (un par image) et multiplexage Transport
---               Stream à débit constant ; référence bit à bit : JPEG2DVB
---               étapes 07 et 08 (version 2.4, instants en entiers exacts)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : entrée : octets du flux élémentaire (es_mux) ; sortie : paquets
+--------------------------------------------------------------------------------
+-- ts_mux : mise en paquets PES (un par image) et multiplexage Transport
+--   Stream à débit constant ; référence bit à bit : JPEG2DVB
+--   étapes 07 et 08 (version 2.4, instants en entiers exacts)
+--   Interface : entrée : octets du flux élémentaire (es_mux) ; sortie : paquets
 --               TS de 188 octets (m_sop sur la synchro), un paquet par créneau
---  Principe   : le flux élémentaire est rangé dans une mémoire tournante de
---               128 Ko ; les débuts d'image (sequence_header, ou picture_start
---               hors en-tête de séquence) et la fin de séquence sont repérés
---               par leurs codes de début. Le paquet k (créneau de 1 504 bits au
---               débit TS) est choisi dans l'ordre : PAT puis PMT toutes les
---               80 ms ; PCR toutes les 30 ms ; vidéo si l'image n est
---               disponible (instant ≥ (n+1)/25) ; sinon PCR seul ou paquet nul.
---               Instants exacts pour 10 MS/s, FEC 1/2 (R_ts = 9 215 686,27 bit/s) :
---               t_k ≥ a/b ⇔ 51·k ≥ a·12 500·25/b, soit 51k ≥ 25 000·m (PSI),
---               51k ≥ 9 375·m (PCR), 51k ≥ 12 500·(n+1) (images).
---               PCR(k) = round((188k + 10)·5 508 / 235), tenu en cumul exact :
---               +4 406 par créneau, +1 tous les 470/188 créneaux.
---               PES : 00 00 01 E0, longueur, 84 80 05, PTS = 3 600·(n+1) + 9 000.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : le flux élémentaire est rangé dans une mémoire tournante de
+--              128 Ko ; les débuts d'image (sequence_header, ou picture_start
+--              hors en-tête de séquence) et la fin de séquence sont repérés
+--              par leurs codes de début. Le paquet k (créneau de 1 504 bits au
+--              débit TS) est choisi dans l'ordre : PAT puis PMT toutes les
+--              80 ms ; PCR toutes les 30 ms ; vidéo si l'image n est
+--              disponible (instant ≥ (n+1)/25) ; sinon PCR seul ou paquet nul.
+--              Instants exacts pour 10 MS/s, FEC 1/2 (R_ts = 9 215 686,27 bit/s) :
+--              t_k ≥ a/b ⇔ 51·k ≥ a·12 500·25/b, soit 51k ≥ 25 000·m (PSI),
+--              51k ≥ 9 375·m (PCR), 51k ≥ 12 500·(n+1) (images).
+--              PCR(k) = round((188k + 10)·5 508 / 235), tenu en cumul exact :
+--              +4 406 par créneau, +1 tous les 470/188 créneaux.
+--              PES : 00 00 01 E0, longueur, 84 80 05, PTS = 3 600·(n+1) + 9 000.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity ts_mux is
     generic (
@@ -2358,6 +2240,8 @@ architecture rtl of ts_mux is
         end loop;
         return c;
     end function;
+    -- paquet_psi : E : en-tête TS (avec pointer_field), section → T : section
+    --   suivie de son CRC-32, bourrage 0xFF → S : paquet de 188 octets
     function paquet_psi(entete : octets_t; section : octets_t) return octets_t is
         variable p : octets_t(0 to 187) := (others => x"FF");
         variable c : std_logic_vector(31 downto 0) := crc32(section);
@@ -2428,6 +2312,8 @@ begin
         if (ecr - base) < 2 ** AB - 16 and nb_deb - n_vid < 7 then place <= '1'; else place <= '0'; end if;
     end process;
 
+    -- E : octets ES, créneaux → T : mémoire tournante, repérage des débuts
+    --   d'image, choix PAT/PMT, PCR, vidéo ou nul par créneau → S : paquets TS
     process (clk)
         variable w      : unsigned(AB - 1 downto 0);
         variable fire_psi, fire_pcr, pret : boolean;
@@ -2634,41 +2520,29 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< ts_mux.vhd
 
--- >>> rate_ctrl.vhd
---==============================================================================
---  Nom        : rate_ctrl.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : régulation de débit TM5 en entiers, un quantiser_scale_code par
---               rangée de macroblocs (slice) ; référence bit à bit : JPEG2DVB
---               étape 03 (3.0)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : s_* / m_* : coefficients DCT, de la DCT vers la quantification ;
+--------------------------------------------------------------------------------
+-- rate_ctrl : régulation de débit TM5 en entiers, un quantiser_scale_code par
+--   rangée de macroblocs (slice) ; référence bit à bit : JPEG2DVB
+--   étape 03 (3.0)
+--   Interface : s_* / m_* : coefficients DCT, de la DCT vers la quantification ;
 --               la vanne se ferme à la fin de chaque rangée et se rouvre quand
 --               le code de la rangée suivante est prêt ;
 --               v_* : mots VLC acceptés par l'assemblage (observés seulement) ;
 --               code, code_ok : code de la rangée en cours, pour la
 --               quantification et l'en-tête de slice
---  Paramètres : G_COLS × G_ROWS macroblocs (22 × 18, ou 45 × 36 en 720 × 576),
---               G_T budget en bits par image, G_GOP longueur du GOP
---  Principe   : avant la rangée s (j = s·G_COLS, N = G_COLS·G_ROWS) :
---                 d = d0 + B − ⌊T·j / N⌋, B bits des rangées déjà produites
---                 code = 1 si d ≤ 0, sinon ⌊(31·d + T) / 2T⌋ borné à 1..31
---               bits d'une slice : 38 + Σ (2 + bits VLC du macrobloc), arrondi
---               à l'octet ; fin d'image : B += 136 (+ 240 en tête de GOP),
---               d0 ← max(0, d0 + B − T) ; d0 initial = ⌊20·T / 31⌋.
---               ⌊T·j / N⌋ = ⌊T·s / G_ROWS⌋ tenu en cumul (quotient, reste) ;
---               division par 2T en 5 pas (quotient ≤ 31).
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Paramètres : G_COLS × G_ROWS macroblocs (22 × 18, ou 45 × 36 en 720 × 576),
+--                G_T budget en bits par image, G_GOP longueur du GOP
+--   Principe : avant la rangée s (j = s·G_COLS, N = G_COLS·G_ROWS) :
+--                d = d0 + B − ⌊T·j / N⌋, B bits des rangées déjà produites
+--                code = 1 si d ≤ 0, sinon ⌊(31·d + T) / 2T⌋ borné à 1..31
+--              bits d'une slice : 38 + Σ (2 + bits VLC du macrobloc), arrondi
+--              à l'octet ; fin d'image : B += 136 (+ 240 en tête de GOP),
+--              d0 ← max(0, d0 + B − T) ; d0 initial = ⌊20·T / 31⌋.
+--              ⌊T·j / N⌋ = ⌊T·s / G_ROWS⌋ tenu en cumul (quotient, reste) ;
+--              division par 2T en 5 pas (quotient ≤ 31).
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity rate_ctrl is
     generic (
@@ -2735,6 +2609,9 @@ begin
     code    <= code_r;
     code_ok <= '1' when etat = PRET else '0';
 
+    -- E : coefficients, mots VLC acceptés → T : vanne de rangée, bits de slice
+    --   arrondis à l'octet, B et d0, code par division en 5 pas → S : code,
+    --   code_ok
     process (clk)
         variable sa   : unsigned(W - 1 downto 0);
         variable b    : signed(W - 1 downto 0);
@@ -2847,35 +2724,23 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< rate_ctrl.vhd
 
--- >>> mire_gen.vhd
---==============================================================================
---  Nom        : mire_gen.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : mire animée : image 16 couleurs en mémoire, carré mobile et
---               compteur d'images incrustés, conversion Y, Cb, Cr par palette,
---               sortie en macroblocs 4:2:0 ; référence bit à bit : JPEG2DVB
---               étape 01 (fpga_test/mire.png chargée, option « mobile »)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.0
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : sortie : octets dans l'ordre des macroblocs (rangée par rangée),
+--------------------------------------------------------------------------------
+-- mire_gen : mire animée : image 16 couleurs en mémoire, carré mobile et
+--   compteur d'images incrustés, conversion Y, Cb, Cr par palette,
+--   sortie en macroblocs 4:2:0 ; référence bit à bit : JPEG2DVB
+--   étape 01 (fpga_test/mire.png chargée, option « mobile »)
+--   Interface : sortie : octets dans l'ordre des macroblocs (rangée par rangée),
 --               6 blocs par macrobloc (Y haut-gauche, haut-droite, bas-gauche,
 --               bas-droite, Cb, Cr), 64 valeurs par bloc ligne par ligne ;
 --               m_debut marque le premier octet de chaque image
---  Principe   : image n : carré 32 × 32 en y = 176, x = 8n mod 320 (bord noir de
---               2 pixels, intérieur blanc) ; compteur binaire de n sur 12 carrés
---               8 × 8 en y = 280, x = 8 + 10b (blanc = 1, poids fort à gauche).
---               Toutes les frontières sont paires : la chrominance d'un bloc
---               2 × 2 est celle de son pixel haut-gauche.
---  Historique : 1.0  2026-10-19  création
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : image n : carré 32 × 32 en y = 176, x = 8n mod 320 (bord noir de
+--              2 pixels, intérieur blanc) ; compteur binaire de n sur 12 carrés
+--              8 × 8 en y = 280, x = 8 + 10b (blanc = 1, poids fort à gauche).
+--              Toutes les frontières sont paires : la chrominance d'un bloc
+--              2 × 2 est celle de son pixel haut-gauche.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.mire_pkg.all;
 
 entity mire_gen is
@@ -2922,6 +2787,8 @@ begin
     libre   <= (not o_valid) or m_ready;
     m_valid <= o_valid;
 
+    -- E : — → T : balayage des macroblocs de l'image n (4 blocs Y, Cb, Cr),
+    --   carré mobile et compteur → S : pixels 4:2:0, m_debut en tête d'image
     process (clk)
         variable px, py : natural range 0 to 511;
         variable c      : natural range 0 to 15;
@@ -2975,34 +2842,21 @@ begin
         end if;
     end process;
 end architecture rtl;
--- <<< mire_gen.vhd
 
--- >>> video_enc.vhd
---==============================================================================
---  Nom        : video_enc.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : tête de chaîne vidéo : mire animée → DCT entière → régulation
---               TM5 → quantification → zigzag → VLC → flux élémentaire → PES et
---               Transport Stream à débit constant ; référence bit à bit :
---               JPEG2DVB étapes 01 à 08 (mire fpga_test/mire.png, DCT entière,
---               régulation TM5 de l'étape 03 3.0)
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.1
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : sortie : paquets TS de
+--------------------------------------------------------------------------------
+-- video_enc : tête de chaîne vidéo : mire animée → DCT entière → régulation
+--   TM5 → quantification → zigzag → VLC → flux élémentaire → PES et
+--   Transport Stream à débit constant ; référence bit à bit :
+--   JPEG2DVB étapes 01 à 08 (mire fpga_test/mire.png, DCT entière,
+--   régulation TM5 de l'étape 03 3.0)
+--   Interface : sortie : paquets TS de
 --               188 octets (m_sop sur la synchro), à prélever au rythme du
 --               canal (un paquet par créneau de 13 056 cycles à 80 MHz)
---  Paramètres : G_IMAGES : nombre d'images avant sequence_end_code (0 = sans fin)
---               G_T : budget en bits par image (350 196 : 10 MS/s, FEC 1/2,
---               95 % de vidéo, 25 images/s)
---  Historique : 1.0  2026-10-19  création
---               1.1  2026-10-19  régulation TM5 (rate_ctrl) : un code par rangée
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Paramètres : G_IMAGES : nombre d'images avant sequence_end_code (0 = sans fin)
+--                G_T : budget en bits par image (350 196 : 10 MS/s, FEC 1/2,
+--                95 % de vidéo, 25 images/s)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 
 entity video_enc is
     generic (
@@ -3055,32 +2909,18 @@ begin
     u_ts : entity work.ts_mux
         port map (clk, rst, e_valid, e_ready, e_data, m_valid, m_ready, m_data, m_sop);
 end architecture rtl;
--- <<< video_enc.vhd
 
--- >>> dvbs_tx.vhd
---==============================================================================
---  Nom        : dvbs_tx.vhd
---  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : émetteur complet, de la mire animée aux échantillons I/Q mis
---               en forme : video_enc (étapes 01 à 08) → tx_backend (étapes
---               09 à 14) ; référence bit à bit : fichier .cs16 de JPEG2DVB
---  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 1.1
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
---  Licence    : CC BY-NC 4.0
---  Interface  : horloge 80 MHz (8 × 10 MS/s) ; sortie : I, Q signés 16 bits, un échantillon par cycle, vers
+--------------------------------------------------------------------------------
+-- dvbs_tx : émetteur complet, de la mire animée aux échantillons I/Q mis
+--   en forme : video_enc (étapes 01 à 08) → tx_backend (étapes
+--   09 à 14) ; référence bit à bit : fichier .cs16 de JPEG2DVB
+--   Interface : horloge 80 MHz (8 × 10 MS/s) ; sortie : I, Q signés 16 bits, un échantillon par cycle, vers
 --               l'interpolateur et le sigma-delta (à venir)
---  Principe   : le filtre SRRC impose le rythme ; le contrôle de flux remonte
---               jusqu'au multiplexeur TS, qui émet ainsi un paquet par créneau
---               de 13 056 cycles, comme dans le modèle temporel de JPEG2DVB
---  Historique : 1.0  2026-10-19  création
---               1.1  2026-10-19  régulation TM5 : budget tiré du canal (10 MS/s,
---                                FEC, 95 % de vidéo), plus d'entrée code
---==============================================================================
-library ieee;
-use ieee.std_logic_1164.all;
-use ieee.numeric_std.all;
+--   Principe : le filtre SRRC impose le rythme ; le contrôle de flux remonte
+--              jusqu'au multiplexeur TS, qui émet ainsi un paquet par créneau
+--              de 13 056 cycles, comme dans le modèle temporel de JPEG2DVB
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
 
 entity dvbs_tx is
@@ -3107,4 +2947,3 @@ begin
     u_canal : entity work.tx_backend generic map (G_FEC => G_FEC)
         port map (clk, rst, t_valid, t_ready, t_data, t_sop, m_valid, m_ready, m_i, m_q);
 end architecture rtl;
--- <<< dvbs_tx.vhd

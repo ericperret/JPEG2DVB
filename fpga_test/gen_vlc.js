@@ -18,12 +18,7 @@
 'use strict';
 const fs = require('fs'), path = require('path');
 const P05 = process.argv[2] || path.join(__dirname, '..', 'page05-rle-huffman.html');
-function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
-    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
-    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
-    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
-    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
-}
+const { section } = require('./fusion');      // paquetage réécrit dans vhdl/jpeg2dvb_fpga.vhd
 
 const h = fs.readFileSync(P05, 'utf8');
 function objet(nom) {
@@ -92,6 +87,8 @@ ${dc(DCC)});
 end package vlc_tab_pkg;
 
 package body vlc_tab_pkg is
+    -- ac_code : E : run, |niveau| → T : recherche dans la table B.14 → S : code
+    -- sans le signe et sa longueur ; trouve = false : échappement (24 bits)
     function ac_code(run : natural range 0 to 63; niveau : natural range 0 to 2047) return ac_vlc_t is
         variable v : ac_vlc_t := (false, (others => '0'), 0);
     begin

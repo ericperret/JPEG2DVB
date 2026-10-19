@@ -25,12 +25,7 @@ const fs = require('fs'), path = require('path');
 const SRC = process.argv[2];
 if (!SRC) { console.error('usage : node refs.js DOSSIER_JPEG2DVB'); process.exit(1); }
 const ICI = __dirname, REF = ICI;
-function section(nom, texte) {                 // remplace un paquetage dans le fichier VHDL fusionné
-    const f = path.join(__dirname, '..', 'vhdl', 'jpeg2dvb_fpga.vhd'), a = '-- >>> ' + nom + '\n', b = '-- <<< ' + nom;
-    const s = fs.readFileSync(f, 'utf8'), i = s.indexOf(a), j = s.indexOf(b);
-    if (i < 0 || j < i) { throw new Error('balises de ' + nom + ' absentes de ' + f); }
-    fs.writeFileSync(f, s.slice(0, i + a.length) + texte.replace(/\s*$/, '\n') + s.slice(j));
-}
+const { section } = require('./fusion');      // paquetage réécrit dans vhdl/jpeg2dvb_fpga.vhd
 
 
 // Toutes les fonctions de la chaîne arrière sont causales : un préfixe de
