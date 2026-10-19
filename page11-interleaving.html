@@ -6,7 +6,7 @@
   Objet      : Page 11 - Entrelacement Convolutif
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.0
+  Version    : 2.1
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -19,6 +19,7 @@
                      morceaux : dépassement de pile au-delà de ~100 000 octets)
                2.0  2026-10-19  flux entier traité par blocs (état des 12 branches conservé),
                      entrée et sortie binaires .j2d
+               2.1  2026-10-19  numéro de version affiché dans la barre de navigation
 ================================================================================
 -->
 <html lang="fr">
@@ -107,6 +108,11 @@
         .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
         .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
         .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
     </style>
 </head>
 <body>
@@ -747,6 +753,23 @@ var CANAL = {
         });
       }, 300);
     });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
   }
 })();
 </script>

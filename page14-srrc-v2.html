@@ -6,7 +6,7 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.0
+  Version    : 2.1
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -17,6 +17,9 @@
                      garde la sortie et l'étape suivante la charge d'office
                2.0  2026-10-19  flux entier filtré par blocs, coefficients en virgule fixe en
                      option, I/Q 16 bits écrits au fil de l'eau sur le disque
+               2.1  2026-10-19  bouton 💾 Export I/Q .cs16 (int16), en flux comme en mode
+                     une image ; écriture directe sur le disque en option (décochée) ;
+                     numéro de version affiché dans la barre de navigation
 ================================================================================
 -->
 <html lang="fr">
@@ -112,6 +115,11 @@
         .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
         .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
     </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
+    </style>
 </head>
 <body>
 <nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
@@ -126,7 +134,7 @@
     </div>
     
     <!-- Paramètres -->
-    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"><label><input type="checkbox" id="srrcFixe" checked> coefficients en virgule fixe (16 bits)</label><label><input type="checkbox" id="ecrDisque" checked> écrire au fil de l'eau sur le disque</label></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"><label><input type="checkbox" id="srrcFixe" checked> coefficients en virgule fixe (16 bits)</label><label><input type="checkbox" id="ecrDisque"> écrire au fil de l'eau sur le disque</label></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
     <div class="param-row">
         <div class="param-item">
             <label>α (roll-off):</label>
@@ -244,6 +252,7 @@
     <div style="text-align: center; margin: 15px;">
         <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 Export JSON (Float64)</button>
         <button id="btnExportBin" onclick="exportBinary()" disabled>💾 Export I/Q Binaire</button>
+        <button id="btnExportCS16" onclick="exportCS16()" disabled>💾 Export I/Q .cs16 (int16)</button>
         <button id="btnExportCoeffs" onclick="exportCoeffs()" >💾 Export Coefficients</button>
     </div>
     
@@ -1322,6 +1331,7 @@ var CANAL = {
                 document.getElementById('btnFilter').disabled = false;
                 document.getElementById('btnExportJSON').disabled = true;
                 document.getElementById('btnExportBin').disabled = true;
+                document.getElementById('btnExportCS16').disabled = true;
                 const disque = document.getElementById('ecrDisque');
                 if (!window.showSaveFilePicker) { disque.checked = false; disque.disabled = true; }
                 const fs = (lu.meta.rate && lu.meta.rate.Rs) || 10e6;
@@ -1332,7 +1342,7 @@ var CANAL = {
 
         const _applyFilter1 = applyFilter;
         applyFilter = async function () {
-            if (!multi) { _applyFilter1(); return; }
+            if (!multi) { _applyFilter1(); document.getElementById('btnExportCS16').disabled = false; return; }
             const alpha = parseFloat(document.getElementById('rolloff').value);
             const span = parseInt(document.getElementById('span').value, 10);
             const sps = parseInt(document.getElementById('sps').value, 10);
@@ -1404,6 +1414,9 @@ var CANAL = {
             document.getElementById('btnFilter').disabled = false;
             document.getElementById('btnExportJSON').disabled = false;
             document.getElementById('btnExportBin').disabled = !multiSortie;
+            const bc = document.getElementById('btnExportCS16');
+            bc.disabled = !multiSortie;
+            bc.title = multiSortie ? '' : 'déjà écrit sur le disque : ' + nom;
             const gs = document.getElementById('globalStats');
             gs.style.display = 'block';
             gs.innerHTML = '<strong>Filtrage SRRC du flux entier :</strong><br>' +
@@ -1412,7 +1425,7 @@ var CANAL = {
                 '• Échelle E = ' + E.toFixed(1) + ', crête mesurée ' + crete + ' / 32 767<br>' +
                 '• Virgule fixe / Float64 (aperçu) : écart max ' + eMax.toFixed(3) + ' LSB, SNR ' + (pE > 0 ? (10 * Math.log10(pS / pE)).toFixed(1) : '∞') + ' dB<br>' +
                 '• Durée de calcul : ' + duree.toFixed(1) + ' s' + (sortie.disque ? ', écrit au fil de l\'eau dans <code>' + nom + '</code>' : '');
-            MULTI_UI.montrer('<b>' + ecrits.toLocaleString() + ' échantillons I/Q</b> produits. ' + (sortie.disque ? 'Fichier écrit sur le disque.' : 'Export : 💾 I/Q binaire (<code>.cs16</code>) et 💾 JSON (description, coefficients).'));
+            MULTI_UI.montrer('<b>' + ecrits.toLocaleString() + ' échantillons I/Q</b> produits. ' + (sortie.disque ? 'Fichier <code>' + nom + '</code> écrit sur le disque.' : 'Export : 💾 I/Q .cs16 et 💾 JSON (description, coefficients).'));
         };
 
         const _exportJSON1 = exportJSON;
@@ -1420,6 +1433,20 @@ var CANAL = {
             if (!multi || !multiDesc) { _exportJSON1(); return; }
             J2D.telecharger(new Blob([JSON.stringify(multiDesc, null, 1)], { type: 'application/json' }), multiDesc.fichier.replace(/\.cs16$/, '.json'));
         };
+
+        /* exportCS16 — S : I/Q entiers 16 bits entrelacés, petit-boutiste (cs16).
+           Flux : sortie du filtrage par blocs. Une image : signal Float64 mis à
+           l'échelle 0,95 × 32 767 / crête puis arrondi. */
+        function exportCS16() {
+            if (multi && multiSortie) { J2D.telecharger(multiSortie, multiDesc.fichier); return; }
+            if (!filtered || !filteredI.length) { return; }
+            let c = 0;
+            for (let i = 0; i < filteredI.length; i++) { c = Math.max(c, Math.abs(filteredI[i]), Math.abs(filteredQ[i])); }
+            const E = c > 0 ? 0.95 * 32767 / c : 0, y = new Int16Array(2 * filteredI.length);
+            for (let i = 0; i < filteredI.length; i++) { y[2 * i] = Math.round(filteredI[i] * E); y[2 * i + 1] = Math.round(filteredQ[i] * E); }
+            const sps = document.getElementById('sps').value, a = document.getElementById('rolloff').value;
+            J2D.telecharger(new Blob([y], { type: 'application/octet-stream' }), 'dvbs_iq_s16_x' + sps + '_a' + parseFloat(a) + '.cs16');
+        }
 
         const _exportBinary1 = exportBinary;
         exportBinary = function () {
@@ -1498,6 +1525,23 @@ var CANAL = {
         });
       }, 300);
     });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
   }
 })();
 </script>
