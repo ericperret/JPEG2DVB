@@ -6,7 +6,7 @@
   Objet      : Page 08 - Empaquetage Transport Stream
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.3
+  Version    : 2.4
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -25,6 +25,9 @@
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
                2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+               2.4  2026-10-19  instants du multiplexage en entiers exacts (PAT/PMT, PCR,
+                     disponibilité des images, valeur du PCR) : décisions identiques
+                     au FPGA, plus d'écart d'arrondi flottant aux instants ronds
 ================================================================================
 -->
 <html lang="fr">
@@ -1353,7 +1356,10 @@ var CANAL = {
         //   3. vidéo : l'image n est disponible à (n+1)/fps (modèle de la page 07) ;
         //   4. paquet nul (PID 0x1FFF) : bourrage pour un débit constant.
         // PCR = instant d'arrivée de l'octet qui porte la fin de PCR_base
-        // (octet 10 du paquet) en périodes de 27 MHz.
+        // (octet 10 du paquet) en périodes de 27 MHz, arrondi au plus proche.
+        // Instants calculés en entiers exacts (2.4) : R_ts = NUM / DEN, et
+        // « t_k ≥ a/b » ⇔ k·1504·DEN·b ≥ a·NUM ; aucun cumul flottant, mêmes
+        // décisions que le FPGA à chaque créneau.
         // Contrôles : chaque image complète avant son PTS, tampon du décodeur EB
         // ≤ 1 835 008 bits (VBV MP@ML), intervalles PCR et PSI.
         const PSI_PERIODE = 0.08, PCR_PERIODE = 0.03, EB_MAX = 1835008;
@@ -1388,6 +1394,15 @@ var CANAL = {
             const Rts = rate.R_ts || CANAL.debitTS(10e6, '1/2'), GOP = rate.gop || 12;
             const pes = multi.t.pes, off = multi.t.offsets, pts = multi.t.pts;
             const Tp = 1504 / Rts;
+            // débit TS exact : Rs × 2 × FEC × 188/204
+            const FECS = { '1/2': [1, 2], '2/3': [2, 3], '3/4': [3, 4], '5/6': [5, 6], '7/8': [7, 8] };
+            const fq = FECS[rate.fec || '1/2'];
+            const NUM = BigInt(Math.round(rate.Rs || 10e6)) * 2n * BigInt(fq[0]) * 188n, DEN = BigInt(fq[1]) * 204n;
+            /* atteint — vrai si l'instant du créneau k est ≥ a/b secondes */
+            function atteint(kk, a, b) { return BigInt(kk) * 1504n * DEN * BigInt(b) >= BigInt(a) * NUM; }
+            /* pcrDe — PCR du créneau k : round((188k + 10) · 8 · 27·10⁶ / R_ts) */
+            function pcrDe(kk) { const x = BigInt(kk * 188 + 10); return Number((2n * x * 216000000n * DEN + NUM) / (2n * NUM)); }
+            let mPSI = 0, mPCR = 0;
             const Kmax = Math.ceil(((N + 2) / fps + 1) / Tp);
             const out = new Uint8Array(Kmax * 188);
             continuityCounters = { [PID_PAT]: 0, [PID_PMT]: 0, [PID_VIDEO]: 0 };
@@ -1404,7 +1419,7 @@ var CANAL = {
             const tailleES = new Float64Array(N);
             for (let f = 0; f < N; f++) { tailleES[f] = off[f + 1] - off[f] - (9 + pes[off[f] + 8]); }
             function poserPCR(o, t) {
-                const pcr = Math.round(t * 27e6), base = Math.floor(pcr / 300), ext = pcr % 300;
+                const pcr = pcrDe(k), base = Math.floor(pcr / 300), ext = pcr % 300;
                 out.set(encodePCR(base, ext), o);
                 if (dernierPCR >= 0) { maxPCR = Math.max(maxPCR, t - dernierPCR); }
                 dernierPCR = t; cpt.pcr++;
@@ -1424,9 +1439,9 @@ var CANAL = {
                         if (recu[nDec] < tailleES[nDec]) { retard++; }
                         eb -= recu[nDec]; nDec++;
                     }
-                    const pret = n < N && t >= (n + 1) / fps;
-                    if (t >= nextPSI) {
-                        psi(pat, PID_PAT); cpt.pat++; pmtDue = true; nextPSI += PSI_PERIODE;
+                    const pret = n < N && atteint(k, n + 1, fps);
+                    if (atteint(k, 2 * mPSI, 25)) {                       // toutes les 80 ms = 2/25 s
+                        psi(pat, PID_PAT); cpt.pat++; pmtDue = true; mPSI++;
                         if (dernierPAT >= 0) { maxPAT = Math.max(maxPAT, t - dernierPAT); } dernierPAT = t;
                         continue;
                     }
@@ -1435,8 +1450,8 @@ var CANAL = {
                         if (dernierPMT >= 0) { maxPMT = Math.max(maxPMT, t - dernierPMT); } dernierPMT = t;
                         continue;
                     }
-                    const avecPCR = t >= nextPCR;
-                    if (avecPCR) { nextPCR += PCR_PERIODE; }
+                    const avecPCR = atteint(k, 3 * mPCR, 100);           // toutes les 30 ms = 3/100 s
+                    if (avecPCR) { mPCR++; }
                     if (!pret) {
                         if (avecPCR) {
                             // paquet vidéo sans charge utile : adaptation field seul

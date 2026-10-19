@@ -8,11 +8,12 @@
 --               éprouver le contrôle de flux
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Plateforme : VHDL-2008, simulation (GHDL)
 --  Licence    : CC BY-NC 4.0
---  Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver
+--  Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux
 --  Historique : 1.0  2026-10-19  création
+--               1.1  2026-10-19  multiplexeur TS (G_DUT = 4)
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -53,6 +54,8 @@ begin
         dut : entity work.rs_enc port map (clk, rst, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_data, m_sop);
     elsif G_DUT = 3 generate
         dut : entity work.interleaver port map (clk, rst, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_data, m_sop);
+    elsif G_DUT = 4 generate
+        dut : entity work.ts_mux port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data, m_sop);
     end generate;
 
     -- source : octets du fichier d'entrée

@@ -22,6 +22,7 @@
                ref/qcode.bin quantiser_scale_code de chaque slice (octets)
                ref/es.bin    flux élémentaire MPEG-2 (toutes images)
                ref/es_au.bin début de chaque image dans es.bin (uint32 LE)
+               ref/ts_v.bin  Transport Stream de l'étape 08 (2.4) pour ces images
   Historique : 1.0  2026-10-19  création
 ================================================================================
 */
@@ -61,4 +62,5 @@ ecrire('mbbits.bin', Uint16Array.from(vlc.t.mbBits));
 ecrire('qcode.bin', vlc.t.qcode.slice());
 ecrire('es.bin', es.t.es.slice());
 ecrire('es_au.bin', es.t.au.slice());
+fs.copyFileSync(path.join(SRC, 'video.ts'), path.join(REF, 'ts_v.bin')); console.log('ts_v.bin    ', fs.statSync(path.join(REF, 'ts_v.bin')).size, 'octets');
 console.log('images :', mb.meta.frames, '— quantiser_scale_code :', q.meta.quantization.quantiser_scale_code, '— matrice :', q.meta.quantization.matrix);
