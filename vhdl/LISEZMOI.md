@@ -31,6 +31,9 @@ VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid`
 | `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identique |
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0,35, 8 phases × 13 coefficients 16 bits, sans multiplieur | 14 (`.cs16`) | `tb_srrc` | ✔ 160 000 échantillons |
 | `tx_backend` | Chaîne arrière : TS → I/Q (09 à 14 assemblées) | 08 → 14 | `tb_backend` | ✔ 160 000 échantillons, un par cycle |
+| `mire_gen` + `mire_pkg` | Mire animée 16 couleurs, carré mobile et compteur, macroblocs 4:2:0 | 01 (`ref/mire.png`, option mobile) | `tb_mire` | ✔ 2 images |
+| `video_enc` | Tête de chaîne : mire → DCT → quantification → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 769 paquets TS |
+| `dvbs_tx` | Émetteur complet : mire → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160 000 échantillons |
 
 Tous les modules passent `ghdl --synth` sans verrou (contrôle de synthétisabilité ; la synthèse réelle se fait dans Libero SoC).
 
@@ -61,12 +64,10 @@ Le dossier `ref/` contient des extraits des sorties de JPEG2DVB 2.x (1,3 Mo pour
 
 ## Reste à faire
 
-1. Mire animée : générateur (palette 16 couleurs, incrustation du carré mobile et du compteur) et sa référence ; voir la remarque sur la mire ci-dessous.
-2. Régulation de débit TM5 en arithmétique entière, d'abord dans la page 03 de JPEG2DVB (point P7 du cahier des charges), puis en VHDL.
-3. Tête de chaîne complète : mire → DCT → quantification → zigzag → VLC → ES → TS → `tx_backend`.
-4. Modulateur sigma-delta 1 bit d'ordre 3, interpolation × 8, sérialiseurs LVDS (point P3).
-5. Mise en mémoire LSRAM : lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) ; découpage en étages des chemins longs (quantification, VLC) après la première synthèse Libero.
-6. Mode 720 × 576 (doublement de la mire, 45 macroblocs par slice).
+1. Régulation de débit TM5 en arithmétique entière, d'abord dans la page 03 de JPEG2DVB (point P7 du cahier des charges), puis en VHDL.
+2. Modulateur sigma-delta 1 bit d'ordre 3, interpolation × 8, sérialiseurs LVDS (point P3).
+3. Mise en mémoire LSRAM : lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) ; découpage en étages des chemins longs (quantification, VLC) après la première synthèse Libero.
+4. Mode 720 × 576 (doublement de la mire, 45 macroblocs par slice).
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -75,6 +76,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | Date | Évolution |
 |---|---|
 | 2026-10-19 | Chaîne arrière (09 à 14) et côté vidéo (02 à 08) au bit près, 19 bancs de test ; page 08 de JPEG2DVB en 2.4 (instants du multiplexage en entiers exacts) |
+| 2026-10-19 | Mire animée (`scripts/mire.js` : PNG pour la page 01 et `rtl/mire_pkg.vhd`), tête de chaîne `video_enc` et émetteur complet `dvbs_tx` : de la mire aux échantillons I/Q, identiques à JPEG2DVB ; 22 bancs de test |
 
 ## Licence
 
