@@ -4,10 +4,11 @@
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.1
+  Version    : 1.2
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
+               1.2  2026-10-19  sdm.js et sd_iq.bin : référence de la sortie sigma-delta
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -23,6 +24,7 @@ Le VHDL est dans `../vhdl/` : `jpeg2dvb_fpga.vhd` (modules) et `jpeg2dvb_fpga_tb
 | `refs_video.js` | Extrait les références vidéo (étapes 01 à 08) d'un dossier de sorties JPEG2DVB : DCT entière, régulation TM5 |
 | `gen_vlc.js` | Lit les tables VLC de `page05-rle-huffman.html` et réécrit le paquetage `vlc_tab_pkg` |
 | `mire.js` | Dessine la mire 16 couleurs : `mire.png` (entrée de la page 01) et paquetage `mire_pkg` |
+| `sdm.js` | Référence de la sortie sigma-delta (cahier des charges § 5.4) : `.cs16` → CIC × 8 → sigma-delta 1 bit d'ordre 3 par voie à 640 Mbit/s ; écrit `sd_iq.bin` et affiche le contrôle spectral (rapport signal sur bruit en bande, bruit hors bande, marge de stabilité). `node sdm.js` ou `node sdm.js ENTREE.cs16 SORTIE.bin` |
 | `fusion.js` | Module commun aux trois générateurs : met un paquetage généré au format du fichier fusionné et le remplace entre ses balises `-- >>>` / `-- <<<` |
 
 Ces outils ne servent que si une page JPEG2DVB change : les références doivent alors suivre la page.
@@ -46,6 +48,7 @@ Ces outils ne servent que si une page JPEG2DVB change : les références doivent
 | `conv23.bin` … `conv78.bin` | 12 | bits codés, FEC 2/3, 3/4, 5/6, 7/8 | `conv23` … `conv78` |
 | `qpsk.bin` | 13 | symboles QPSK | `qpsk`, `srrc` |
 | `iq.cs16` | 14 | 160 000 échantillons I/Q, entiers 16 bits | `srrc`, `chaine` |
+| `sd_iq.bin` | 14 → sigma-delta | bits sigma-delta de `iq.cs16` : un octet I puis un octet Q par échantillon d'entrée, bit 7 émis en premier (1 280 000 bits par voie) | à venir |
 
 ## Références — vidéo (3 images de `dur.png`, DCT entière, régulation TM5)
 
