@@ -18,12 +18,13 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 
 | Module | Function | JPEG2DVB step | Testbench | Status |
 |---|---|---|---|---|
-| `dct8x8_int` | Integer 8 × 8 DCT (2 passes, 8 multipliers per pass) | 02, fixed point | `tb_bloc` | ✔ identical |
-| `quant_intra` | Intra quantisation, default matrix, exact division through a reciprocal table | 03 (fixed code) | `tb_bloc` | ✔ codes 1, 8, 31 |
+| `dct8x8_int` | Integer 8 × 8 DCT (2 passes, 8 multipliers per pass) | 02 (integer DCT) | `tb_bloc` | ✔ identical |
+| `quant_intra` | Intra quantisation, default matrix, exact division through a reciprocal table; scale code read with each coefficient (one code per row) | 03 | `tb_bloc` | ✔ per-row codes, codes 1 and 31 |
+| `rate_ctrl` | TM5 rate control in integers: one quantiser_scale_code per macroblock row, row gate between DCT and quantisation, exact count of the VLC bits, 5-step division | 03 (TM5) | `tb_rc` | ✔ 54 codes, gate checked |
 | `zigzag` | Zigzag scan, two ping-pong banks | 04 | `tb_bloc` | ✔ identical |
 | `vlc_enc` + `vlc_tab_pkg` | MPEG-2 VLC: differential DC, B.14, escape, end of block | 05 | `tb_vlc` | ✔ bits and lengths |
-| `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices, sequence end | 06 | `tb_es` | ✔ 3 pictures |
-| `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets | 07, 08 | `tb_octets` | ✔ 881 packets |
+| `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices with their own scale code, sequence end | 06 | `tb_es` | ✔ 3 pictures |
+| `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets | 07, 08 | `tb_octets` | ✔ 976 packets |
 | `prbs_disp` | Energy dispersal | 09 | `tb_octets` | ✔ identical |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identical |
 | `interleaver` | Forney interleaver I = 12, M = 17 | 11 | `tb_octets` | ✔ identical |
@@ -32,7 +33,7 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0.35, 8 phases × 13 16-bit coefficients, no multiplier | 14 (`.cs16`) | `tb_srrc` | ✔ 160,000 samples |
 | `tx_backend` | Back-end chain: TS → I/Q (steps 09 to 14 assembled) | 08 → 14 | `tb_backend` | ✔ 160,000 samples, one per clock |
 | `mire_gen` + `mire_pkg` | Animated 16-colour test pattern, moving square and counter, 4:2:0 macroblocks | 01 (`fpga_test/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
-| `video_enc` | Front end: test pattern → DCT → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 769 TS packets |
+| `video_enc` | Front end: test pattern → DCT → TM5 rate control → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 TS packets |
 | `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
 
 Every module passes `ghdl --synth` without latches (synthesisability check; the real synthesis is done in Libero SoC).
@@ -64,7 +65,7 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 
 ## To do
 
-1. TM5 rate control in integer arithmetic, first in JPEG2DVB page 03 (specification item P7), then in VHDL.
+1. ✔ Done (2026-10-19): TM5 rate control in integer arithmetic, in JPEG2DVB page 03 (specification item P7), then in VHDL (`rate_ctrl`), bit for bit.
 2. Third-order 1-bit sigma-delta modulator, × 8 interpolation, LVDS serialisers (item P3).
 3. LSRAM mapping: synchronous read of the interleaver memory (1,122 bytes); pipelining of long paths (quantisation, VLC) after the first Libero synthesis.
 4. 720 × 576 mode (doubled test pattern, 45 macroblocks per slice).
@@ -79,6 +80,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-10-19 | Animated test pattern (`mire.js`: PNG for page 01 and `mire_pkg` package), `video_enc` front end and `dvbs_tx` complete transmitter: from the test pattern to I/Q samples, identical to JPEG2DVB; 22 testbenches |
 | 2026-10-19 | TM5 rate control (`rate_ctrl`, references regenerated; testbenches to be adapted). Sources merged into `jpeg2dvb_fpga.vhd` and `jpeg2dvb_fpga_tb.vhd`; references, scripts and `run_tests.sh` moved to `fpga_test/` |
 | 2026-10-19 | Clean merge (2.0): one header per file, common VHDL-2008 context `jpeg2dvb_ctx`, every function and process commented; `fpga_test/README.md` lists the role of each test file |
+| 2026-10-19 | TM5 rate control bit for bit in VHDL: testbenches adapted (per-row codes, per-slice codes, `slice_ok`), new `tb_rc` testbench, `run_tests.sh` 1.2; 23 testbenches OK, 11 modules synthesisable without latches |
 
 ## License
 

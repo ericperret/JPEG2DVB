@@ -4,9 +4,10 @@
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -54,9 +55,9 @@ Ces outils ne servent que si une page JPEG2DVB change : les références doivent
 | `dct0.bin` | 02 | coefficients DCT de l'image 0 (int16) | `dct`, `quant*` |
 | `q0.bin` | 03 | coefficients quantifiés, code de chaque rangée | `quant8`, `zigzag` |
 | `q0_c1.bin`, `q0_c31.bin` | 03 | quantifiés aux codes 1 et 31 (bornes) | `quant1`, `quant31` |
-| `qcode.bin` | 03 | quantiser_scale_code de chaque slice (54 octets) | `quant8`, `es` |
+| `qcode.bin` | 03 | quantiser_scale_code de chaque slice (54 octets) | `quant8`, `es`, `rc` |
 | `zz0.bin` | 04 | vecteurs zigzag | `zigzag`, `vlc` |
-| `vlc.bin`, `mbbits.bin` | 05 | bits VLC bout à bout, longueur de chaque macrobloc | `vlc`, `es` |
+| `vlc.bin`, `mbbits.bin` | 05 | bits VLC bout à bout, longueur de chaque macrobloc | `vlc`, `es`, `rc` (`mbbits.bin`) |
 | `es.bin`, `es_au.bin` | 06 | flux élémentaire, début de chaque image | `es`, `ts` |
 | `ts_v.bin` | 08 | Transport Stream de ces 3 images | `ts` |
 
@@ -66,12 +67,10 @@ Ces outils ne servent que si une page JPEG2DVB change : les références doivent
 |---|---|---|---|
 | `mire_mb.bin` | 01 | macroblocs de 2 images de la mire | `mire` |
 | `mire_ts.bin` | 08 | TS produit depuis la mire | `video` |
-| `mire_iq.cs16` | 14 | 160 000 échantillons I/Q depuis la mire | `emetteur` |
+| `mire_iq.cs16` | 14 | 160 000 échantillons I/Q depuis la mire (les 12 premiers paquets TS) | `emetteur` |
 
 ## État au 2026-10-19
 
-Les références vidéo et `mire_ts.bin` sont régénérées en DCT entière et régulation TM5. Il reste à :
-- régénérer `mire_iq.cs16`, encore dans l'ancienne version à code fixe 8 ;
-- adapter les bancs `bloc`, `es` et `dvbs` aux codes par rangée ;
-- ajouter le banc `rc` ;
-- mettre à jour les tailles dans `run_tests.sh`.
+Toutes les références sont à jour : DCT entière et régulation TM5 de la page 03 (3.x). Les 23 bancs passent au bit près, dont `rc` (codes de `rate_ctrl` comparés à `qcode.bin`), et les 11 modules passent `ghdl --synth` sans verrou.
+
+`mire_iq.cs16` ne couvre que les 12 premiers paquets TS, identiques avant et après la régulation : la régulation se vérifie par les bancs `quant8`, `es`, `rc` et `video`.
