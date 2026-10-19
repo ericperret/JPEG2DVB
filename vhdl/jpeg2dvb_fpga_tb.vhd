@@ -5,7 +5,7 @@
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 2.2
+--  Version    : 2.3
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 13 unités, dans l'ordre d'analyse :
@@ -35,6 +35,7 @@
 --                                tb_es : slice_ok, code par slice ; tb_dvbs sans
 --                                entrée code ; nouveau banc tb_rc
 --               2.2  2026-10-19  nouveau banc tb_sdm (sortie sigma-delta)
+--               2.3  2026-10-19  tb_sdm : entrée par les symboles QPSK (qpsk.bin)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1406,9 +1407,9 @@ begin
 end architecture sim;
 
 --------------------------------------------------------------------------------
--- tb_sdm : banc de test de la sortie sigma-delta : échantillons I/Q de
---   iq.cs16 (étape 14) en entrée, avec trous aléatoires ; 8 bits I et 8 bits Q
---   par échantillon comparés à sd_iq.bin (fpga_test/sdm.js) ; contre-pression
+-- tb_sdm : banc de test de la sortie sigma-delta : symboles QPSK de
+--   qpsk.bin (étape 13) en entrée, avec trous aléatoires ; 8 bits I et 8 bits Q
+--   par cycle comparés à sd_iq.bin (fpga_test/sdm.js) ; contre-pression
 --   aléatoire en sortie
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
@@ -1417,7 +1418,7 @@ use work.tb_pkg.all;
 
 entity tb_sdm is
     generic (
-        G_N : natural := 160000              -- échantillons I/Q
+        G_N : natural := 160000              -- cycles de sortie (8 par symbole)
     );
 end entity tb_sdm;
 
@@ -1426,8 +1427,8 @@ architecture sim of tb_sdm is
     signal rst     : std_logic := '1';
     signal s_valid : std_logic := '0';
     signal s_ready : std_logic;
-    signal s_i     : signed(15 downto 0) := (others => '0');
-    signal s_q     : signed(15 downto 0) := (others => '0');
+    signal s_i     : std_logic := '0';
+    signal s_q     : std_logic := '0';
     signal m_valid : std_logic;
     signal m_ready : std_logic := '1';
     signal m_i     : std_logic_vector(7 downto 0);
@@ -1436,19 +1437,20 @@ begin
     clk <= not clk after 6.25 ns;            -- 80 MHz
     dut : entity work.sigma_delta port map (clk, rst, s_valid, s_ready, s_i, s_q, m_valid, m_ready, m_i, m_q);
 
-    -- source : E : iq.cs16 → T : un échantillon par acceptation, trous
-    --   aléatoires → S : I, Q vers le module
+    -- source : E : qpsk.bin (I, Q signés 8 bits) → T : un symbole par
+    --   acceptation (bit 1 pour −1), trous aléatoires ; un symbole de plus que
+    --   la sortie comparée → S : bits I, Q vers le module
     source : process
-        file f        : octets_f open read_mode is REF & "iq.cs16";
+        file f        : octets_f open read_mode is REF & "qpsk.bin";
         variable a, b : character;
         variable r    : std_logic_vector(15 downto 0) := x"ACE1";
     begin
         wait until rising_edge(clk);
         wait until rising_edge(clk);
         rst <= '0';
-        for k in 0 to G_N - 1 loop
-            read(f, a); read(f, b); s_i <= signed(std_logic_vector'(octet(b) & octet(a)));
-            read(f, a); read(f, b); s_q <= signed(std_logic_vector'(octet(b) & octet(a)));
+        for k in 0 to G_N / 8 loop
+            read(f, a); read(f, b);
+            s_i <= octet(a)(7); s_q <= octet(b)(7);
             r := alea(r);
             if r(0) = '1' and r(1) = '1' and r(2) = '1' then
                 s_valid <= '0';
@@ -1489,7 +1491,7 @@ begin
                 read(f, a); read(f, b);
                 if m_i /= octet(a) or m_q /= octet(b) then
                     if err < 10 then
-                        report "ecart a l'echantillon " & integer'image(n) & " : I " & to_hstring(m_i) & " au lieu de " & to_hstring(octet(a)) &
+                        report "ecart a cycle " & integer'image(n) & " : I " & to_hstring(m_i) & " au lieu de " & to_hstring(octet(a)) &
                                ", Q " & to_hstring(m_q) & " au lieu de " & to_hstring(octet(b)) severity warning;
                     end if;
                     err := err + 1;
@@ -1497,15 +1499,15 @@ begin
                 n := n + 1;
                 if n = G_N then
                     if err = 0 then
-                        report "OK sd_iq.bin : " & integer'image(n) & " echantillons, " & integer'image(16 * n) & " bits sigma-delta identiques (" & integer'image(cycles) & " cycles)";
+                        report "OK sd_iq.bin : " & integer'image(n) & " cycles, " & integer'image(16 * n) & " bits sigma-delta identiques (" & integer'image(cycles) & " cycles)";
                     else
-                        report "ECHEC sd_iq.bin : " & integer'image(err) & " echantillons differents sur " & integer'image(n) severity error;
+                        report "ECHEC sd_iq.bin : " & integer'image(err) & " cycles differents sur " & integer'image(n) severity error;
                     end if;
                     finish;
                 end if;
             end if;
             if cycles > 4 * G_N + 10000 then
-                report "ECHEC sd_iq.bin : delai depasse, " & integer'image(n) & " echantillons recus" severity error;
+                report "ECHEC sd_iq.bin : delai depasse, " & integer'image(n) & " cycles recus" severity error;
                 finish;
             end if;
         end if;

@@ -6,12 +6,13 @@
 --               étape de JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 2.1
+--  Version    : 2.2
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 25 unités, dans l'ordre d'analyse :
+--  Contenu    : 26 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
+--               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
 --               mire_pkg      image de la mire (généré par mire.js)
 --               vlc_tab_pkg   tables VLC B.12 à B.14 (généré par gen_vlc.js)
 --               prbs_disp     dispersion d'énergie (étape 09)
@@ -32,9 +33,9 @@
 --               mire_gen      mire animée (étape 01)
 --               video_enc     tête de chaîne, mire → TS (01 à 08)
 --               dvbs_tx       émetteur complet, mire → I/Q
---               cic8          interpolation × 8, CIC d'ordre 3
---               sdm3          sigma-delta 1 bit d'ordre 3, 8 bits par cycle
---               sigma_delta   sortie sigma-delta I/Q (CIC + sigma-delta)
+--               sd_entree     apport des symboles à la boucle (SRRC par tables)
+--               sdm3          sigma-delta 1 bit d'ordre 3, 8 bits par cycle, anticipation
+--               sigma_delta   sortie sigma-delta I/Q depuis les symboles QPSK
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (context
 --               jpeg2dvb_ctx) ; fonctions et process commentés
 --               « E : entrées → T : traitement → S : sorties » ; les paquetages
@@ -53,6 +54,11 @@
 --                                commun, commentaires de fonction
 --               2.1  2026-10-19  sortie sigma-delta (point P3) : cic8, sdm3,
 --                                sigma_delta ; dvbs_pkg 1.2 : type ech8_t
+--               2.2  2026-10-19  sortie sigma-delta refaite pour le timing (P3) :
+--                                SRRC à 640 MS/s par tables depuis les symboles
+--                                (sd_entree, sdm_coef_pkg), états sur 16 bits,
+--                                8 décisions par anticipation (sdm3) ; cic8 retiré ;
+--                                dvbs_pkg 1.3 : SD_W, sd_grp_t
 --==============================================================================
 
 -- clauses communes à toutes les unités (une ligne « context » par unité)
@@ -107,9 +113,10 @@ package dvbs_pkg is
     function parite(v : std_logic_vector) return std_logic;
 
     ----------------------------------------------------------------------------
-    -- Sortie sigma-delta : 8 échantillons à 640 MS/s par cycle de 80 MHz (22 bits)
+    -- Sortie sigma-delta : apport des entrées d'un groupe de 8 instants (sdm3)
     ----------------------------------------------------------------------------
-    type ech8_t is array (0 to 7) of signed(21 downto 0);
+    constant SD_W : natural := 24;                                 -- largeur des mots de la boucle
+    type sd_grp_t is array (0 to 7) of signed(SD_W - 1 downto 0);  -- In3 … In7, U1, U2, U3 d'un groupe
 
     ----------------------------------------------------------------------------
     -- Budget de la régulation TM5 (étape 03) en bits par image :
@@ -225,6 +232,90 @@ package srrc_coef_pkg is
     );
 end package srrc_coef_pkg;
 -- <<< srrc_coef_pkg.vhd
+
+-- >>> sdm_coef_pkg.vhd
+--------------------------------------------------------------------------------
+-- sdm_coef_pkg : coefficients du filtre SRRC à 640 MS/s pour la sortie
+--   sigma-delta (fichier généré par fpga_test/sdm.js)
+--   Paramètres : α = 0,35, 12 symboles, 64 phases × 13 symboles, fenêtre de
+--                Kaiser β = 5,65, crête 0,47 FS, FS = 2^10
+--   Principe : u(8q + r) = somme sur d de SDM_H(8q + r)(d) · sym(d), d = 12
+--              le symbole le plus récent, sym = ±1
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+
+package sdm_coef_pkg is
+    constant SDM_F   : natural := 10;
+    type sdm_phase_t is array (0 to 12) of integer range -32768 to 32767;
+    type sdm_coef_t  is array (0 to 63) of sdm_phase_t;
+    constant SDM_H : sdm_coef_t := (
+         0 => (    0,     0,     0,    -4,    14,   -26,   359,   -26,    14,    -4,     0,     0,     0),
+         1 => (    0,     0,     0,    -4,    15,   -30,   359,   -22,    13,    -4,     0,     0,     0),
+         2 => (    0,     0,     0,    -4,    15,   -33,   358,   -18,    13,    -4,     0,     0,     0),
+         3 => (    0,     0,     0,    -4,    15,   -36,   357,   -13,    12,    -4,     0,     0,     0),
+         4 => (    0,     0,     0,    -4,    16,   -39,   356,    -9,    11,    -4,     1,     0,     0),
+         5 => (    0,     0,     0,    -4,    16,   -42,   354,    -4,    10,    -4,     1,     0,     0),
+         6 => (    0,     0,     0,    -3,    16,   -44,   352,     1,     9,    -4,     1,     0,     0),
+         7 => (    0,     0,     0,    -3,    16,   -46,   350,     7,     8,    -4,     1,     0,     0),
+         8 => (    0,     0,     0,    -3,    16,   -48,   347,    12,     7,    -4,     1,     0,     0),
+         9 => (    0,     0,     0,    -3,    16,   -50,   344,    18,     5,    -4,     1,     0,     0),
+        10 => (    0,     0,    -1,    -3,    16,   -51,   340,    24,     4,    -4,     1,     0,     0),
+        11 => (    0,     0,    -1,    -2,    16,   -52,   337,    31,     2,    -4,     1,     0,     0),
+        12 => (    0,     0,    -1,    -2,    16,   -53,   332,    37,     1,    -4,     1,     0,     0),
+        13 => (    0,     0,    -1,    -2,    16,   -54,   328,    44,    -1,    -4,     1,     0,     0),
+        14 => (    0,     0,    -1,    -2,    15,   -55,   323,    51,    -2,    -3,     1,     0,     0),
+        15 => (    0,     0,    -1,    -2,    15,   -55,   318,    58,    -4,    -3,     1,     0,     0),
+        16 => (    0,     0,    -1,    -1,    15,   -55,   312,    65,    -6,    -3,     1,     0,     0),
+        17 => (    0,     0,    -1,    -1,    14,   -55,   307,    73,    -8,    -2,     1,     0,     0),
+        18 => (    0,     0,    -1,    -1,    14,   -55,   301,    80,    -9,    -2,     2,     0,     0),
+        19 => (    0,     0,    -1,    -1,    13,   -55,   294,    88,   -11,    -2,     2,     0,     0),
+        20 => (    0,     0,    -1,    -1,    13,   -54,   288,    96,   -13,    -1,     2,     0,     0),
+        21 => (    0,     0,    -1,     0,    12,   -53,   281,   104,   -15,    -1,     2,     0,     0),
+        22 => (    0,     0,    -1,     0,    12,   -53,   274,   112,   -17,     0,     2,     0,     0),
+        23 => (    0,     0,    -1,     0,    11,   -52,   267,   120,   -19,     0,     2,     0,     0),
+        24 => (    0,     0,    -1,     0,    10,   -50,   260,   128,   -21,     1,     2,     0,     0),
+        25 => (    0,     0,    -1,     0,    10,   -49,   252,   137,   -24,     1,     2,     0,     0),
+        26 => (    0,     0,    -1,     0,     9,   -48,   244,   145,   -26,     2,     2,     0,     0),
+        27 => (    0,     0,    -1,     1,     9,   -46,   237,   154,   -28,     2,     2,    -1,     0),
+        28 => (    0,     0,    -1,     1,     8,   -45,   229,   162,   -30,     3,     1,    -1,     0),
+        29 => (    0,     0,    -1,     1,     7,   -43,   221,   170,   -32,     3,     1,    -1,     0),
+        30 => (    0,     0,    -1,     1,     7,   -41,   212,   179,   -34,     4,     1,    -1,     0),
+        31 => (    0,     0,    -1,     1,     6,   -40,   204,   187,   -36,     5,     1,    -1,     0),
+        32 => (    0,     0,    -1,     1,     5,   -38,   196,   196,   -38,     5,     1,    -1,     0),
+        33 => (    0,     0,    -1,     1,     5,   -36,   187,   204,   -40,     6,     1,    -1,     0),
+        34 => (    0,     0,    -1,     1,     4,   -34,   179,   212,   -41,     7,     1,    -1,     0),
+        35 => (    0,     0,    -1,     1,     3,   -32,   170,   221,   -43,     7,     1,    -1,     0),
+        36 => (    0,     0,    -1,     1,     3,   -30,   162,   229,   -45,     8,     1,    -1,     0),
+        37 => (    0,     0,    -1,     2,     2,   -28,   154,   237,   -46,     9,     1,    -1,     0),
+        38 => (    0,     0,     0,     2,     2,   -26,   145,   244,   -48,     9,     0,    -1,     0),
+        39 => (    0,     0,     0,     2,     1,   -24,   137,   252,   -49,    10,     0,    -1,     0),
+        40 => (    0,     0,     0,     2,     1,   -21,   128,   260,   -50,    10,     0,    -1,     0),
+        41 => (    0,     0,     0,     2,     0,   -19,   120,   267,   -52,    11,     0,    -1,     0),
+        42 => (    0,     0,     0,     2,     0,   -17,   112,   274,   -53,    12,     0,    -1,     0),
+        43 => (    0,     0,     0,     2,    -1,   -15,   104,   281,   -53,    12,     0,    -1,     0),
+        44 => (    0,     0,     0,     2,    -1,   -13,    96,   288,   -54,    13,    -1,    -1,     0),
+        45 => (    0,     0,     0,     2,    -2,   -11,    88,   294,   -55,    13,    -1,    -1,     0),
+        46 => (    0,     0,     0,     2,    -2,    -9,    80,   301,   -55,    14,    -1,    -1,     0),
+        47 => (    0,     0,     0,     1,    -2,    -8,    73,   307,   -55,    14,    -1,    -1,     0),
+        48 => (    0,     0,     0,     1,    -3,    -6,    65,   312,   -55,    15,    -1,    -1,     0),
+        49 => (    0,     0,     0,     1,    -3,    -4,    58,   318,   -55,    15,    -2,    -1,     0),
+        50 => (    0,     0,     0,     1,    -3,    -2,    51,   323,   -55,    15,    -2,    -1,     0),
+        51 => (    0,     0,     0,     1,    -4,    -1,    44,   328,   -54,    16,    -2,    -1,     0),
+        52 => (    0,     0,     0,     1,    -4,     1,    37,   332,   -53,    16,    -2,    -1,     0),
+        53 => (    0,     0,     0,     1,    -4,     2,    31,   337,   -52,    16,    -2,    -1,     0),
+        54 => (    0,     0,     0,     1,    -4,     4,    24,   340,   -51,    16,    -3,    -1,     0),
+        55 => (    0,     0,     0,     1,    -4,     5,    18,   344,   -50,    16,    -3,     0,     0),
+        56 => (    0,     0,     0,     1,    -4,     7,    12,   347,   -48,    16,    -3,     0,     0),
+        57 => (    0,     0,     0,     1,    -4,     8,     7,   350,   -46,    16,    -3,     0,     0),
+        58 => (    0,     0,     0,     1,    -4,     9,     1,   352,   -44,    16,    -3,     0,     0),
+        59 => (    0,     0,     0,     1,    -4,    10,    -4,   354,   -42,    16,    -4,     0,     0),
+        60 => (    0,     0,     0,     1,    -4,    11,    -9,   356,   -39,    16,    -4,     0,     0),
+        61 => (    0,     0,     0,     0,    -4,    12,   -13,   357,   -36,    15,    -4,     0,     0),
+        62 => (    0,     0,     0,     0,    -4,    13,   -18,   358,   -33,    15,    -4,     0,     0),
+        63 => (    0,     0,     0,     0,    -4,    13,   -22,   359,   -30,    15,    -4,     0,     0)
+    );
+end package sdm_coef_pkg;
+-- <<< sdm_coef_pkg.vhd
 
 -- >>> mire_pkg.vhd
 --------------------------------------------------------------------------------
@@ -2959,143 +3050,331 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- cic8 : interpolation × 8 par un CIC d'ordre 3 (une voie) ; référence bit à
---   bit : fpga_test/sdm.js
---   Interface : en : un échantillon x (16 bits, 80 MS/s) consommé ; y : les 8
---               échantillons interpolés (640 MS/s) de cet instant, registrés,
---               y(0) le premier
---   Principe : 3 peignes à 80 MS/s (d = x − x⁻¹, trois fois), puis 3
---              intégrateurs à 640 MS/s déroulés sur les 8 instants : avec
---              g0' = g0 + d, y(r) = g2 + (r+1)·g1 + (r+1)(r+2)/2·g0' ; en fin de
---              cycle g0 ← g0', g1 ← g1 + 8·g0', g2 ← y(7). Gain 64, sortie
---              exacte sur 22 bits ; états en arithmétique modulaire 30 bits.
+-- sd_entree : apport des entrées à la boucle sigma-delta pour un cycle de 8
+--   instants (une voie) : le filtre SRRC à 640 MS/s est intégré aux tables ;
+--   référence bit à bit : fpga_test/sdm.js
+--   Interface : en : un groupe (fenêtre de 13 symboles, cycle q de 0 à 7)
+--               consommé ; sorties registrées : in_k (k = 3 à 7) et u1, u2, u3
+--   Principe : avec u(j) = Σd SDM_H(8q + j)(d)·sym(d), les grandeurs utiles sont
+--              linéaires en sym : Ink = Σ(j<k) C(k−1−j, 2)·u(j) (In0 = In1 =
+--              In2 = 0), U1 = Σ u(j), U2 = Σ (7−j)·u(j), U3 = Σ C(7−j, 2)·u(j).
+--              Leurs coefficients par symbole sont précalculés (8 cycles × 13
+--              symboles) : chaque grandeur est une somme de 13 constantes
+--              signées par les bits de la fenêtre.
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
+use work.sdm_coef_pkg.all;
 
-entity cic8 is
+entity sd_entree is
     port (
         clk : in  std_logic;
         rst : in  std_logic;
         en  : in  std_logic;
-        x   : in  signed(15 downto 0);
-        y   : out ech8_t
+        fen : in  std_logic_vector(12 downto 0);   -- bit d = symbole d (1 → −1), d = 12 le plus récent
+        q   : in  natural range 0 to 7;
+        g   : out sd_grp_t                         -- In3 … In7, U1, U2, U3
     );
-end entity cic8;
+end entity sd_entree;
 
-architecture rtl of cic8 is
-    constant W : natural := 30;
-    signal p0, p1, p2 : signed(W - 1 downto 0) := (others => '0');   -- retards des peignes
-    signal g0, g1, g2 : signed(W - 1 downto 0) := (others => '0');   -- intégrateurs
-    signal y_r        : ech8_t := (others => (others => '0'));
+architecture rtl of sd_entree is
+    -- poids des grandeurs (0 à 4 : In3 à In7, 5 à 7 : U1 à U3) sur u(j)
+    function poids(i, j : natural) return integer is
+        variable k, m : integer;
+    begin
+        if i <= 4 then
+            k := i + 3;
+            if j < k then m := k - 1 - j; return m * (m - 1) / 2; else return 0; end if;
+        elsif i = 5 then return 1;
+        elsif i = 6 then return 7 - j;
+        else m := 7 - j; return m * (m - 1) / 2;
+        end if;
+    end function;
+    type coef_t is array (0 to 7, 0 to 7, 0 to 12) of integer;   -- [q][grandeur][d]
+    -- tables : E : SDM_H → S : coefficient de chaque grandeur par cycle et symbole
+    function tables return coef_t is
+        variable t : coef_t;
+        variable s : integer;
+    begin
+        for qq in 0 to 7 loop
+            for i in 0 to 7 loop
+                for d in 0 to 12 loop
+                    s := 0;
+                    for j in 0 to 7 loop
+                        s := s + poids(i, j) * SDM_H(8 * qq + j)(d);
+                    end loop;
+                    t(qq, i, d) := s;
+                end loop;
+            end loop;
+        end loop;
+        return t;
+    end function;
+    constant TAB : coef_t := tables;
+    signal g_r : sd_grp_t := (others => (others => '0'));
 begin
-    y <= y_r;
+    g <= g_r;
 
-    -- E : x, en → T : peignes, intégrateurs déroulés → S : 8 échantillons
+    -- E : fenêtre, cycle → T : 8 sommes de 13 constantes signées → S : groupe
     process (clk)
-        variable v0, d1, d2, d3, h0, s : signed(W - 1 downto 0);
+        variable s : signed(SD_W - 1 downto 0);
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                p0 <= (others => '0'); p1 <= (others => '0'); p2 <= (others => '0');
-                g0 <= (others => '0'); g1 <= (others => '0'); g2 <= (others => '0');
-                y_r <= (others => (others => '0'));
+                g_r <= (others => (others => '0'));
             elsif en = '1' then
-                v0 := resize(x, W);
-                d1 := v0 - p0; d2 := d1 - p1; d3 := d2 - p2;
-                p0 <= v0; p1 <= d1; p2 <= d2;
-                h0 := g0 + d3;
-                for r in 0 to 7 loop
-                    s := g2 + resize(g1 * to_signed(r + 1, 8), W) + resize(h0 * to_signed((r + 1) * (r + 2) / 2, 8), W);
-                    y_r(r) <= resize(s, 22);
-                    if r = 7 then g2 <= s; end if;
+                for i in 0 to 7 loop
+                    s := (others => '0');
+                    for d in 0 to 12 loop
+                        if fen(d) = '0' then
+                            s := s + to_signed(TAB(q, i, d), SD_W);
+                        else
+                            s := s - to_signed(TAB(q, i, d), SD_W);
+                        end if;
+                    end loop;
+                    g_r(i) <= s;
                 end loop;
-                g0 <= h0;
-                g1 <= g1 + shift_left(h0, 3);
             end if;
         end if;
     end process;
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- sdm3 : modulateur sigma-delta 1 bit d'ordre 3 (une voie), boucle déroulée
---   8 fois par cycle ; référence bit à bit : fpga_test/sdm.js
---   Interface : en : 8 échantillons y consommés ; bits : les 8 bits produits,
---               registrés, bits(7) le premier émis (1 = +FS)
---   Principe : CIFB, FS = 2²¹ ; à chaque instant, s = signe de x3 (x3 ≥ 0 → +1) :
---                x3 ← x3 + x2 − s·FS
---                x2 ← x2 + x1 − s·3FS/8
---                x1 ← x1 + (y >> 5) − s·FS/16
---              états sur 32 bits dans le cycle, bornés à ±(2²³ − 1) en fin de
---              cycle (24 bits signés). Chemin critique : 8 additions en série
---              sur x3 (point P3).
+-- sdm3 : modulateur sigma-delta 1 bit d'ordre 3 (une voie), 8 bits par cycle,
+--   décisions par anticipation ; référence bit à bit : fpga_test/sdm.js
+--   Interface : charge : premier groupe (P ← In, U) ; pas : émet les 8 bits du
+--               groupe courant et prend le groupe suivant gs (son In, son U) ;
+--               bits : registrés, bits(7) le premier émis (1 = +FS)
+--   Principe : CIFB, FS = 2^SDM_F, états × 16 : x3 ← x3 + x2 − 16·FS·s,
+--              x2 ← x2 + x1 − 6·FS·s, x1 ← x1 + u − FS·s, s = +1 si x3 ≥ 0.
+--              Registres : X (x1, x2, x3) et Pk = C(k,2)·x1 + k·x2 + x3 + Ink,
+--              valeur de x3 au pas k sans les décisions du cycle. Décision :
+--              sk = Pk ≥ Dk(s0…sk−1) ; les 255 comparaisons à des constantes sont
+--              faites en parallèle (signe d'une soustraction) ; s0…s3 en chaîne de
+--              multiplexeurs, s4…s7 calculées pour les 16 débuts possibles puis
+--              choisies par s0…s3. État suivant : Y = M⁸·X + U (sans les
+--              décisions), X ← Y − T(s), Pk ← C(k,2)·y1 + k·y2 + y3 + In'k −
+--              Rk(s) ; T et R sont linéaires en s : demi-tables de 16 constantes
+--              pour s0…s3 et pour s4…s7 ; les 16 résultats possibles selon s4…s7
+--              sont préparés, puis choisis. Garde : si |xi| > 2¹⁵ en début de
+--              cycle, les états repartent de zéro (P ← In').
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
+use work.sdm_coef_pkg.all;
 
 entity sdm3 is
     port (
-        clk  : in  std_logic;
-        rst  : in  std_logic;
-        en   : in  std_logic;
-        y    : in  ech8_t;
-        bits : out std_logic_vector(7 downto 0)
+        clk    : in  std_logic;
+        rst    : in  std_logic;
+        charge : in  std_logic;
+        pas    : in  std_logic;
+        gs     : in  sd_grp_t;
+        bits   : out std_logic_vector(7 downto 0)
     );
 end entity sdm3;
 
 architecture rtl of sdm3 is
-    constant W    : natural := 32;
-    constant A1   : signed(W - 1 downto 0) := to_signed(2 ** 17, W);           -- FS / 16
-    constant A2   : signed(W - 1 downto 0) := to_signed(3 * 2 ** 18, W);       -- 3·FS / 8
-    constant A3   : signed(W - 1 downto 0) := to_signed(2 ** 21, W);           -- FS
-    constant XMAX : signed(W - 1 downto 0) := to_signed(2 ** 23 - 1, W);
-    signal x1, x2, x3 : signed(W - 1 downto 0) := (others => '0');
-    signal b_r        : std_logic_vector(7 downto 0) := (others => '0');
+    constant FS    : integer := 2 ** SDM_F;
+    constant A1    : integer := FS;
+    constant A2    : integer := 6 * FS;
+    constant A3    : integer := 16 * FS;
+    constant GARDE : integer := 2 ** 15;
+    subtype mot_t is signed(SD_W - 1 downto 0);
+    type mot8_t is array (0 to 7) of mot_t;
+    type int_tab is array (natural range <>) of integer;
 
-    -- borne : E : état → S : état borné à ±XMAX
-    function borne(v : signed) return signed is
+    function c2(m : integer) return integer is begin return m * (m - 1) / 2; end function;
+    function c(m : integer) return integer is begin return c2(m) * A1 + m * A2 + A3; end function;
+    -- seuils Dk(b) : motif b de k bits (poids fort = s0), rangés à 2^k − 1 + b
+    function seuils return int_tab is
+        variable t : int_tab(0 to 254);
+        variable d, sj : integer;
     begin
-        if v > XMAX then return XMAX; elsif v < -XMAX then return -XMAX; else return v; end if;
+        for k in 0 to 7 loop
+            for b in 0 to 2 ** k - 1 loop
+                d := 0;
+                for j in 0 to k - 1 loop
+                    if (b / 2 ** (k - 1 - j)) mod 2 = 1 then sj := 1; else sj := -1; end if;
+                    d := d + c(k - 1 - j) * sj;
+                end loop;
+                t(2 ** k - 1 + b) := d;
+            end loop;
+        end loop;
+        return t;
+    end function;
+    constant DK : int_tab(0 to 254) := seuils;
+
+    -- poids de la décision sj (j = 0 à 7) dans la correction de l'état après
+    --   8 pas : i = 1, 2, 3 pour x1, x2, x3 ; i = 10 + k pour Pk du cycle suivant
+    function rho(i, j : natural) return integer is
+        constant m : integer := 7 - j;
+        constant t1 : integer := A1;
+        constant t2 : integer := m * A1 + A2;
+        constant t3 : integer := c2(m) * A1 + m * A2 + A3;
+    begin
+        if i = 1 then return t1; elsif i = 2 then return t2; elsif i = 3 then return t3;
+        else return c2(i - 10) * t1 + (i - 10) * t2 + t3;
+        end if;
+    end function;
+    -- demi-table : somme des ±rho(i, j) pour les 4 décisions j0 … j0 + 3 du motif v
+    --   (poids fort = décision j0)
+    function demi(i, j0 : natural) return int_tab is
+        variable t : int_tab(0 to 15);
+        variable s : integer;
+    begin
+        for v in 0 to 15 loop
+            s := 0;
+            for j in 0 to 3 loop
+                if (v / 2 ** (3 - j)) mod 2 = 1 then s := s + rho(i, j0 + j); else s := s - rho(i, j0 + j); end if;
+            end loop;
+            t(v) := s;
+        end loop;
+        return t;
+    end function;
+    -- tables des corrections : H pour s0…s3, L pour s4…s7
+    constant TH1 : int_tab(0 to 15) := demi(1, 0);  constant TL1 : int_tab(0 to 15) := demi(1, 4);
+    constant TH2 : int_tab(0 to 15) := demi(2, 0);  constant TL2 : int_tab(0 to 15) := demi(2, 4);
+    constant TH3 : int_tab(0 to 15) := demi(3, 0);  constant TL3 : int_tab(0 to 15) := demi(3, 4);
+    constant RH0 : int_tab(0 to 15) := demi(10, 0); constant RL0 : int_tab(0 to 15) := demi(10, 4);
+    constant RH1 : int_tab(0 to 15) := demi(11, 0); constant RL1 : int_tab(0 to 15) := demi(11, 4);
+    constant RH2 : int_tab(0 to 15) := demi(12, 0); constant RL2 : int_tab(0 to 15) := demi(12, 4);
+    constant RH3 : int_tab(0 to 15) := demi(13, 0); constant RL3 : int_tab(0 to 15) := demi(13, 4);
+    constant RH4 : int_tab(0 to 15) := demi(14, 0); constant RL4 : int_tab(0 to 15) := demi(14, 4);
+    constant RH5 : int_tab(0 to 15) := demi(15, 0); constant RL5 : int_tab(0 to 15) := demi(15, 4);
+    constant RH6 : int_tab(0 to 15) := demi(16, 0); constant RL6 : int_tab(0 to 15) := demi(16, 4);
+    constant RH7 : int_tab(0 to 15) := demi(17, 0); constant RL7 : int_tab(0 to 15) := demi(17, 4);
+
+    signal x1, x2, x3 : mot_t := (others => '0');
+    signal p          : mot8_t := (others => (others => '0'));
+    signal u1, u2, u3 : mot_t := (others => '0');
+    signal b_r        : std_logic_vector(7 downto 0) := (others => '0');
+    type cmp_t is array (0 to 7) of std_logic_vector(0 to 127);
+    signal cmp        : cmp_t := (others => (others => '0'));     -- cmp(k)(b) = Pk ≥ Dk(b)
+
+    -- in_de : E : groupe, k → S : Ink (0 pour k < 3)
+    function in_de(g : sd_grp_t; k : natural) return mot_t is
+    begin
+        if k < 3 then return (others => '0'); else return g(k - 3); end if;
+    end function;
+    -- rh, rl : E : k, motif de 4 décisions → S : demi-correction de Pk
+    function rh(k, v : natural) return integer is
+    begin
+        case k is
+            when 0 => return RH0(v); when 1 => return RH1(v); when 2 => return RH2(v); when 3 => return RH3(v);
+            when 4 => return RH4(v); when 5 => return RH5(v); when 6 => return RH6(v); when others => return RH7(v);
+        end case;
+    end function;
+    function rl(k, v : natural) return integer is
+    begin
+        case k is
+            when 0 => return RL0(v); when 1 => return RL1(v); when 2 => return RL2(v); when 3 => return RL3(v);
+            when 4 => return RL4(v); when 5 => return RL5(v); when 6 => return RL6(v); when others => return RL7(v);
+        end case;
     end function;
 begin
     bits <= b_r;
 
-    -- E : 8 échantillons, en → T : 8 pas de la boucle, bornage → S : 8 bits
+    -- comparaisons : les 255 tests Pk ≥ Dk(b) en parallèle, par le signe d'une
+    --   soustraction (chaîne de retenue)
+    g_k : for k in 0 to 7 generate
+        g_b : for b in 0 to 2 ** k - 1 generate
+            signal dif : signed(SD_W downto 0);
+        begin
+            dif <= resize(p(k), SD_W + 1) - to_signed(DK(2 ** k - 1 + b), SD_W + 1);
+            cmp(k)(b) <= not dif(SD_W);
+        end generate;
+    end generate;
+
+    -- E : comparaisons, X, U du groupe courant, groupe suivant → T : décisions
+    --   s0…s3 en chaîne, s4…s7 calculées pour les 16 débuts possibles puis
+    --   choisies ; corrections en deux demi-tables (s0…s3 tôt, s4…s7 tard)
+    --   → S : 8 bits, état suivant
     process (clk)
-        variable v1, v2, v3, n1, n2, n3, u : signed(W - 1 downto 0);
+        type s4_t is array (0 to 15) of std_logic_vector(4 to 7);
+        variable s       : std_logic_vector(0 to 7);
+        variable sv      : s4_t;
+        variable hi, lo  : natural range 0 to 15;
+        variable vb      : std_logic_vector(0 to 3);
+        variable t       : std_logic_vector(0 to 7);
+        variable y1, y2, y3, q : mot_t;
+        type cand_t is array (0 to 15) of mot_t;
+        variable c1, c2v, c3, cp : cand_t;
+        variable ovf     : boolean;
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
+                p <= (others => (others => '0'));
+                u1 <= (others => '0'); u2 <= (others => '0'); u3 <= (others => '0');
                 b_r <= (others => '0');
-            elsif en = '1' then
-                v1 := x1; v2 := x2; v3 := x3;
-                for k in 0 to 7 loop
-                    u := shift_right(resize(y(k), W), 5);
-                    if v3(W - 1) = '0' then
-                        b_r(7 - k) <= '1';
-                        n3 := v3 + v2 - A3; n2 := v2 + v1 - A2; n1 := v1 + u - A1;
-                    else
-                        b_r(7 - k) <= '0';
-                        n3 := v3 + v2 + A3; n2 := v2 + v1 + A2; n1 := v1 + u + A1;
-                    end if;
-                    v1 := n1; v2 := n2; v3 := n3;
+            elsif charge = '1' then
+                for k in 0 to 7 loop p(k) <= in_de(gs, k); end loop;
+                u1 <= gs(5); u2 <= gs(6); u3 <= gs(7);
+                x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
+            elsif pas = '1' then
+                -- s0…s3 : sk = Pk ≥ Dk(s0…sk−1)
+                s(0) := cmp(0)(0);
+                for k in 1 to 3 loop
+                    s(k) := cmp(k)(to_integer(unsigned(s(0 to k - 1))));
                 end loop;
-                x1 <= borne(v1); x2 <= borne(v2); x3 <= borne(v3);
+                hi := to_integer(unsigned(s(0 to 3)));
+                -- s4…s7 pour chacun des 16 débuts v, puis choix par s0…s3
+                for v in 0 to 15 loop
+                    vb := std_logic_vector(to_unsigned(v, 4));
+                    t(0 to 3) := vb;
+                    for k in 4 to 7 loop
+                        t(k) := cmp(k)(to_integer(unsigned(t(0 to k - 1))));
+                    end loop;
+                    sv(v) := t(4 to 7);
+                end loop;
+                s(4 to 7) := sv(hi);
+                lo := to_integer(unsigned(s(4 to 7)));
+                for k in 0 to 7 loop b_r(7 - k) <= s(k); end loop;
+                -- état suivant : Y = M⁸·X + U, X ← Y − T(s), Pk ← Qk − Rk(s)
+                ovf := abs (x1) > GARDE or abs (x2) > GARDE or abs (x3) > GARDE;
+                y1 := x1 + u1;
+                y2 := shift_left(x1, 3) + x2 + u2;
+                y3 := shift_left(x1, 5) - shift_left(x1, 2) + shift_left(x2, 3) + x3 + u3;
+                if ovf then
+                    x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
+                    for k in 0 to 7 loop p(k) <= in_de(gs, k); end loop;
+                else
+                    -- 16 candidats (un par motif s4…s7) calculés sans attendre s4…s7,
+                    --   la demi-correction de s0…s3 retranchée dès que s0…s3 sont connus,
+                    --   puis choix par s4…s7
+                    for v in 0 to 15 loop
+                        c1(v) := y1 - to_signed(TL1(v), SD_W) - to_signed(TH1(hi), SD_W);
+                        c2v(v) := y2 - to_signed(TL2(v), SD_W) - to_signed(TH2(hi), SD_W);
+                        c3(v) := y3 - to_signed(TL3(v), SD_W) - to_signed(TH3(hi), SD_W);
+                    end loop;
+                    x1 <= c1(lo); x2 <= c2v(lo); x3 <= c3(lo);
+                    for k in 0 to 7 loop
+                        q := resize(y1 * to_signed(c2(k), 6), SD_W) + resize(y2 * to_signed(k, 5), SD_W) + y3 + in_de(gs, k);
+                        for v in 0 to 15 loop
+                            cp(v) := q - to_signed(rl(k, v), SD_W) - to_signed(rh(k, hi), SD_W);
+                        end loop;
+                        p(k) <= cp(lo);
+                    end loop;
+                end if;
+                u1 <= gs(5); u2 <= gs(6); u3 <= gs(7);
             end if;
         end if;
     end process;
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- sigma_delta : sortie sigma-delta I/Q : CIC × 8 puis sigma-delta d'ordre 3 sur
---   chaque voie, 8 bits par cycle et par voie (640 Mbit/s à 80 MHz) vers les
---   sérialiseurs LVDS (à venir) ; référence bit à bit : fpga_test/sd_iq.bin
---   Interface : entrée : I, Q signés 16 bits (sortie de tx_backend) ;
---               sortie : m_i, m_q, 8 bits chacun, bit 7 émis en premier
---   Principe : pipeline à deux étages (CIC, sigma-delta) avancé d'un bloc quand
---              la sortie est libre ; les états n'évoluent que sur une donnée
---              valide
+-- sigma_delta : sortie sigma-delta I/Q depuis les symboles QPSK : fenêtre des
+--   13 derniers symboles, filtre SRRC à 640 MS/s par tables (sd_entree), puis
+--   sigma-delta d'ordre 3 par anticipation (sdm3) sur chaque voie, 8 bits par
+--   cycle et par voie (640 Mbit/s à 80 MHz) vers les sérialiseurs LVDS (à
+--   venir) ; référence bit à bit : fpga_test/sd_iq.bin
+--   Interface : entrée : un symbole (bits I et Q, 0 → +1) par transfert ;
+--               chaque symbole donne 8 cycles de sortie ; sortie : m_i, m_q,
+--               8 bits chacun, bit 7 émis en premier
+--   Principe : trois étages avancés ensemble : groupes (fenêtre, cycle q),
+--              apport des entrées (registré), boucle. La boucle traite le
+--              groupe g quand le groupe g + 1 est prêt (son In sert à l'état
+--              suivant). Avant le premier symbole, la fenêtre vaut +1.
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
 use work.dvbs_pkg.all;
@@ -3106,8 +3385,8 @@ entity sigma_delta is
         rst     : in  std_logic;
         s_valid : in  std_logic;
         s_ready : out std_logic;
-        s_i     : in  signed(15 downto 0);
-        s_q     : in  signed(15 downto 0);
+        s_i     : in  std_logic;
+        s_q     : in  std_logic;
         m_valid : out std_logic;
         m_ready : in  std_logic;
         m_i     : out std_logic_vector(7 downto 0);
@@ -3116,31 +3395,53 @@ entity sigma_delta is
 end entity sigma_delta;
 
 architecture rtl of sigma_delta is
-    signal v1, v2   : std_logic := '0';      -- étages CIC et sigma-delta occupés
-    signal avance   : std_logic;
-    signal e1, e2   : std_logic;
-    signal yi, yq   : ech8_t;
+    signal fen_i, fen_q : std_logic_vector(12 downto 0) := (others => '0');
+    signal q            : natural range 0 to 7 := 0;
+    signal a_ok         : std_logic := '0';     -- fenêtre chargée : groupes à produire
+    signal b_ok         : std_logic := '0';     -- apport des entrées registré
+    signal l_ok         : std_logic := '0';     -- boucle chargée
+    signal o_ok         : std_logic := '0';     -- bits en sortie
+    signal gi, gq       : sd_grp_t;
+    signal pas, charge, prend_b, produit, prend_s, q7 : std_logic;
 begin
-    avance  <= m_ready or not v2;
-    s_ready <= avance;
-    m_valid <= v2;
-    e1 <= avance and s_valid;
-    e2 <= avance and v1;
+    -- boucle : pas si groupe suivant prêt et sortie libre ; charge au départ
+    pas     <= l_ok and b_ok and (m_ready or not o_ok);
+    charge  <= (not l_ok) and b_ok;
+    prend_b <= pas or charge;
+    -- groupes : un par cycle si l'étage B est libre ou se vide
+    produit <= a_ok and ((not b_ok) or prend_b);
+    -- symbole : accepté quand aucun groupe n'est en attente ou au dernier cycle
+    q7      <= '1' when q = 7 else '0';
+    prend_s <= s_valid and ((not a_ok) or (produit and q7));
+    s_ready <= (not a_ok) or (produit and q7);
+    m_valid <= o_ok;
 
-    u_cic_i : entity work.cic8 port map (clk, rst, e1, s_i, yi);
-    u_cic_q : entity work.cic8 port map (clk, rst, e1, s_q, yq);
-    u_sdm_i : entity work.sdm3 port map (clk, rst, e2, yi, m_i);
-    u_sdm_q : entity work.sdm3 port map (clk, rst, e2, yq, m_q);
+    u_ei : entity work.sd_entree port map (clk, rst, produit, fen_i, q, gi);
+    u_eq : entity work.sd_entree port map (clk, rst, produit, fen_q, q, gq);
+    u_si : entity work.sdm3 port map (clk, rst, charge, pas, gi, m_i);
+    u_sq : entity work.sdm3 port map (clk, rst, charge, pas, gq, m_q);
 
-    -- E : s_valid, m_ready → T : occupation des deux étages → S : m_valid
+    -- E : symboles, avancées → T : fenêtres, cycle q, occupation des étages
+    --   → S : m_valid
     process (clk)
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                v1 <= '0'; v2 <= '0';
-            elsif avance = '1' then
-                v1 <= s_valid;
-                v2 <= v1;
+                fen_i <= (others => '0'); fen_q <= (others => '0');
+                q <= 0; a_ok <= '0'; b_ok <= '0'; l_ok <= '0'; o_ok <= '0';
+            else
+                if produit = '1' then
+                    q <= (q + 1) mod 8;
+                    if q = 7 then a_ok <= '0'; end if;
+                end if;
+                if prend_s = '1' then
+                    fen_i <= s_i & fen_i(12 downto 1);
+                    fen_q <= s_q & fen_q(12 downto 1);
+                    a_ok  <= '1';
+                end if;
+                if produit = '1' then b_ok <= '1'; elsif prend_b = '1' then b_ok <= '0'; end if;
+                if charge = '1' then l_ok <= '1'; end if;
+                if pas = '1' then o_ok <= '1'; elsif m_ready = '1' then o_ok <= '0'; end if;
             end if;
         end if;
     end process;

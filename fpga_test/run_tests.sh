@@ -7,7 +7,7 @@
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
 #  Date       : 2026-10-19
-#  Version    : 1.3
+#  Version    : 1.4
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -18,6 +18,8 @@
 #                                rangée), tailles es / ts / video des nouvelles références
 #               1.3  2026-10-19  banc sdm (sortie sigma-delta) ; cic8, sdm3, sigma_delta au
 #                                contrôle de synthèse
+#               1.4  2026-10-19  sortie sigma-delta par tables : sd_entree au contrôle de
+#                                synthèse (cic8 retiré)
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -69,7 +71,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx cic8 sdm3 sigma_delta; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else
