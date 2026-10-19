@@ -23,8 +23,8 @@ O="--std=08 --workdir=$W -frelaxed"
 # ordre d'analyse : paquetages, modules, bancs
 SRC="rtl/dvbs_pkg.vhd rtl/srrc_coef_pkg.vhd
      rtl/prbs_disp.vhd rtl/rs_enc.vhd rtl/interleaver.vhd rtl/conv_enc.vhd rtl/qpsk_map.vhd rtl/srrc_poly.vhd rtl/tx_backend.vhd
-     rtl/dct8x8_int.vhd rtl/quant_intra.vhd rtl/zigzag.vhd rtl/vlc_tab_pkg.vhd rtl/vlc_enc.vhd
-     tb/tb_pkg.vhd tb/tb_octets.vhd tb/tb_conv.vhd tb/tb_qpsk.vhd tb/tb_srrc.vhd tb/tb_backend.vhd tb/tb_bloc.vhd tb/tb_vlc.vhd"
+     rtl/dct8x8_int.vhd rtl/quant_intra.vhd rtl/zigzag.vhd rtl/vlc_tab_pkg.vhd rtl/vlc_enc.vhd rtl/bit_packer.vhd rtl/es_mux.vhd
+     tb/tb_pkg.vhd tb/tb_octets.vhd tb/tb_conv.vhd tb/tb_qpsk.vhd tb/tb_srrc.vhd tb/tb_backend.vhd tb/tb_bloc.vhd tb/tb_vlc.vhd tb/tb_es.vhd"
 for f in $SRC; do [ -f "$f" ] && $G -a $O "$f"; done
 
 # nom | entité | génériques
@@ -44,7 +44,8 @@ quant8|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0.bin -gG_CODE=8
 quant1|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0_c1.bin -gG_CODE=1
 quant31|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0_c31.bin -gG_CODE=31
 zigzag|tb_bloc|-gG_DUT=3 -gG_IN=q0.bin -gG_OUT=zz0.bin
-vlc|tb_vlc|"
+vlc|tb_vlc|
+es|tb_es|"
 
 OK=0; KO=0
 echo "$BANCS" | while IFS='|' read -r nom ent gen; do
@@ -60,7 +61,7 @@ done
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
     RTL=$(echo "$SRC" | tr ' ' '\n' | grep '^rtl/')
-    for top in tx_backend; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else

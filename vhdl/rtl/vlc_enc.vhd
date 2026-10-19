@@ -104,7 +104,7 @@ begin
                         if blk < 4 then pred := py; elsif blk = 4 then pred := pcb; else pred := pcr; end if;
                         diff := v - pred;
                         if blk < 4 then py := v; elsif blk = 4 then pcb := v; else pcr := v; end if;
-                        sz := taille(abs(diff));
+                        if diff < 0 then sz := taille(-diff); else sz := taille(diff); end if;
                         if blk < 4 then dct := DC_LUMA(sz); else dct := DC_CHROMA(sz); end if;
                         code := resize(unsigned(dct.code), 32);
                         lg := dct.lg;
@@ -122,7 +122,7 @@ begin
                         if v = 0 then
                             if nrun < 63 then nrun := nrun + 1; end if;
                         else
-                            niv := abs(v);
+                            if v < 0 then niv := -v; else niv := v; end if;
                             ac := ac_code(nrun, niv mod 2048);
                             if ac.trouve and niv < 2048 then
                                 code := shift_left(resize(unsigned(ac.code), 32), 1);
