@@ -6,11 +6,13 @@
   Objet      : Page 15 - Réception : du signal en bande de base au Transport Stream
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création : filtre adapté, Viterbi, désentrelacement,
                      Reed-Solomon, dérandomisation ; comparaison au TS de l'étape 08
+               1.1  2026-10-19  affichage au fil du traitement : signal en cours de lecture,
+                     constellation vivante, paquets TS reçus et comparés un à un
 ================================================================================
 -->
 <html lang="fr">
@@ -502,8 +504,9 @@ var CANAL = {
 
         /* rxRecevoir — E : lire(a, b) → Int16Array I/Q des échantillons [a, b) (zéros hors
            fichier), nombre d'échantillons, paramètres {sps, alpha, span, fec},
-           progression(texte, fraction) → S : {ts, mesures, constellation} */
-        async function rxRecevoir(lire, nEch, P, progression) {
+           progression(texte, fraction), vue facultative {debut(nP), signal(iq, n0),
+           constellation(points), paquets(ts, p0, p1)} → S : {ts, mesures, constellation} */
+        async function rxRecevoir(lire, nEch, P, progression, V) {
             const sps = P.sps, h = rxSRRC(P.alpha, P.span, sps), H = (h.length - 1) / 2, nT = h.length;
             const nSym = Math.floor(nEch / sps), M = {};
             // 1. instant d'échantillonnage : phase d'énergie maximale sur 4 096 symboles
@@ -528,27 +531,50 @@ var CANAL = {
             for (let k = 0; k < nA; k++) { const y = filtrer(ap, -H, k, tau); A += Math.abs(y[0]) + Math.abs(y[1]); }
             A /= 2 * nA;
             M.tau = tau; M.sps = sps; M.symboles = nSym;
-            // 2. filtre adapté, décisions souples, dépoinçonnage, Viterbi
+            // 2. au fil des tranches : filtre adapté, décisions souples, dépoinçonnage,
+            //    Viterbi, puis désentrelacement, RS et dérandomisation des paquets complets
             const [PX, PY] = RX_POINC[P.fec], Lp = PX.length;
             let parPeriode = 0; for (let k = 0; k < Lp; k++) { parPeriode += PX[k] + PY[k]; }
             const nSouple = 2 * nSym, nPas = Math.floor(nSouple / parPeriode) * Lp;
-            const vit = new RxViterbi(nPas);
+            const vit = new RxViterbi(nPas), y = vit.out;
+            const nOct = Math.floor((nPas - 6) / 8), nX = Math.max(0, nOct - 11 * 17 * 12), nP = Math.floor(nX / 204);
             const durs = new Uint8Array(Math.ceil(nSouple / 8));    // décisions fermes (contrôle du BER canal)
             const constel = new Float32Array(2 * Math.min(nSym, 3000));
-            let errQ = 0, nQ = 0, iS = 0;                           // souples consommées
+            const mask = rxMasquePRBS(), ts = new Uint8Array(nP * 188), mot = new Uint8Array(204);
+            let errQ = 0, nQ = 0, iS = 0, pFait = 0, syncKO = 0, corriges = 0, motsCorriges = 0, nonCorr = 0;
             const file = new Float64Array(16); let nf = 0, kp = 0;  // valeurs souples en attente
-            const tranche = 32768;
+            if (V && V.debut) { V.debut(nP); }
+            /* paquets — traite les paquets dont tous les octets sont sortis du Viterbi */
+            function paquets(nDispo) {
+                const p0 = pFait;
+                while (pFait < nP && (pFait + 1) * 204 + 2244 <= nDispo) {
+                    const p = pFait;
+                    for (let j = 0; j < 204; j++) { const q = p * 204 + j; mot[j] = y[q + (q % 12) * 204]; }   // désentrelacement
+                    if (mot[0] !== (p % 8 === 0 ? 0xB8 : 0x47)) { syncKO++; }
+                    const r = rxRS(mot, 0);
+                    if (r < 0) { nonCorr++; } else if (r > 0) { corriges += r; motsCorriges++; }
+                    const d = p * 188, mo = (p % 8) * 188;
+                    ts[d] = 0x47;
+                    for (let j = 1; j < 188; j++) { ts[d + j] = mot[j] ^ mask[mo + j]; }       // dérandomisation
+                    pFait++;
+                }
+                if (V && V.paquets && pFait > p0) { V.paquets(ts, p0, pFait); }
+            }
+            const tranche = 16384;
             for (let a = 0; a < nSym; a += tranche) {
                 const b = Math.min(nSym, a + tranche);
                 const a0 = a * sps + tau - H;
                 const buf = await lire(a0, b * sps + tau + H + 1);
+                const vue = V && V.constellation ? new Float32Array(2 * Math.min(400, b - a)) : null;
                 for (let k = a; k < b; k++) {
-                    const y = filtrer(buf, a0, k, tau);
-                    const yi = y[0] / A, yq = y[1] / A;
+                    const yv = filtrer(buf, a0, k, tau);
+                    const yi = yv[0] / A, yq = yv[1] / A;
                     if (k < 3000) { constel[2 * k] = yi; constel[2 * k + 1] = yq; }
+                    if (vue && k - a < 400) { vue[2 * (k - a)] = yi; vue[2 * (k - a) + 1] = yq; }
                     const ei = yi - (yi >= 0 ? 1 : -1), eq = yq - (yq >= 0 ? 1 : -1);
                     errQ += ei * ei + eq * eq; nQ += 2;
-                    for (const v of [yi, yq]) {
+                    for (let u = 0; u < 2; u++) {
+                        const v = u ? yq : yi;
                         if (v < 0) { durs[iS >> 3] |= 0x80 >> (iS & 7); }
                         iS++;
                         file[nf++] = v;
@@ -564,46 +590,29 @@ var CANAL = {
                         }
                     }
                 }
-                progression('démodulation et Viterbi : symbole ' + b.toLocaleString() + ' / ' + nSym.toLocaleString(), 0.85 * b / nSym);
+                paquets(vit.sortis >> 3);
+                if (V && V.signal) { V.signal(buf.subarray(2 * H, 2 * H + 2 * 400 * 1), a * sps); }
+                if (vue) { V.constellation(vue); }
+                progression('symboles ' + b.toLocaleString() + ' / ' + nSym.toLocaleString() + '  |  octets Viterbi ' + (vit.sortis >> 3).toLocaleString() +
+                    '  |  paquets TS ' + pFait.toLocaleString() + ' / ' + nP.toLocaleString(), b / nSym);
                 await new Promise(function (r) { setTimeout(r, 0); });
             }
             vit.terminer();
+            paquets(nOct);
             M.mer = 10 * Math.log10(nQ / errQ);
             // 3. BER avant Viterbi : on recode les bits décodés et on compare aux décisions fermes
             let berErr = 0, berN = 0;
             {
                 let reg = 0, q = 0;
                 for (let i = 0; i < vit.pas && q < iS; i++) {
-                    const bit = (vit.out[i >> 3] >> (7 - (i & 7))) & 1, s = (bit << 6) | reg, k2 = i % Lp;
-                    if (PX[k2]) { berErr += RX_PAR[s & RX_G1] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
-                    if (PY[k2] && q < iS) { berErr += RX_PAR[s & RX_G2] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
+                    const bit = (y[i >> 3] >> (7 - (i & 7))) & 1, sv = (bit << 6) | reg, k2 = i % Lp;
+                    if (PX[k2]) { berErr += RX_PAR[sv & RX_G1] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
+                    if (PY[k2] && q < iS) { berErr += RX_PAR[sv & RX_G2] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
                     reg = ((reg >> 1) | (bit << 5)) & 0x3F;
                 }
             }
-            M.berCanal = berErr / berN; M.bitsCanal = berN;
-            // 4. octets décodés (sans les 6 bits de vidage), désentrelacement
-            const nOct = Math.floor((vit.pas - 6) / 8), y = vit.out;
-            const nX = Math.max(0, nOct - 11 * 17 * 12), x = new Uint8Array(nX);
-            for (let s = 0; s < nX; s++) { x[s] = y[s + (s % 12) * 204]; }
-            M.octetsViterbi = nOct;
-            // 5. synchros et Reed-Solomon
-            const nP = Math.floor(nX / 204);
-            let syncKO = 0, corriges = 0, motsCorriges = 0, nonCorr = 0;
-            for (let p = 0; p < nP; p++) {
-                const s0 = x[p * 204];
-                if (s0 !== (p % 8 === 0 ? 0xB8 : 0x47)) { syncKO++; }
-                const r = rxRS(x, p * 204);
-                if (r < 0) { nonCorr++; } else if (r > 0) { corriges += r; motsCorriges++; }
-                if (p % 2000 === 0) { progression('Reed-Solomon : paquet ' + p.toLocaleString() + ' / ' + nP.toLocaleString(), 0.85 + 0.12 * p / nP); await new Promise(function (r2) { setTimeout(r2, 0); }); }
-            }
+            M.berCanal = berErr / berN; M.bitsCanal = berN; M.octetsViterbi = nOct;
             M.paquets = nP; M.syncKO = syncKO; M.rsOctets = corriges; M.rsMots = motsCorriges; M.rsEchecs = nonCorr;
-            // 6. dérandomisation
-            const mask = rxMasquePRBS(), ts = new Uint8Array(nP * 188);
-            for (let p = 0; p < nP; p++) {
-                const o = p * 204, d = p * 188, mo = (p % 8) * 188;
-                ts[d] = 0x47;
-                for (let j = 1; j < 188; j++) { ts[d + j] = x[o + j] ^ mask[mo + j]; }
-            }
             progression('terminé', 1);
             return { ts: ts, mesures: M, constellation: constel };
         }
@@ -654,7 +663,7 @@ var CANAL = {
                 Math.floor(nEch / sps).toLocaleString() + ' symboles' + (rs ? ' (' + (nEch / sps / rs / 1e6).toFixed(3) + ' s à ' + rs + ' MS/s)' : '');
         }
 
-        function dessinerSignal(iq, d0) {
+        function dessinerSignal(iq, d0, libelle) {
             const ctx = document.getElementById('canvasInput').getContext('2d');
             clearCanvas('canvasInput');
             let c = 1; for (let i = 0; i < iq.length; i++) { c = Math.max(c, Math.abs(iq[i])); }
@@ -665,7 +674,7 @@ var CANAL = {
                 ctx.stroke();
             });
             ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
-            ctx.fillText('I (cyan), Q (ambre) : ' + n + ' échantillons dès le n° ' + d0.toLocaleString(), 10, HEIGHT - 10);
+            ctx.fillText((libelle || 'I (cyan), Q (ambre) : ' + n + ' échantillons dès le n° ') + d0.toLocaleString(), 10, HEIGHT - 10);
         }
 
         function dessinerConstellation(pts) {
@@ -698,6 +707,52 @@ var CANAL = {
             ctx.fillText(n.toLocaleString() + ' paquets TS' + (ref ? ' — vert : identique, rouge : différent' : ''), 10, HEIGHT - 10);
         }
 
+        /* vue — affichages mis à jour à chaque tranche : signal en cours de lecture,
+           constellation (les points anciens s'estompent), paquets TS au fur et à mesure */
+        const vue = {
+            grille: null,
+            debut: function (nP) {
+                const cols = 64, rows = Math.ceil(nP / cols);
+                this.grille = { n: nP, cols: cols, ch: Math.max(1, Math.floor((HEIGHT - 40) / rows)), cw: (WIDTH - 20) / cols };
+                clearCanvas('canvasOutput'); clearCanvas('canvasProcess');
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                ctx.fillStyle = '#1d2a33';
+                for (let p = 0; p < nP; p++) { this.case(ctx, p); }
+                this.legende(0);
+            },
+            case: function (ctx, p) {
+                const g = this.grille;
+                ctx.fillRect(10 + (p % g.cols) * g.cw, 10 + Math.floor(p / g.cols) * g.ch, Math.max(1, g.cw - 0.5), Math.max(1, g.ch - (g.ch > 2 ? 1 : 0)));
+            },
+            legende: function (n) {
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                ctx.fillStyle = '#0e1418'; ctx.fillRect(0, HEIGHT - 24, WIDTH, 24);
+                ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+                ctx.fillText(n.toLocaleString() + ' / ' + this.grille.n.toLocaleString() + ' paquets TS' + (refTS ? ' — vert : identique, rouge : différent' : ''), 10, HEIGHT - 10);
+            },
+            signal: function (iq, n0) { dessinerSignal(iq, n0, 'I (cyan), Q (ambre) en cours de lecture : échantillon '); },
+            constellation: function (pts) {
+                const ctx = document.getElementById('canvasProcess').getContext('2d'), cx = WIDTH / 2, cy = HEIGHT / 2, k = 80;
+                ctx.fillStyle = 'rgba(14,20,24,0.25)'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                ctx.strokeStyle = '#26343e'; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(WIDTH, cy); ctx.moveTo(cx, 0); ctx.lineTo(cx, HEIGHT); ctx.stroke();
+                ctx.fillStyle = 'rgba(92,200,214,0.8)';
+                for (let i = 0; i < pts.length; i += 2) { ctx.fillRect(cx + k * pts[i] - 1, cy - k * pts[i + 1] - 1, 2, 2); }
+            },
+            paquets: function (ts, p0, p1) {
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                for (let p = p0; p < p1; p++) {
+                    let c = '#5cc8d6';
+                    if (refTS) {
+                        c = '#3fbf6f';
+                        if (p * 188 + 188 > refTS.length) { c = '#c0392b'; }
+                        else { for (let j = 0; j < 188; j++) { if (ts[p * 188 + j] !== refTS[p * 188 + j]) { c = '#c0392b'; break; } } }
+                    }
+                    ctx.fillStyle = c; this.case(ctx, p);
+                }
+                this.legende(p1);
+            }
+        };
+
         /* recevoir — lecture du .cs16 par tranches, chaîne de réception, comparaison */
         async function recevoir() {
             if (!fichierIQ) { return; }
@@ -712,16 +767,15 @@ var CANAL = {
             document.getElementById('btnRecevoir').disabled = true;
             const t0 = performance.now();
             let r;
-            try { r = await rxRecevoir(lire, nEch, P, etat); }
+            try { r = await rxRecevoir(lire, nEch, P, etat, vue); }
             catch (e) { alert('Erreur de réception : ' + e.message); document.getElementById('btnRecevoir').disabled = false; return; }
             recu = r.ts; mesures = r.mesures; mesures.duree = (performance.now() - t0) / 1000;
-            dessinerConstellation(r.constellation);
-            afficherBilan();
+            afficherBilan(true);
             document.getElementById('btnRecevoir').disabled = false;
             document.getElementById('btnExportTS').disabled = false;
         }
 
-        function afficherBilan() {
+        function afficherBilan(direct) {
             if (!recu) { return; }
             const M = mesures, ok = function (c) { return c ? '<span style="color:#5cd65c">✔</span>' : '<span style="color:#ff5c5c">✘</span>'; };
             let cmp = '• Pas de TS de référence : chargez la sortie de l\'étape 08 (📁 Référence) pour la comparaison.';
@@ -737,7 +791,7 @@ var CANAL = {
                 cmp = ok(tout) + ' Comparaison avec <code>' + refNom + '</code> : ' + id.toLocaleString() + ' paquets identiques sur ' + nr.toLocaleString() +
                     (tout ? ' — <b>flux restitué octet pour octet</b>' : ' (premier écart au paquet ' + premier + ', reçus ' + n.toLocaleString() + ')');
             }
-            dessinerPaquets(recu, refTS);
+            if (!direct) { dessinerPaquets(recu, refTS); }
             const gs = document.getElementById('globalStats');
             gs.style.display = 'block';
             gs.innerHTML = '<strong>Réception :</strong><br>' +
