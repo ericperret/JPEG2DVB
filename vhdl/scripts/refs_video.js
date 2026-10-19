@@ -7,12 +7,12 @@
                conteneurs .j2d de JPEG2DVB 2.x, en fichiers binaires simples
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : Node.js (aucune dépendance)
   Licence    : CC BY-NC 4.0
   Usage      : node refs_video.js DOSSIER
-               DOSSIER : sorties des étapes 01 à 06 d'un même traitement, DCT en
-               virgule fixe (étape 02) et régulation « fixe » (étape 03)
+               DOSSIER : sorties des étapes 01 à 08 d'un même traitement (étape 02
+               en DCT entière, étape 03 en régulation TM5, versions 3.0)
   Sorties    : ref/mb0.bin   macroblocs de l'image 0 (octets, 396 × 384)
                ref/dct0.bin  coefficients DCT de l'image 0 (int16 LE)
                ref/q0.bin    coefficients quantifiés, ordre naturel (int16 LE)
@@ -24,6 +24,8 @@
                ref/es_au.bin début de chaque image dans es.bin (uint32 LE)
                ref/ts_v.bin  Transport Stream de l'étape 08 (2.4) pour ces images
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  étapes 02 et 03 en 3.0 : DCT entière, régulation TM5
+                                (q0.bin quantifié avec le code de chaque rangée)
 ================================================================================
 */
 'use strict';
@@ -46,9 +48,9 @@ const PAR = 396 * 384;
 
 const mb = lireJ2D('macroblocs_ycbcr_420.j2d');
 const dct = lireJ2D('coefficients_dct.j2d');
-if (dct.meta.dct !== 'fixe') { throw new Error('étape 02 : la DCT doit être en virgule fixe'); }
+if (dct.meta.dct !== 'entiere') { throw new Error('étape 02 : DCT entière attendue (page 02 en 3.0)'); }
 const q = lireJ2D('coefficients_quantified.j2d');
-if (q.meta.rate.mode !== 'fixe') { throw new Error('étape 03 : la régulation doit être « fixe »'); }
+if (q.meta.rate.mode !== 'TM5') { throw new Error('étape 03 : régulation TM5 attendue (page 03 en 3.0)'); }
 const zz = lireJ2D('vectors_zigzag.j2d');
 const vlc = lireJ2D('bitstreams_vlc.j2d');
 const es = lireJ2D('elementary_stream.j2d');
@@ -63,4 +65,5 @@ ecrire('qcode.bin', vlc.t.qcode.slice());
 ecrire('es.bin', es.t.es.slice());
 ecrire('es_au.bin', es.t.au.slice());
 fs.copyFileSync(path.join(SRC, 'video.ts'), path.join(REF, 'ts_v.bin')); console.log('ts_v.bin    ', fs.statSync(path.join(REF, 'ts_v.bin')).size, 'octets');
-console.log('images :', mb.meta.frames, '— quantiser_scale_code :', q.meta.quantization.quantiser_scale_code, '— matrice :', q.meta.quantization.matrix);
+console.log('images :', mb.meta.frames, '— budget T :', q.meta.rate.T, '— codes :', Array.from(vlc.t.qcode).join(' '));
+for (let i = 0; i < vlc.t.qcode.length; i++) { if (vlc.t.qcode[i] !== q.t.qcode[i]) { throw new Error('codes des étapes 03 et 05 différents'); } }

@@ -6,12 +6,13 @@
 --               des macroblocs ; référence bit à bit : JPEG2DVB étape 06
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Interface  : entrée : mots VLC du codeur (s_code, s_lg, s_fin_mb sur le
 --               dernier mot de chaque macrobloc) ; slice_code : code d'échelle
---               de la slice à venir ; sortie : octets du flux élémentaire
+--               de la slice à venir, slice_ok : code prêt (l'en-tête de slice
+--               attend) ; sortie : octets du flux élémentaire
 --  Principe   : par image : [Sequence Header, Sequence Extension, GOP Header
 --               si n mod 12 = 0] + Picture Header (temporal_reference = n mod 12,
 --               vbv_delay 0xFFFF) + Picture Coding Extension, puis une slice par
@@ -19,6 +20,7 @@
 --               macrobloc « 1 » (adresse) « 1 » (intra) et ses bits VLC, alignement.
 --               Après G_IMAGES images (0 = sans fin) : sequence_end_code.
 --  Historique : 1.0  2026-10-19  création
+--               1.1  2026-10-19  slice_ok : attente du code de la régulation TM5
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -38,6 +40,7 @@ entity es_mux is
         clk        : in  std_logic;
         rst        : in  std_logic;
         slice_code : in  unsigned(4 downto 0);
+        slice_ok   : in  std_logic;
         s_valid    : in  std_logic;
         s_ready    : out std_logic;
         s_code     : in  std_logic_vector(31 downto 0);
@@ -111,7 +114,7 @@ begin
             when others    => null;
         end case;
     end process;
-    p_valid <= s_valid when etat = MB_DONNEES else '0' when etat = ARRET else '1';
+    p_valid <= s_valid when etat = MB_DONNEES else '0' when etat = ARRET else slice_ok when etat = SLICE2 else '1';
     p_code  <= s_code when etat = MB_DONNEES else w_code;
     p_lg    <= s_lg when etat = MB_DONNEES else to_unsigned(w_lg, 6);
     p_align <= '0' when etat = MB_DONNEES else w_align;
@@ -135,7 +138,7 @@ begin
                         etat <= MB_ENTETE;
                     end if;
                 end if;
-            elsif p_ready = '1' then
+            elsif p_ready = '1' and (etat /= SLICE2 or slice_ok = '1') then
                 case etat is
                     when EN_TETE =>
                         if i = 12 then

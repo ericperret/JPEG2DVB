@@ -3,13 +3,14 @@
 --  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
 --  Objet      : types et fonctions communs de la chaîne DVB-S (EN 300 421) :
 --               dispersion d'énergie, corps de Galois GF(2⁸), Reed-Solomon,
---               codeur convolutif
+--               codeur convolutif, budget de la régulation de débit
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 1.0
+--  Version    : 1.1
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC), bibliothèque ieee seule
 --  Licence    : CC BY-NC 4.0
 --  Historique : 1.0  2026-10-19  création
+--               1.1  2026-10-19  budget_image (régulation TM5)
 --==============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -52,9 +53,26 @@ package dvbs_pkg is
     constant CONV_G2 : std_logic_vector(6 downto 0) := "1011011";   -- 133 octal, sortie Y
     function parite(v : std_logic_vector) return std_logic;
 
+    ----------------------------------------------------------------------------
+    -- Budget de la régulation TM5 (étape 03) en bits par image :
+    -- T = ⌊Rs·2·fn·188·part / (fd·204·100·fps)⌋, Rs multiple de 100·fps
+    -- fec : 0 = 1/2, 1 = 2/3, 2 = 3/4, 3 = 5/6, 4 = 7/8 ; part en %
+    ----------------------------------------------------------------------------
+    function budget_image(rs, fec, part, fps : natural) return natural;
+
 end package dvbs_pkg;
 
 package body dvbs_pkg is
+    function budget_image(rs, fec, part, fps : natural) return natural is
+        type n_t is array (0 to 4) of natural;
+        constant FN : n_t := (1, 2, 3, 5, 7);
+        constant FD : n_t := (2, 3, 4, 6, 8);
+        constant A  : natural := rs / (100 * fps);
+    begin
+        assert rs mod (100 * fps) = 0 report "budget_image : Rs doit etre multiple de 100 x fps" severity failure;
+        return (A * 376 * FN(fec) * part) / (FD(fec) * 204);
+    end function;
+
 
     function prbs_pas(r : prbs_reg_t) return prbs_reg_t is
         variable f : std_logic;
