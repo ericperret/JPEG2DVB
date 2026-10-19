@@ -46,6 +46,18 @@ Aucune librairie, aucune installation. Interfaces en français.
 2. À chaque étape, lancer le traitement (en une fois ou pas à pas), puis cliquer sur **suivante ▶** : la sortie est transmise à l'étape suivante, qui la charge d'office (bandeau en haut de page). Le traitement reste toujours au clic.
 3. Les boutons **Exporter** / **Charger** restent disponibles pour garder chaque fichier intermédiaire ou reprendre depuis un fichier.
 
+## Flux multi-images (2.0)
+
+Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite aussi une séquence d'images.
+
+1. **Étape 01** : régler **Images** (1 à 1500) puis ⚙️ Convertir. L'image (ou la mire) est répétée avec un carré mobile (+8 pixels par image) et un compteur binaire de 12 bits. Au-delà d'une image, les sorties sont des conteneurs binaires `.j2d` (en-tête JSON + tableaux typés), chargés par les étapes suivantes comme les JSON.
+2. **Étape 02** : option **virgule fixe**, DCT entière (coefficients sur 13 bits, deux passes, 32 bits suffisent), référence bit à bit du FPGA, à ±1 de la DCT flottante arrondie.
+3. **Étape 03** : régulation de débit TM5 par slice (rangée de macroblocs). Le débit symbole, le FEC et la part vidéo du multiplex donnent la cible par image ; les bits sont comptés exactement (tables VLC, en-têtes, alignements) ; le quantiser_scale_code de chaque slice est écrit dans le flux.
+4. **Étapes 06 à 08** : suite d'images I (GOP fermé de 12, Sequence Header répété), un PES par image, PTS = ((n+1)/25 + 0,1 s) × 90 000, multiplexage à débit constant au débit utile du canal (9,216 Mbit/s à 10 MS/s en FEC 1/2) : PAT et PMT toutes les 80 ms, PCR toutes les 30 ms, paquets nuls. Contrôles affichés : tampon du décodeur, arrivée de chaque image avant son PTS, intervalles PCR et PSI.
+5. **Étapes 09 à 14** : flux entier traité par blocs. Étape 13 : symboles entiers ±1. Étape 14 : filtre SRRC (α = 0,35), coefficients en virgule fixe 16 bits en option, I/Q entiers 16 bits (format cs16) écrits au fil de l'eau sur le disque (Chrome, Edge) ou téléchargés à la fin.
+
+**Validation** : ffmpeg et ffprobe sans avertissement ; débit mesuré sur les PCR constant (9,215686 Mbit/s, écart inférieur à une période de 27 MHz) ; compteurs de continuité sans erreur. La bande de base de l'étape 14, démodulée par un récepteur DVB-S indépendant (leandvb), restitue à l'identique tous les paquets TS reçus (6 351 sur 6 367 pour une seconde de flux, les autres sont perdus pendant l'accrochage du récepteur). Chaîne fichier par fichier et chaîne « suivante ▶ » identiques.
+
 ## Historique
 
 | Version | Évolution |
@@ -56,6 +68,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 | 2026-10-18 | Pages 03, 04, 06 (1.4) : encadrés sur les écarts avec MPEG-2 (quantification séparée du DC, formule AC et quantiser_scale, balayage alterné, matrices transmises en ordre zigzag dans le Sequence Header) |
 | 2026-10-18 | Conformité MPEG-2 (pages 02, 03, 05, 06 → 1.5) : DCT sans centrage et en ordre naturel (les coefficients étaient transposés), quantification normative, tables VLC complètes B.12 / B.13 / B.14 avec prédicteurs DC par composante, matrice et code d'échelle écrits dans le flux. L'Elementary Stream et le Transport Stream se décodent désormais avec ffmpeg (PSNR 35,7 dB au facteur 50 ; 30,7 à 48,4 dB du facteur 10 à 100). Pages 07 à 12 (1.4) : export JSON des gros flux corrigé |
 | 2026-10-18 | Pages 07 et 08 (1.5) : horodatage ISO 13818-1 — PCR dans l'adaptation field du premier paquet vidéo (PID annoncé par la PMT), PTS = PCR + 0,7 s, indicateurs data_alignment et random_access, PTS 33 bits sans débordement 32 bits |
+| 2026-10-19 | Pages 2.0 : flux multi-images (conteneur .j2d, DCT en virgule fixe, régulation de débit TM5, multiplexage à débit constant, traitement par blocs, SRRC en virgule fixe et écriture au fil de l'eau). Conformité EN 300 421 corrigée sur trois étapes : générateur PRBS (initialisation et sortie), ordre des octets de parité Reed-Solomon, registre du codeur convolutif. Vérifié par démodulation avec un récepteur DVB-S indépendant |
 
 ## Licence
 

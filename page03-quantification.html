@@ -6,7 +6,7 @@
   Objet      : Page 03 - Quantification
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.5
+  Version    : 2.0
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -18,6 +18,8 @@
                1.4  2026-10-18  encadré « écarts / précisions norme MPEG-2 »
                1.5  2026-10-18  quantification conforme MPEG-2 : DC / 8, AC = 16·F /
                      (W·quantiser_scale), code d'échelle 1 à 31 et matrice transmis
+               2.0  2026-10-19  régulation de débit TM5 par slice (comptage exact des bits
+                     VLC), quantiser_scale_code par slice, flux multi-images .j2d
 ================================================================================
 -->
 <html lang="fr">
@@ -226,6 +228,18 @@
         .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
 </head>
 <body>
 <nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page02-dct.html">◀ 02 · DCT 8×8</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 03 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification" class="ici" aria-current="page"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page04-zigzag.html">04 · Zigzag ▶</a></nav>
@@ -249,6 +263,7 @@
         <span class="pipeline-step">Coeffs quantifiés</span>
     </div>
     
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"><label>Régulation <select id="rcMode" onchange="rcMajInfo()"><option value="debit" selected>débit (TM5, par slice)</option><option value="fixe">fixe (facteur qualité)</option></select></label><label>Rs <input id="rcRs" type="number" value="10" step="0.5" min="1" max="45" style="width:60px" onchange="rcMajInfo()"> MS/s</label><label>FEC <select id="rcFec" onchange="rcMajInfo()"><option>1/2</option><option>2/3</option><option>3/4</option><option>5/6</option><option>7/8</option></select></label><label>Part vidéo <input id="rcPart" type="number" value="95" min="50" max="99" style="width:50px" onchange="rcMajInfo()"> %</label><div id="rcInfo" style="font-family:monospace"></div></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
     <div class="canvas-container">
         <!-- CANVAS 1 : Coefficients DCT en entrée -->
         <div class="canvas-box">
@@ -256,7 +271,7 @@
             <canvas id="canvasInput" width="352" height="288"></canvas>
             <div class="controls">
                 <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
-                <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+                <input type="file" id="fileInput" accept=".json,.j2d" onchange="loadJSON(this.files)">
             </div>
             <div class="info">Coefficients DCT (valeurs flottantes)</div>
             <div id="statsInput" class="stats" style="display:none;"></div>
@@ -311,6 +326,176 @@
         <div id="blockComparison" class="stats" style="display:none; max-width: 800px; margin: 20px auto;"></div>
     </div>
 
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
     <script>
         // ============================================================
         // CONSTANTES
@@ -1000,6 +1185,184 @@
                 ctx.stroke();
             }
         }
+
+        // ============================================================
+        // FLUX MULTI-IMAGES (2.0) : quantification et régulation de débit
+        // ============================================================
+        // Mode « fixe » : quantiser_scale_code du facteur qualité, pour toutes les
+        // slices. Mode « débit » : régulation de Test Model 5 (ISO/IEC JTC1/SC29/WG11
+        // N0400, étape 2) au niveau de la slice, pour des images I :
+        //   r = 2·R/fps ; d0 = 10·r/31 ; au début de la slice s (macrobloc j = 22·s) :
+        //   d = d0 + B − T·j/396 ; code = round(31·d/r), borné à 1..31 ;
+        //   en fin d'image : d0 ← d0 + bits de l'image − T.
+        // Les bits sont comptés exactement comme les pages 04 à 06 les produiront :
+        // zigzag, prédicteurs DC remis à 128 à chaque slice, tables B.12 / B.13 / B.14,
+        // 2 bits d'en-tête par macrobloc, 38 bits d'en-tête et alignement par slice.
+        const RC_ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
+            12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+            35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51,
+            58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+        const RC_DC_Y = [3, 2, 2, 3, 3, 4, 5, 6, 7, 8, 9, 9];        // B.12 : longueur du code de taille
+        const RC_DC_C = [2, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 10];      // B.13
+        const RC_AC = (function () {                                // B.14 : longueur hors signe
+            const codes = {
+                '0,1': 2, '1,1': 3, '0,2': 4, '2,1': 4, '0,3': 5, '3,1': 5, '4,1': 5, '1,2': 6, '5,1': 6, '6,1': 6, '7,1': 6,
+                '0,4': 7, '2,2': 7, '8,1': 7, '9,1': 7, '0,5': 8, '0,6': 8, '1,3': 8, '3,2': 8, '10,1': 8, '11,1': 8, '12,1': 8, '13,1': 8,
+                '0,7': 10, '1,4': 10, '2,3': 10, '4,2': 10, '5,2': 10, '14,1': 10, '15,1': 10, '16,1': 10,
+                '0,8': 12, '0,9': 12, '0,10': 12, '0,11': 12, '1,5': 12, '2,4': 12, '3,3': 12, '4,3': 12, '6,2': 12, '7,2': 12, '8,2': 12,
+                '17,1': 12, '18,1': 12, '19,1': 12, '20,1': 12, '21,1': 12,
+                '0,12': 13, '0,13': 13, '0,14': 13, '0,15': 13, '1,6': 13, '1,7': 13, '2,5': 13, '3,4': 13, '5,3': 13, '9,2': 13, '10,2': 13,
+                '22,1': 13, '23,1': 13, '24,1': 13, '25,1': 13, '26,1': 13
+            };
+            for (let l = 16; l <= 31; l++) { codes['0,' + l] = 14; }
+            for (let l = 32; l <= 40; l++) { codes['0,' + l] = 15; }
+            for (let l = 8; l <= 14; l++) { codes['1,' + l] = 15; }
+            for (const k of ['1,15', '1,16', '1,17', '1,18', '6,3', '11,2', '12,2', '13,2', '14,2', '15,2', '16,2', '27,1', '28,1', '29,1', '30,1', '31,1']) { codes[k] = 16; }
+            return codes;
+        })();
+
+        /* rcQuantifier — E : bloc DCT, matrice W, code, sortie, décalage →
+           T : formules de quantizeBlock avec quantiser_scale = 2·code */
+        function rcQuantifier(src, so, W, code, out, oo) {
+            out[oo] = Math.max(0, Math.min(255, Math.round(src[so] / 8)));
+            const qs = 2 * code;
+            for (let i = 1; i < 64; i++) {
+                const q = 16 * src[so + i] / (W[i] * qs);
+                out[oo + i] = Math.max(-2047, Math.min(2047, Math.sign(q) * Math.round(Math.abs(q)))) || 0;
+            }
+        }
+
+        /* rcBits — E : bloc quantifié (ordre naturel), composante, prédicteurs →
+           T : différence DC, paires (run, level) en zigzag → S : nombre de bits */
+        function rcBits(q, o, comp, pred) {
+            const d = q[o] - pred[comp]; pred[comp] = q[o];
+            const ad = Math.abs(d), size = ad ? Math.floor(Math.log2(ad)) + 1 : 0;
+            let bits = (comp === 0 ? RC_DC_Y : RC_DC_C)[Math.min(size, 11)] + size;
+            let run = 0;
+            for (let i = 1; i < 64; i++) {
+                const v = q[o + RC_ZZ[i]];
+                if (v === 0) { run++; continue; }
+                const L = RC_AC[run + ',' + Math.abs(v)];
+                bits += L ? L + 1 : 24;
+                run = 0;
+            }
+            return bits + 2;   // EOB
+        }
+
+        let multi = null, multiQ = null, multiCode = null, multiBits = null, multiRC = null;
+
+        const _loadJSON1 = loadJSON;
+        loadJSON = function (files) {
+            if (!J2D.estJ2D(files)) { multi = null; multiQ = null; MULTI_UI.cacher(); _loadJSON1(files); return; }
+            J2D.charger(files[0], ['J2D_DCT_V2'], function (lu) {
+                multi = lu; multiQ = null;
+                inputData = { format: lu.meta.format, image: lu.meta.image };
+                dctMacroblocs = MB384.depaqueter(lu.t.coef, 0);
+                quantizedMacroblocs = []; quantized = false;
+                displayDCTInput(); displayMatrixVisualization(); clearCanvas('canvasOutput');
+                document.getElementById('btnQuantize').disabled = false;
+                document.getElementById('btnExport').disabled = true;
+                document.getElementById('btnDequant').disabled = true;
+                document.getElementById('zeroStats').style.display = 'none';
+                const st = document.getElementById('statsInput');
+                st.style.display = 'block';
+                st.innerHTML = '<strong>Flux chargé :</strong><br>• Images : ' + lu.meta.frames + ' (DCT ' + (lu.meta.dct || 'flottante') + ')<br>• Affichage : image 1';
+                rcMajInfo();
+                MULTI_UI.montrer('<b>' + lu.meta.frames + ' images</b> chargées. Choisissez le mode de régulation puis ⚙️.');
+            });
+        };
+
+        /* rcParams — E : réglages du panneau → S : débits et cible par image */
+        function rcParams() {
+            const rs = parseFloat(document.getElementById('rcRs').value) * 1e6;
+            const fec = document.getElementById('rcFec').value;
+            const part = parseFloat(document.getElementById('rcPart').value) / 100;
+            const fps = (multi && multi.meta.fps) || 25;
+            const Rts = CANAL.debitTS(rs, fec), R = Rts * part;
+            return { mode: document.getElementById('rcMode').value, Rs: rs, fec: fec, part: part, fps: fps,
+                     R_ts: Rts, R_video: R, T: R / fps, gop: 12 };
+        }
+        function rcMajInfo() {
+            const p = rcParams(), el = document.getElementById('rcInfo');
+            if (el) {
+                el.textContent = 'TS ' + (p.R_ts / 1e6).toFixed(3) + ' Mbit/s → vidéo ' + (p.R_video / 1e6).toFixed(3) +
+                    ' Mbit/s → cible ' + Math.round(p.T / 1000) + ' kbit par image';
+            }
+        }
+
+        const _quantize1 = quantize;
+        quantize = function () {
+            if (!multi) { _quantize1(); return; }
+            const N = multi.meta.frames, src = multi.t.coef, P = rcParams(), qp = getQuantParams(), W = qp.W;
+            const out = new Int16Array(N * MB384.PAR_IMAGE), codes = new Uint8Array(N * 18), bitsImg = new Uint32Array(N);
+            const custom = document.getElementById('matrixSelect').value !== 'mpeg2_intra';
+            const r = 2 * P.R_video / P.fps;
+            let d0 = 10 * r / 31, dMin = Infinity, dMax = -Infinity;
+            document.getElementById('btnQuantize').disabled = true;
+            J2D.boucle(N, function (f) {
+                let B = 0;
+                for (let s = 0; s < 18; s++) {
+                    let code = qp.quantiser_scale_code;
+                    if (P.mode === 'debit') {
+                        const d = d0 + B - P.T * (s * 22) / 396;
+                        dMin = Math.min(dMin, d); dMax = Math.max(dMax, d);
+                        code = Math.max(1, Math.min(31, Math.round(31 * d / r)));
+                    }
+                    codes[f * 18 + s] = code;
+                    const pred = [128, 128, 128];
+                    let sb = 38;
+                    for (let m = s * 22; m < s * 22 + 22; m++) {
+                        sb += 2;
+                        for (let k = 0; k < 6; k++) {
+                            const o = f * MB384.PAR_IMAGE + m * 384 + k * 64;
+                            rcQuantifier(src, o, W, code, out, o);
+                            sb += rcBits(out, o, k < 4 ? 0 : (k === 4 ? 1 : 2), pred);
+                        }
+                    }
+                    B += Math.ceil(sb / 8) * 8;
+                }
+                B += 136 + (f % P.gop === 0 ? 240 + (custom ? 512 : 0) : 0);
+                bitsImg[f] = B;
+                d0 = Math.max(0, d0 + B - P.T);   // pas de crédit : le bourrage TS absorbe le débit non utilisé
+            }, function (i, n) { MULTI_UI.progres(i, n, 'quantification image ' + i + ' / ' + n); }, function () {
+                multiQ = out; multiCode = codes; multiBits = bitsImg;
+                let s = 0, mn = Infinity, mx = 0, cmin = 31, cmax = 1, csum = 0;
+                for (let f = 0; f < N; f++) { s += bitsImg[f]; mn = Math.min(mn, bitsImg[f]); mx = Math.max(mx, bitsImg[f]); }
+                for (let i = 0; i < codes.length; i++) { cmin = Math.min(cmin, codes[i]); cmax = Math.max(cmax, codes[i]); csum += codes[i]; }
+                multiRC = Object.assign({}, P, { bitsMoyen: s / N, bitsMin: mn, bitsMax: mx, debitMesure: s / N * P.fps,
+                    codeMin: cmin, codeMax: cmax, codeMoyen: csum / codes.length });
+                quantizedMacroblocs = MB384.depaqueter(out, 0);
+                quantized = true;
+                displayQuantizedOutput();
+                document.getElementById('btnExport').disabled = false;
+                document.getElementById('btnDequant').disabled = false;
+                document.getElementById('btnQuantize').disabled = false;
+                MULTI_UI.montrer('<b>' + N + ' images</b> quantifiées, régulation <b>' + (P.mode === 'debit' ? 'débit (TM5, par slice)' : 'fixe') + '</b>.<br>' +
+                    '• Bits par image : moyenne ' + Math.round(s / N / 1000) + ' kbit (cible ' + Math.round(P.T / 1000) + '), min ' + Math.round(mn / 1000) + ', max ' + Math.round(mx / 1000) + '<br>' +
+                    '• Débit vidéo estimé : ' + (s / N * P.fps / 1e6).toFixed(3) + ' Mbit/s pour ' + (P.R_video / 1e6).toFixed(3) + ' Mbit/s alloués<br>' +
+                    '• quantiser_scale_code : ' + cmin + ' à ' + cmax + ' (moyenne ' + (csum / codes.length).toFixed(1) + ')' +
+                    (P.mode === 'debit' ? '<br>• Tampon virtuel TM5 : ' + Math.round(dMin / 1000) + ' à ' + Math.round(dMax / 1000) + ' kbit' : '') +
+                    '<br>Affichage : image 1. Export : <code>coefficients_quantified.j2d</code>.');
+            });
+        };
+
+        const _exportJSON1 = exportJSON;
+        exportJSON = function () {
+            if (!multi || !multiQ) { _exportJSON1(); return; }
+            const qp = getQuantParams();
+            J2D.telecharger(J2D.ecrire(Object.assign({}, multi.meta, {
+                format: 'J2D_QUANT_V2', source: multi.meta.format, date: new Date().toISOString(),
+                description: 'Coefficients quantifiés (ordre naturel), quantiser_scale_code par slice, flux multi-images',
+                quantization: {
+                    matrix: document.getElementById('matrixSelect').value, quality: qualityFactor,
+                    intra_dc_precision: 0, q_scale_type: 0,
+                    quantiser_scale_code: multiCode[0], quantiser_scale: 2 * multiCode[0],
+                    intra_quantiser_matrix: qp.W,
+                    default_matrix: document.getElementById('matrixSelect').value === 'mpeg2_intra'
+                },
+                rate: multiRC
+            }), { q: multiQ, qcode: multiCode, bitsEst: multiBits }), 'coefficients_quantified.j2d');
+        };
     </script>
 <nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page02-dct.html">◀ 02 · DCT 8×8</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 03 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification" class="ici" aria-current="page"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a></span></span><a href="page04-zigzag.html">04 · Zigzag ▶</a></nav>
 
@@ -1030,7 +1393,7 @@
     }
     var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
     URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
-    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.json$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
     try {
       var bs = document.querySelectorAll('button');
       for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }

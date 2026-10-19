@@ -6,7 +6,7 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 1.3
+  Version    : 2.0
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -15,6 +15,8 @@
                      cyan, marque AZS avec lien vers www.azs.fr, polices système)
                1.3  2026-10-18  passage automatique des données : « suivante ▶ »
                      garde la sortie et l'étape suivante la charge d'office
+               2.0  2026-10-19  flux entier filtré par blocs, coefficients en virgule fixe en
+                     option, I/Q 16 bits écrits au fil de l'eau sur le disque
 ================================================================================
 -->
 <html lang="fr">
@@ -98,6 +100,18 @@
         .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
         @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
     </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
 </head>
 <body>
 <nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
@@ -112,6 +126,7 @@
     </div>
     
     <!-- Paramètres -->
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"><label><input type="checkbox" id="srrcFixe" checked> coefficients en virgule fixe (16 bits)</label><label><input type="checkbox" id="ecrDisque" checked> écrire au fil de l'eau sur le disque</label></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
     <div class="param-row">
         <div class="param-item">
             <label>α (roll-off):</label>
@@ -149,7 +164,7 @@
         </div>
         <div class="param-item">
             <button onclick="document.getElementById('fileInput').click()">📁 Charger QPSK</button>
-            <input type="file" id="fileInput" accept=".json" onchange="loadJSON(this.files)">
+            <input type="file" id="fileInput" accept=".json,.j2d" onchange="loadJSON(this.files)">
         </div>
         <div class="param-item">
             <button id="btnFilter" onclick="applyFilter()" disabled>⚙️ FILTRER</button>
@@ -276,6 +291,176 @@
         </table>
     </div>
 
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
     <script>
         const WIDTH_SMALL = 280, HEIGHT_SMALL = 200;
         
@@ -1048,6 +1233,199 @@
                 ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
             });
         }
+
+        // ============================================================
+        // FLUX MULTI-IMAGES (2.0) : filtrage SRRC du flux entier
+        // ============================================================
+        // Entrée lue par tranches dans le fichier (jamais chargée en entier),
+        // sortie I/Q entière 16 bits, entrelacée, petit-boutiste (format « cs16 »
+        // des outils SDR), écrite au fil de l'eau.
+        // Forme polyphase : pour l'échantillon n·sps + r, y = Σd c_r[d]·s[n+d], avec
+        // c_r[d] = h[(d + span/2)·sps − r], symboles s = ±1. Échelle commune :
+        // E = 0,95 × 32 767 / max_r Σd |c_r[d]|, aucune saturation possible.
+        // Option virgule fixe : coefficients entiers round(E·h) sur 16 bits et
+        // accumulation entière exacte (référence bit à bit du FPGA). Sinon : calcul
+        // en Float64 puis arrondi de la sortie.
+        let multi = null, multiFichier = null, multiOff = 0, multiNs = 0, multiSortie = null, multiDesc = null;
+
+        /* lireEntete — E : fichier .j2d → S : {meta, off (octet du tampon iq)} sans tout lire */
+        async function lireEntete(f) {
+            const dv = new DataView(await f.slice(0, 8).arrayBuffer());
+            if (dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+            const L = dv.getUint32(4, true);
+            const meta = JSON.parse(new TextDecoder().decode(await f.slice(8, 8 + L).arrayBuffer()));
+            let off = Math.ceil((8 + L) / 8) * 8, iq = -1;
+            for (const d of meta.tampons) {
+                if (d.nom === 'iq') { iq = off; }
+                off += Math.ceil(d.n * ({ i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8 })[d.type] / 8) * 8;
+            }
+            return { meta: meta, off: iq };
+        }
+        /* lireSymboles — E : symboles [a, b) → S : Int8Array I, Q entrelacés (zéros hors flux) */
+        async function lireSymboles(a, b) {
+            const out = new Int8Array(2 * (b - a));
+            const a1 = Math.max(0, a), b1 = Math.min(multiNs, b);
+            if (b1 > a1) { out.set(new Int8Array(await multiFichier.slice(multiOff + 2 * a1, multiOff + 2 * b1).arrayBuffer()), 2 * (a1 - a)); }
+            return out;
+        }
+        /* polyphase — E : coefficients h, sps, span → S : {c[r][d], E} */
+        function polyphase(h, sps, span) {
+            const c = [];
+            let G = 0;
+            for (let r = 0; r < sps; r++) {
+                const v = new Float64Array(span + 1);
+                let s = 0;
+                for (let d = -span / 2; d <= span / 2; d++) {
+                    const j = (d + span / 2) * sps - r;
+                    v[d + span / 2] = (j >= 0 && j < h.length) ? h[j] : 0;
+                    s += Math.abs(v[d + span / 2]);
+                }
+                c.push(v); G = Math.max(G, s);
+            }
+            return { c: c, E: 0.95 * 32767 / G };
+        }
+        /* filtrer — E : symboles (avec span/2 de marge de chaque côté), nombre de
+           symboles utiles, coefficients (entiers ou réels), mode → S : Int16Array I/Q */
+        function filtrer(sym, n, c, sps, span, E, fixe) {
+            const out = new Int16Array(2 * n * sps), m = span / 2, T = span + 1;
+            let o = 0;
+            for (let k = 0; k < n; k++) {
+                const base = 2 * k;                         // symbole k − m dans sym
+                for (let r = 0; r < sps; r++) {
+                    const cr = c[r];
+                    let ai = 0, aq = 0;
+                    for (let d = 0; d < T; d++) {
+                        const w = cr[d];
+                        if (w === 0) { continue; }
+                        ai += w * sym[base + 2 * d]; aq += w * sym[base + 2 * d + 1];
+                    }
+                    if (fixe) { out[o++] = ai; out[o++] = aq; } else { out[o++] = Math.round(ai * E); out[o++] = Math.round(aq * E); }
+                }
+            }
+            return out;
+        }
+
+        const _loadJSON1 = loadJSON;
+        loadJSON = function (files) {
+            if (!J2D.estJ2D(files)) { multi = null; multiSortie = null; MULTI_UI.cacher(); _loadJSON1(files); return; }
+            const f = files[0];
+            lireEntete(f).then(async function (lu) {
+                if (lu.meta.format !== 'J2D_QPSK_V2' || lu.off < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : J2D_QPSK_V2).'); return; }
+                multi = lu; multiFichier = f; multiOff = lu.off; multiNs = lu.meta.qpsk.symbolCount; multiSortie = null;
+                document.getElementById('rolloff').value = '0.35';      // EN 300 421 §4.5
+                inputData = { format: lu.meta.format, image: lu.meta.image };
+                const ap = await lireSymboles(0, Math.min(multiNs, 4096));
+                symbolsI = []; symbolsQ = [];
+                for (let i = 0; i < ap.length; i += 2) { symbolsI.push(ap[i] / Math.SQRT2); symbolsQ.push(ap[i + 1] / Math.SQRT2); }
+                filtered = false;
+                displayInputConstellation(); updateFilter();
+                document.getElementById('btnFilter').disabled = false;
+                document.getElementById('btnExportJSON').disabled = true;
+                document.getElementById('btnExportBin').disabled = true;
+                const disque = document.getElementById('ecrDisque');
+                if (!window.showSaveFilePicker) { disque.checked = false; disque.disabled = true; }
+                const fs = (lu.meta.rate && lu.meta.rate.Rs) || 10e6;
+                document.getElementById('inputInfo').textContent = multiNs.toLocaleString() + ' symboles (' + (multiNs / fs).toFixed(3) + ' s)';
+                MULTI_UI.montrer('<b>' + multiNs.toLocaleString() + ' symboles</b> chargés, lus par tranches. α = 0,35 (EN 300 421). ⚙️ filtre le flux entier ; aperçu et mesures sur les 4 096 premiers symboles.');
+            }).catch(function (e) { alert('Erreur .j2d : ' + e.message); });
+        };
+
+        const _applyFilter1 = applyFilter;
+        applyFilter = async function () {
+            if (!multi) { _applyFilter1(); return; }
+            const alpha = parseFloat(document.getElementById('rolloff').value);
+            const span = parseInt(document.getElementById('span').value, 10);
+            const sps = parseInt(document.getElementById('sps').value, 10);
+            const fenetre = document.getElementById('window').value;
+            const fixe = document.getElementById('srrcFixe').checked;
+            const fs = (multi.meta.rate && multi.meta.rate.Rs) || 10e6;
+            const nom = 'dvbs_iq_s16_' + (fs / 1e6) + 'MSs_x' + sps + '_a' + alpha + '.cs16';
+            let sortie = null;
+            // le choix du fichier doit suivre le clic, avant tout calcul
+            if (document.getElementById('ecrDisque').checked) {
+                try {
+                    const h = await window.showSaveFilePicker({ suggestedName: nom });
+                    const w = await h.createWritable();
+                    sortie = { disque: true, ecrire: function (d) { return w.write(d); }, fermer: async function () { await w.close(); return null; } };
+                } catch (e) { if (e.name === 'AbortError') { return; } }
+            }
+            if (!sortie) {
+                const parts = [];
+                sortie = { disque: false, ecrire: async function (d) { parts.push(new Blob([d])); }, fermer: async function () { return new Blob(parts, { type: 'application/octet-stream' }); } };
+            }
+            document.getElementById('btnFilter').disabled = true;
+            _applyFilter1();                                 // aperçu Float64 1.x : 4 096 symboles
+            const h = filterCoeffs, pp = polyphase(h, sps, span), E = pp.E;
+            const cq = pp.c.map(function (v) { return Int32Array.from(v, function (x) { return Math.round(x * E); }); });
+            const coef = fixe ? cq : pp.c;
+            // écart virgule fixe / Float64 sur l'aperçu
+            const nA = Math.min(multiNs, 4096), symA = await lireSymboles(-span / 2, nA + span / 2);
+            const yf = filtrer(symA, nA, cq, sps, span, E, true);
+            let eMax = 0, pS = 0, pE = 0;
+            {
+                const m = span / 2, T = span + 1;
+                let o = 0;
+                for (let k = 0; k < nA; k++) {
+                    for (let r = 0; r < sps; r++) {
+                        for (let q = 0; q < 2; q++) {
+                            let a = 0;
+                            for (let d = 0; d < T; d++) { a += pp.c[r][d] * symA[2 * k + 2 * d + q]; }
+                            a *= E;
+                            const e = yf[o++] - a;
+                            eMax = Math.max(eMax, Math.abs(e)); pS += a * a; pE += e * e;
+                        }
+                    }
+                }
+            }
+            const tranche = 1 << 16, nT = Math.ceil(multiNs / tranche), t0 = performance.now();
+            let ecrits = 0, crete = 0;
+            try {
+                for (let t = 0; t < nT; t++) {
+                    const a = t * tranche, b = Math.min(multiNs, a + tranche);
+                    const sym = await lireSymboles(a - span / 2, b + span / 2);
+                    const y = filtrer(sym, b - a, coef, sps, span, E, fixe);
+                    for (let i = 0; i < y.length; i += 97) { crete = Math.max(crete, Math.abs(y[i])); }
+                    await sortie.ecrire(y);
+                    ecrits += y.length / 2;
+                    MULTI_UI.progres(t + 1, nT, 'SRRC : tranche ' + (t + 1) + ' / ' + nT + ', ' + ecrits.toLocaleString() + ' échantillons I/Q');
+                    await new Promise(function (r) { setTimeout(r, 0); });
+                }
+                multiSortie = await sortie.fermer();
+            } catch (e) { alert('Erreur d\'écriture : ' + e.message); document.getElementById('btnFilter').disabled = false; return; }
+            const duree = (performance.now() - t0) / 1000;
+            multiDesc = {
+                format: 'J2D_BB_S16_V2', description: 'Bande de base DVB-S : I/Q entiers 16 bits signés, entrelacés, petit-boutiste (cs16)',
+                date: new Date().toISOString(), source: multi.meta.format, fichier: nom, frames: multi.meta.frames, rate: multi.meta.rate,
+                srrc: { rolloff: alpha, span: span, samplesPerSymbol: sps, window: fenetre, taps: h.length, coefficients: fixe ? 'entiers 16 bits' : 'Float64',
+                        echelle: E, polyphase: cq.map(function (v) { return Array.from(v); }) },
+                symboles: multiNs, echantillons: ecrits, frequenceEchantillonnage: fs * sps,
+                quantification: { ecartMax: eMax, snr_dB: pE > 0 ? 10 * Math.log10(pS / pE) : Infinity }
+            };
+            document.getElementById('btnFilter').disabled = false;
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = !multiSortie;
+            const gs = document.getElementById('globalStats');
+            gs.style.display = 'block';
+            gs.innerHTML = '<strong>Filtrage SRRC du flux entier :</strong><br>' +
+                '• Symboles : ' + multiNs.toLocaleString() + ' → ' + ecrits.toLocaleString() + ' échantillons I/Q à ' + (fs * sps / 1e6) + ' MHz (' + (ecrits * 4 / 1048576).toFixed(1) + ' Mo)<br>' +
+                '• α = ' + alpha + ', span ' + span + ', ' + sps + ' éch./symbole, ' + h.length + ' coefficients, ' + (fixe ? 'virgule fixe 16 bits (accumulation entière exacte)' : 'Float64 arrondi en sortie') + '<br>' +
+                '• Échelle E = ' + E.toFixed(1) + ', crête mesurée ' + crete + ' / 32 767<br>' +
+                '• Virgule fixe / Float64 (aperçu) : écart max ' + eMax.toFixed(3) + ' LSB, SNR ' + (pE > 0 ? (10 * Math.log10(pS / pE)).toFixed(1) : '∞') + ' dB<br>' +
+                '• Durée de calcul : ' + duree.toFixed(1) + ' s' + (sortie.disque ? ', écrit au fil de l\'eau dans <code>' + nom + '</code>' : '');
+            MULTI_UI.montrer('<b>' + ecrits.toLocaleString() + ' échantillons I/Q</b> produits. ' + (sortie.disque ? 'Fichier écrit sur le disque.' : 'Export : 💾 I/Q binaire (<code>.cs16</code>) et 💾 JSON (description, coefficients).'));
+        };
+
+        const _exportJSON1 = exportJSON;
+        exportJSON = function () {
+            if (!multi || !multiDesc) { _exportJSON1(); return; }
+            J2D.telecharger(new Blob([JSON.stringify(multiDesc, null, 1)], { type: 'application/json' }), multiDesc.fichier.replace(/\.cs16$/, '.json'));
+        };
+
+        const _exportBinary1 = exportBinary;
+        exportBinary = function () {
+            if (!multi || !multiSortie) { _exportBinary1(); return; }
+            J2D.telecharger(multiSortie, multiDesc.fichier);
+        };
     </script>
 <nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
 
@@ -1078,7 +1456,7 @@
     }
     var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
     URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
-    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.json$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
     try {
       var bs = document.querySelectorAll('button');
       for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
