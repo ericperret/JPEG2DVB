@@ -6,13 +6,16 @@
   Objet      : Page 15 - Réception : du signal en bande de base au Transport Stream
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.1
+  Version    : 1.2
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création : filtre adapté, Viterbi, désentrelacement,
                      Reed-Solomon, dérandomisation ; comparaison au TS de l'étape 08
                1.1  2026-10-19  affichage au fil du traitement : signal en cours de lecture,
                      constellation vivante, paquets TS reçus et comparés un à un
+               1.2  2026-10-19  source (image d'origine) affichée, signal et référence
+                     contrôlés comme issus du même traitement ; .ts reçu nommé d'après
+                     la source ; correction : chargement d'office de la sortie de l'étape 14
 ================================================================================
 -->
 <html lang="fr">
@@ -234,6 +237,7 @@ var J2D = (function () {
             try {
                 var lu = lire(e.target.result);
                 if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
                 rappel(lu);
             } catch (err) { alert('Erreur .j2d : ' + err.message); }
         };
@@ -276,7 +280,20 @@ var MULTI_UI = {
         if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
         if (t) { t.textContent = texte || (i + ' / ' + n); }
     },
-    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
 };
 
 /* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
@@ -621,7 +638,7 @@ var CANAL = {
         // PAGE 15 : interface
         // ============================================================
         const WIDTH = 352, HEIGHT = 288;
-        let fichierIQ = null, refTS = null, refNom = '', recu = null, mesures = null;
+        let fichierIQ = null, refTS = null, refNom = '', refSource = null, sourceIQ = null, recu = null, mesures = null;
 
         window.onload = function () {
             ['canvasInput', 'canvasProcess', 'canvasOutput'].forEach(clearCanvas);
@@ -642,7 +659,9 @@ var CANAL = {
         async function chargerIQ(files) {
             if (!files || !files.length) { return; }
             fichierIQ = files[0]; recu = null;
-            const m = /_x(\d+)_a([0-9.]+)\.cs16$/i.exec(fichierIQ.name), r = /_([0-9.]+)MSs_/i.exec(fichierIQ.name);
+            // nom produit par l'étape 14 : dvbs_iq_s16_10MSs_x8_a0.35_<source>.cs16
+            const m = /_x(\d+)_a(\d+(?:\.\d+)?)(?:_([A-Za-z0-9-]+))?/i.exec(fichierIQ.name), r = /_([0-9.]+)MSs_/i.exec(fichierIQ.name);
+            sourceIQ = m && m[3] ? m[3] : null;
             if (m) {
                 document.getElementById('sps').value = m[1];
                 document.getElementById('rolloff').value = String(parseFloat(m[2]));
@@ -660,7 +679,9 @@ var CANAL = {
             const st = document.getElementById('statsInput');
             st.style.display = 'block';
             st.innerHTML = '<strong>Signal chargé :</strong><br>• ' + fichierIQ.name + '<br>• ' + nEch.toLocaleString() + ' échantillons I/Q, ' +
-                Math.floor(nEch / sps).toLocaleString() + ' symboles' + (rs ? ' (' + (nEch / sps / rs / 1e6).toFixed(3) + ' s à ' + rs + ' MS/s)' : '');
+                Math.floor(nEch / sps).toLocaleString() + ' symboles' + (rs ? ' (' + (nEch / sps / rs / 1e6).toFixed(3) + ' s à ' + rs + ' MS/s)' : '') +
+                '<br>• Source : ' + (sourceIQ ? '<b>' + sourceIQ + '</b>' : 'non indiquée dans le nom du fichier');
+            majRef();
         }
 
         function dessinerSignal(iq, d0, libelle) {
@@ -794,7 +815,7 @@ var CANAL = {
             if (!direct) { dessinerPaquets(recu, refTS); }
             const gs = document.getElementById('globalStats');
             gs.style.display = 'block';
-            gs.innerHTML = '<strong>Réception :</strong><br>' +
+            gs.innerHTML = '<strong>Réception :</strong><br>' + ligneSource() +
                 '• Instant d\'échantillonnage : phase ' + M.tau + ' / ' + M.sps + ' ; MER mesuré ' + M.mer.toFixed(1) + ' dB<br>' +
                 ok(M.berCanal === 0) + ' Viterbi : ' + M.octetsViterbi.toLocaleString() + ' octets ; bits du canal recodés à l\'identique : ' + (100 * (1 - M.berCanal)).toFixed(4) + ' %<br>' +
                 ok(M.syncKO === 0) + ' Désentrelacement : ' + M.paquets.toLocaleString() + ' paquets de 204 octets, synchros 0x47 / 0xB8 à leur place (' + M.syncKO + ' écart)<br>' +
@@ -806,20 +827,29 @@ var CANAL = {
         /* référence : fichier .ts, .j2d (J2D_TS_V2) ou .json (MPEG2_TS_V1) de l'étape 08 */
         async function lireReference(nom, blob) {
             const buf = await blob.arrayBuffer();
-            if (/\.j2d$/i.test(nom)) { const lu = J2D.lire(buf); if (lu.meta.format !== 'J2D_TS_V2') { throw new Error('format ' + lu.meta.format); } return new Uint8Array(lu.t.ts); }
+            if (/\.j2d$/i.test(nom)) { const lu = J2D.lire(buf); if (lu.meta.format !== 'J2D_TS_V2') { throw new Error('format ' + lu.meta.format); } return { ts: new Uint8Array(lu.t.ts), source: lu.meta.origine || null }; }
             if (/\.json$/i.test(nom)) {
                 const o = JSON.parse(new TextDecoder().decode(buf)); if (o.format !== 'MPEG2_TS_V1') { throw new Error('format ' + o.format); }
-                const s = atob(o.binary), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { u[i] = s.charCodeAt(i); } return u;
+                const s = atob(o.binary), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { u[i] = s.charCodeAt(i); } return { ts: u, source: null };
             }
-            return new Uint8Array(buf);
+            return { ts: new Uint8Array(buf), source: null };
         }
         async function chargerReference(files) {
             if (!files || !files.length) { return; }
-            try { refTS = await lireReference(files[0].name, files[0]); refNom = files[0].name; majRef(); afficherBilan(); }
+            try { const l = await lireReference(files[0].name, files[0]); refTS = l.ts; refSource = l.source; refNom = files[0].name; majRef(); afficherBilan(); }
             catch (e) { alert('Référence non reconnue : ' + e.message); }
         }
         function majRef() {
-            document.getElementById('refInfo').textContent = refTS ? 'Référence : ' + refNom + ' (' + (refTS.length / 188).toLocaleString() + ' paquets)' : 'Référence : aucune';
+            const el = document.getElementById('refInfo');
+            if (!refTS) { el.textContent = 'Référence : aucune'; return; }
+            el.innerHTML = 'Référence : ' + refNom + ' (' + (refTS.length / 188).toLocaleString() + ' paquets)' +
+                (refSource ? ' — source <b>' + refSource.nom + '</b>' : '') + (sourcesDifferentes() ? ' <span style="color:#ff5c5c">✘ autre source que le signal (' + sourceIQ + ')</span>' : '');
+        }
+        function sourcesDifferentes() { return !!(refSource && sourceIQ && MULTI_UI.etiquette(refSource.nom) !== sourceIQ); }
+        function ligneSource() {
+            if (!refSource && !sourceIQ) { return '• Source : non indiquée<br>'; }
+            if (sourcesDifferentes()) { return '<span style="color:#ff5c5c">✘</span> Source du signal : <b>' + sourceIQ + '</b> ; source de la référence : <b>' + refSource.nom + '</b> — fichiers de deux traitements différents<br>'; }
+            return '• Source : <b>' + (refSource ? MULTI_UI.texteSource(refSource) : sourceIQ) + '</b><br>';
         }
         /* sortie de l'étape 08 gardée par « suivante ▶ » dans la session en cours */
         function chargerReferenceSession() {
@@ -834,7 +864,7 @@ var CANAL = {
                     q.onsuccess = async function () {
                         const rec = q.result;
                         if (!rec || rec.sid !== sid || refTS) { return; }
-                        try { refTS = await lireReference(rec.name, rec.data); refNom = rec.name + ' (étape 08, session)'; majRef(); afficherBilan(); } catch (e) {}
+                        try { const l = await lireReference(rec.name, rec.data); refTS = l.ts; refSource = l.source; refNom = rec.name + ' (étape 08, session)'; majRef(); afficherBilan(); } catch (e) {}
                     };
                 };
             } catch (e) {}
@@ -842,7 +872,9 @@ var CANAL = {
 
         function exportTS() {
             if (!recu) { return; }
-            J2D.telecharger(new Blob([recu], { type: 'video/mp2t' }), 'recu.ts');
+            // nom propre au traitement : un ancien « recu.ts » du dossier de téléchargement ne peut pas être repris par erreur
+            const tag = sourceIQ || (refSource ? MULTI_UI.etiquette(refSource.nom) : 'flux');
+            J2D.telecharger(new Blob([recu], { type: 'video/mp2t' }), 'recu_' + tag + '.ts');
         }
     </script>
 <nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page14-srrc-v2.html">◀ 14 · Filtre SRRC</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 15 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
@@ -853,7 +885,7 @@ var CANAL = {
    l'étape suivante via son propre « Charger ». Le traitement reste au clic.
    Les boutons Exporter / Charger restent disponibles. */
 (function () {
-  var N = 14, NEXT = 'page15-reception.html';
+  var N = 15, NEXT = null;
   var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
   function base(fn) {
     try {

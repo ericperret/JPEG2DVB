@@ -6,7 +6,7 @@
   Objet      : Page 02 - DCT 8×8
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.2
+  Version    : 2.3
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -22,6 +22,7 @@
                      flux multi-images .j2d
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
+               2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
 ================================================================================
 -->
 <html lang="fr">
@@ -352,6 +353,7 @@ var J2D = (function () {
             try {
                 var lu = lire(e.target.result);
                 if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
                 rappel(lu);
             } catch (err) { alert('Erreur .j2d : ' + err.message); }
         };
@@ -394,7 +396,20 @@ var MULTI_UI = {
         if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
         if (t) { t.textContent = texte || (i + ' / ' + n); }
     },
-    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
 };
 
 /* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs

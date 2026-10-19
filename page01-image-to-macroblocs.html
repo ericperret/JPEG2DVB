@@ -6,7 +6,7 @@
   Objet      : Page 01 - Image → YCbCr → Macroblocs
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.3
+  Version    : 2.4
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -20,6 +20,8 @@
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  pré-réglage projet : 25 images (1 s de flux) par défaut
                2.3  2026-10-19  étape 15 (Réception) ajoutée à la navigation
+               2.4  2026-10-19  source (nom de l'image chargée, ou « mire ») inscrite dans le flux
+                     .j2d et affichée à chaque étape jusqu'à la page 15
 ================================================================================
 -->
 <html lang="fr">
@@ -317,6 +319,7 @@ var J2D = (function () {
             try {
                 var lu = lire(e.target.result);
                 if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
                 rappel(lu);
             } catch (err) { alert('Erreur .j2d : ' + err.message); }
         };
@@ -359,7 +362,20 @@ var MULTI_UI = {
         if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
         if (t) { t.textContent = texte || (i + ' / ' + n); }
     },
-    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
 };
 
 /* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
@@ -1127,6 +1143,13 @@ var CANAL = {
         // avançant de 8 pixels par image, compteur d'images binaire sur 12 bits.
         let multiImages = null;   // Uint8Array N × 396 × 384, ou null (mode une image)
         let multiN = 1;
+        // nom de l'image d'origine, suivi jusqu'à la page 15 (meta.origine)
+        let sourceNom = 'mire';
+        const _loadImage1 = loadImage;
+        loadImage = function (files) { if (files && files[0]) { sourceNom = files[0].name; } _loadImage1(files); };
+        const _generateMire1 = generateMire;
+        generateMire = function () { sourceNom = 'mire'; _generateMire1(); };
+        function sourceMeta() { return { nom: sourceNom, images: multiN, mobile: document.getElementById('mobile').checked, date: new Date().toISOString() }; }
 
         /* incruster — E : pixels RGBA (copie), numéro d'image → T : carré mobile
            (bord noir 2 px, intérieur blanc) en y = 176, x = 8n modulo 320 ;
@@ -1209,6 +1232,7 @@ var CANAL = {
                 paqueterPlans(plansDepuisRGBA(px), buf, n);
             }, function (i, n) { MULTI_UI.progres(i, n, 'image ' + i + ' / ' + n); }, function () {
                 multiImages = buf;
+                MULTI_UI.source(sourceMeta());
                 document.getElementById('btnExport').disabled = false;
                 MULTI_UI.montrer('<b>' + multiN + ' images</b> 352 × 288 en 4:2:0 (' + (multiN / 25).toFixed(2) + ' s à 25 images/s), ' +
                     (buf.length / 1048576).toFixed(1) + ' Mo. ' + (mobile ? 'Élément mobile : carré 32×32 (+8 px par image) et compteur binaire 12 bits.' : 'Images identiques.') +
@@ -1225,6 +1249,7 @@ var CANAL = {
                 date: new Date().toISOString(),
                 image: { width: WIDTH, height: HEIGHT, colorSpace: 'YCbCr', subsampling: '4:2:0' },
                 frames: multiN, fps: 25,
+                origine: sourceMeta(),
                 mobile: document.getElementById('mobile').checked,
                 disposition: '396 macroblocs × (Y0, Y1, Y2, Y3, Cb, Cr) × 64 valeurs'
             }, { mb: multiImages }), 'macroblocs_ycbcr_420.j2d');

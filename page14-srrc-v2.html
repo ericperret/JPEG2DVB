@@ -6,7 +6,7 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.3
+  Version    : 2.4
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -22,6 +22,8 @@
                      numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  pré-réglage projet : α = 0,35 (EN 300 421) par défaut
                2.3  2026-10-19  suivante ▶ vers l'étape 15 (Réception), qui reçoit le .cs16
+               2.4  2026-10-19  bandeau « Source » ; nom de la source repris dans le nom du .cs16
+                     (contrôle en page 15)
 ================================================================================
 -->
 <html lang="fr">
@@ -356,6 +358,7 @@ var J2D = (function () {
             try {
                 var lu = lire(e.target.result);
                 if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
                 rappel(lu);
             } catch (err) { alert('Erreur .j2d : ' + err.message); }
         };
@@ -398,7 +401,20 @@ var MULTI_UI = {
         if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
         if (t) { t.textContent = texte || (i + ' / ' + n); }
     },
-    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } }
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
 };
 
 /* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
@@ -1323,6 +1339,7 @@ var CANAL = {
             lireEntete(f).then(async function (lu) {
                 if (lu.meta.format !== 'J2D_QPSK_V2' || lu.off < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : J2D_QPSK_V2).'); return; }
                 multi = lu; multiFichier = f; multiOff = lu.off; multiNs = lu.meta.qpsk.symbolCount; multiSortie = null;
+                MULTI_UI.source(lu.meta.origine);
                 document.getElementById('rolloff').value = '0.35';      // EN 300 421 §4.5
                 inputData = { format: lu.meta.format, image: lu.meta.image };
                 const ap = await lireSymboles(0, Math.min(multiNs, 4096));
@@ -1351,7 +1368,7 @@ var CANAL = {
             const fenetre = document.getElementById('window').value;
             const fixe = document.getElementById('srrcFixe').checked;
             const fs = (multi.meta.rate && multi.meta.rate.Rs) || 10e6;
-            const nom = 'dvbs_iq_s16_' + (fs / 1e6) + 'MSs_x' + sps + '_a' + alpha + '.cs16';
+            const nom = 'dvbs_iq_s16_' + (fs / 1e6) + 'MSs_x' + sps + '_a' + alpha + (multi.meta.origine ? '_' + MULTI_UI.etiquette(multi.meta.origine.nom) : '') + '.cs16';
             let sortie = null;
             // le choix du fichier doit suivre le clic, avant tout calcul
             if (document.getElementById('ecrDisque').checked) {
@@ -1407,7 +1424,7 @@ var CANAL = {
             const duree = (performance.now() - t0) / 1000;
             multiDesc = {
                 format: 'J2D_BB_S16_V2', description: 'Bande de base DVB-S : I/Q entiers 16 bits signés, entrelacés, petit-boutiste (cs16)',
-                date: new Date().toISOString(), source: multi.meta.format, fichier: nom, frames: multi.meta.frames, rate: multi.meta.rate,
+                date: new Date().toISOString(), source: multi.meta.format, origine: multi.meta.origine, fichier: nom, frames: multi.meta.frames, rate: multi.meta.rate,
                 srrc: { rolloff: alpha, span: span, samplesPerSymbol: sps, window: fenetre, taps: h.length, coefficients: fixe ? 'entiers 16 bits' : 'Float64',
                         echelle: E, polyphase: cq.map(function (v) { return Array.from(v); }) },
                 symboles: multiNs, echantillons: ecrits, frequenceEchantillonnage: fs * sps,
