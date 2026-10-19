@@ -49,3 +49,15 @@ echo "$BANCS" | while IFS='|' read -r nom ent gen; do
     [ -z "$L" ] && L="ECHEC : pas de verdict — $(echo "$R" | tail -1)"
     printf '%-7s %s\n' "$nom" "$L"
 done
+
+# contrôle de synthétisabilité (GHDL --synth) des modules de la carte
+if [ -z "$1" ] || [ "$1" = "synth" ]; then
+    RTL=$(echo "$SRC" | tr ' ' '\n' | grep '^rtl/')
+    for top in tx_backend; do
+        if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
+            echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
+        else
+            echo "synth   ECHEC $top : voir $W/$top.synth.log"
+        fi
+    done
+fi
