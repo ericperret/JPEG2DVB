@@ -30,7 +30,11 @@ for f in $SRC; do [ -f "$f" ] && $G -a $O "$f"; done
 BANCS="prbs|tb_octets|-gG_DUT=1 -gG_IN=ts.bin -gG_OUT=rand.bin -gG_N_IN=12032 -gG_N_OUT=12032 -gG_PKT=188
 rs|tb_octets|-gG_DUT=2 -gG_IN=rand.bin -gG_OUT=rs.bin -gG_N_IN=12032 -gG_N_OUT=13056 -gG_PKT=188
 inter|tb_octets|-gG_DUT=3 -gG_IN=rs.bin -gG_OUT=inter.bin -gG_N_IN=13056 -gG_N_OUT=13056 -gG_PKT=204
-conv|tb_conv|
+conv12|tb_conv|
+conv23|tb_conv|-gG_FEC=1 -gG_OUT=conv23.bin -gG_N_OUT=19584
+conv34|tb_conv|-gG_FEC=2 -gG_OUT=conv34.bin -gG_N_OUT=17408
+conv56|tb_conv|-gG_FEC=3 -gG_OUT=conv56.bin -gG_N_OUT=15667
+conv78|tb_conv|-gG_FEC=4 -gG_OUT=conv78.bin -gG_N_OUT=14921
 qpsk|tb_qpsk|
 srrc|tb_srrc|
 chaine|tb_backend|"
