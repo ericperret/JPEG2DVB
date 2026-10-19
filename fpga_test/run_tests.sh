@@ -7,7 +7,7 @@
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
 #  Date       : 2026-10-19
-#  Version    : 1.2
+#  Version    : 1.3
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -16,6 +16,8 @@
 #                                jpeg2dvb_fpga_tb.vhd ; rate_ctrl au contrôle de synthèse
 #               1.2  2026-10-19  régulation TM5 : banc rc, quant8 à G_CODE = 0 (code par
 #                                rangée), tailles es / ts / video des nouvelles références
+#               1.3  2026-10-19  banc sdm (sortie sigma-delta) ; cic8, sdm3, sigma_delta au
+#                                contrôle de synthèse
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -52,7 +54,8 @@ rc|tb_rc|
 ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=115224 -gG_N_OUT=183488 -gG_PKT=188
 mire|tb_mire|
 video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
-emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000"
+emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000
+sdm|tb_sdm|"
 
 OK=0; KO=0
 echo "$BANCS" | while IFS='|' read -r nom ent gen; do
@@ -66,7 +69,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx cic8 sdm3 sigma_delta; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else

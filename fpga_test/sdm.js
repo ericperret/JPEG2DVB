@@ -10,12 +10,14 @@
                bande, bruit hors bande, marge de stabilité)
   Auteur     : Eric PERRET
   Date       : 2026-10-19
-  Version    : 1.0
+  Version    : 1.1
   Plateforme : Node.js, modules intégrés seulement
   Usage      : node sdm.js                  → iq.cs16 → sd_iq.bin
                node sdm.js ENTREE.cs16 SORTIE.bin
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
+               1.1  2026-10-19  bornage des états une fois par groupe de 8 bits (fin
+                     de cycle à 80 MHz, comme le VHDL déroulé) ; flux inchangé
 
   Arithmétique (entière, identique au VHDL) :
     CIC × 8, ordre 3 : 3 peignes à 80 MS/s, insertion de 7 zéros, 3 intégrateurs
@@ -24,7 +26,8 @@
       x3 ← x3 + x2 − s·FS
       x2 ← x2 + x1 − s·3FS/8
       x1 ← x1 + (y >> 5) − s·FS/16     (y : sortie du CIC ; >> 5 = ÷ 2 puis ÷ 16)
-      chaque état borné à ±(2²³ − 1) (24 bits signés) ; s se lit sur l'ancien x3.
+      s se lit sur l'ancien x3 ; après chaque groupe de 8 bits (un échantillon
+      d'entrée), chaque état est borné à ±(2²³ − 1) (24 bits signés).
     Bit émis : 1 pour s = +1, 0 pour s = −1.
   Format de SORTIE : pour chaque échantillon d'entrée, un octet I puis un octet
     Q ; le bit 7 est le premier bit émis (8 bits = 8 instants à 640 MHz).
@@ -67,7 +70,8 @@ function cic(x) {
     return y;
 }
 
-/* sdm — E : voie à 640 MS/s → T : boucle CIFB d'ordre 3, états bornés → S : bits
+/* sdm — E : voie à 640 MS/s → T : boucle CIFB d'ordre 3, états bornés en fin
+   de groupe de 8 → S : bits
    (+1 / −1), maxima des états, nombre de bornages */
 function sdm(y) {
     const v = new Int8Array(y.length), m = [0, 0, 0];
@@ -77,7 +81,8 @@ function sdm(y) {
         const s = x3 >= 0 ? 1 : -1;
         v[n] = s;
         const n3 = x3 + x2 - s * A3, n2 = x2 + x1 - s * A2, n1 = x1 + (y[n] >> SH) - s * A1;
-        x3 = borne(n3); x2 = borne(n2); x1 = borne(n1);
+        x3 = n3; x2 = n2; x1 = n1;
+        if (n % R === R - 1) { x3 = borne(x3); x2 = borne(x2); x1 = borne(x1); }
         m[0] = Math.max(m[0], Math.abs(x1)); m[1] = Math.max(m[1], Math.abs(x2)); m[2] = Math.max(m[2], Math.abs(x3));
     }
     return { v: v, m: m, bornes: bornes };

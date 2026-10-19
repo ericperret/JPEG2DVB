@@ -6,10 +6,10 @@
 --               étape de JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 2.0
+--  Version    : 2.1
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 22 unités, dans l'ordre d'analyse :
+--  Contenu    : 25 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               mire_pkg      image de la mire (généré par mire.js)
@@ -32,6 +32,9 @@
 --               mire_gen      mire animée (étape 01)
 --               video_enc     tête de chaîne, mire → TS (01 à 08)
 --               dvbs_tx       émetteur complet, mire → I/Q
+--               cic8          interpolation × 8, CIC d'ordre 3
+--               sdm3          sigma-delta 1 bit d'ordre 3, 8 bits par cycle
+--               sigma_delta   sortie sigma-delta I/Q (CIC + sigma-delta)
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (context
 --               jpeg2dvb_ctx) ; fonctions et process commentés
 --               « E : entrées → T : traitement → S : sorties » ; les paquetages
@@ -48,6 +51,8 @@
 --                      d'entrée code
 --               2.0  2026-10-19  fusion propre : cartouche unique, context
 --                                commun, commentaires de fonction
+--               2.1  2026-10-19  sortie sigma-delta (point P3) : cic8, sdm3,
+--                                sigma_delta ; dvbs_pkg 1.2 : type ech8_t
 --==============================================================================
 
 -- clauses communes à toutes les unités (une ligne « context » par unité)
@@ -100,6 +105,11 @@ package dvbs_pkg is
     constant CONV_G1 : std_logic_vector(6 downto 0) := "1111001";   -- 171 octal, sortie X
     constant CONV_G2 : std_logic_vector(6 downto 0) := "1011011";   -- 133 octal, sortie Y
     function parite(v : std_logic_vector) return std_logic;
+
+    ----------------------------------------------------------------------------
+    -- Sortie sigma-delta : 8 échantillons à 640 MS/s par cycle de 80 MHz (22 bits)
+    ----------------------------------------------------------------------------
+    type ech8_t is array (0 to 7) of signed(21 downto 0);
 
     ----------------------------------------------------------------------------
     -- Budget de la régulation TM5 (étape 03) en bits par image :
@@ -2946,4 +2956,192 @@ begin
         port map (clk, rst, t_valid, t_ready, t_data, t_sop);
     u_canal : entity work.tx_backend generic map (G_FEC => G_FEC)
         port map (clk, rst, t_valid, t_ready, t_data, t_sop, m_valid, m_ready, m_i, m_q);
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- cic8 : interpolation × 8 par un CIC d'ordre 3 (une voie) ; référence bit à
+--   bit : fpga_test/sdm.js
+--   Interface : en : un échantillon x (16 bits, 80 MS/s) consommé ; y : les 8
+--               échantillons interpolés (640 MS/s) de cet instant, registrés,
+--               y(0) le premier
+--   Principe : 3 peignes à 80 MS/s (d = x − x⁻¹, trois fois), puis 3
+--              intégrateurs à 640 MS/s déroulés sur les 8 instants : avec
+--              g0' = g0 + d, y(r) = g2 + (r+1)·g1 + (r+1)(r+2)/2·g0' ; en fin de
+--              cycle g0 ← g0', g1 ← g1 + 8·g0', g2 ← y(7). Gain 64, sortie
+--              exacte sur 22 bits ; états en arithmétique modulaire 30 bits.
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use work.dvbs_pkg.all;
+
+entity cic8 is
+    port (
+        clk : in  std_logic;
+        rst : in  std_logic;
+        en  : in  std_logic;
+        x   : in  signed(15 downto 0);
+        y   : out ech8_t
+    );
+end entity cic8;
+
+architecture rtl of cic8 is
+    constant W : natural := 30;
+    signal p0, p1, p2 : signed(W - 1 downto 0) := (others => '0');   -- retards des peignes
+    signal g0, g1, g2 : signed(W - 1 downto 0) := (others => '0');   -- intégrateurs
+    signal y_r        : ech8_t := (others => (others => '0'));
+begin
+    y <= y_r;
+
+    -- E : x, en → T : peignes, intégrateurs déroulés → S : 8 échantillons
+    process (clk)
+        variable v0, d1, d2, d3, h0, s : signed(W - 1 downto 0);
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                p0 <= (others => '0'); p1 <= (others => '0'); p2 <= (others => '0');
+                g0 <= (others => '0'); g1 <= (others => '0'); g2 <= (others => '0');
+                y_r <= (others => (others => '0'));
+            elsif en = '1' then
+                v0 := resize(x, W);
+                d1 := v0 - p0; d2 := d1 - p1; d3 := d2 - p2;
+                p0 <= v0; p1 <= d1; p2 <= d2;
+                h0 := g0 + d3;
+                for r in 0 to 7 loop
+                    s := g2 + resize(g1 * to_signed(r + 1, 8), W) + resize(h0 * to_signed((r + 1) * (r + 2) / 2, 8), W);
+                    y_r(r) <= resize(s, 22);
+                    if r = 7 then g2 <= s; end if;
+                end loop;
+                g0 <= h0;
+                g1 <= g1 + shift_left(h0, 3);
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- sdm3 : modulateur sigma-delta 1 bit d'ordre 3 (une voie), boucle déroulée
+--   8 fois par cycle ; référence bit à bit : fpga_test/sdm.js
+--   Interface : en : 8 échantillons y consommés ; bits : les 8 bits produits,
+--               registrés, bits(7) le premier émis (1 = +FS)
+--   Principe : CIFB, FS = 2²¹ ; à chaque instant, s = signe de x3 (x3 ≥ 0 → +1) :
+--                x3 ← x3 + x2 − s·FS
+--                x2 ← x2 + x1 − s·3FS/8
+--                x1 ← x1 + (y >> 5) − s·FS/16
+--              états sur 32 bits dans le cycle, bornés à ±(2²³ − 1) en fin de
+--              cycle (24 bits signés). Chemin critique : 8 additions en série
+--              sur x3 (point P3).
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use work.dvbs_pkg.all;
+
+entity sdm3 is
+    port (
+        clk  : in  std_logic;
+        rst  : in  std_logic;
+        en   : in  std_logic;
+        y    : in  ech8_t;
+        bits : out std_logic_vector(7 downto 0)
+    );
+end entity sdm3;
+
+architecture rtl of sdm3 is
+    constant W    : natural := 32;
+    constant A1   : signed(W - 1 downto 0) := to_signed(2 ** 17, W);           -- FS / 16
+    constant A2   : signed(W - 1 downto 0) := to_signed(3 * 2 ** 18, W);       -- 3·FS / 8
+    constant A3   : signed(W - 1 downto 0) := to_signed(2 ** 21, W);           -- FS
+    constant XMAX : signed(W - 1 downto 0) := to_signed(2 ** 23 - 1, W);
+    signal x1, x2, x3 : signed(W - 1 downto 0) := (others => '0');
+    signal b_r        : std_logic_vector(7 downto 0) := (others => '0');
+
+    -- borne : E : état → S : état borné à ±XMAX
+    function borne(v : signed) return signed is
+    begin
+        if v > XMAX then return XMAX; elsif v < -XMAX then return -XMAX; else return v; end if;
+    end function;
+begin
+    bits <= b_r;
+
+    -- E : 8 échantillons, en → T : 8 pas de la boucle, bornage → S : 8 bits
+    process (clk)
+        variable v1, v2, v3, n1, n2, n3, u : signed(W - 1 downto 0);
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
+                b_r <= (others => '0');
+            elsif en = '1' then
+                v1 := x1; v2 := x2; v3 := x3;
+                for k in 0 to 7 loop
+                    u := shift_right(resize(y(k), W), 5);
+                    if v3(W - 1) = '0' then
+                        b_r(7 - k) <= '1';
+                        n3 := v3 + v2 - A3; n2 := v2 + v1 - A2; n1 := v1 + u - A1;
+                    else
+                        b_r(7 - k) <= '0';
+                        n3 := v3 + v2 + A3; n2 := v2 + v1 + A2; n1 := v1 + u + A1;
+                    end if;
+                    v1 := n1; v2 := n2; v3 := n3;
+                end loop;
+                x1 <= borne(v1); x2 <= borne(v2); x3 <= borne(v3);
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- sigma_delta : sortie sigma-delta I/Q : CIC × 8 puis sigma-delta d'ordre 3 sur
+--   chaque voie, 8 bits par cycle et par voie (640 Mbit/s à 80 MHz) vers les
+--   sérialiseurs LVDS (à venir) ; référence bit à bit : fpga_test/sd_iq.bin
+--   Interface : entrée : I, Q signés 16 bits (sortie de tx_backend) ;
+--               sortie : m_i, m_q, 8 bits chacun, bit 7 émis en premier
+--   Principe : pipeline à deux étages (CIC, sigma-delta) avancé d'un bloc quand
+--              la sortie est libre ; les états n'évoluent que sur une donnée
+--              valide
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use work.dvbs_pkg.all;
+
+entity sigma_delta is
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        s_valid : in  std_logic;
+        s_ready : out std_logic;
+        s_i     : in  signed(15 downto 0);
+        s_q     : in  signed(15 downto 0);
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_i     : out std_logic_vector(7 downto 0);
+        m_q     : out std_logic_vector(7 downto 0)
+    );
+end entity sigma_delta;
+
+architecture rtl of sigma_delta is
+    signal v1, v2   : std_logic := '0';      -- étages CIC et sigma-delta occupés
+    signal avance   : std_logic;
+    signal e1, e2   : std_logic;
+    signal yi, yq   : ech8_t;
+begin
+    avance  <= m_ready or not v2;
+    s_ready <= avance;
+    m_valid <= v2;
+    e1 <= avance and s_valid;
+    e2 <= avance and v1;
+
+    u_cic_i : entity work.cic8 port map (clk, rst, e1, s_i, yi);
+    u_cic_q : entity work.cic8 port map (clk, rst, e1, s_q, yq);
+    u_sdm_i : entity work.sdm3 port map (clk, rst, e2, yi, m_i);
+    u_sdm_q : entity work.sdm3 port map (clk, rst, e2, yq, m_q);
+
+    -- E : s_valid, m_ready → T : occupation des deux étages → S : m_valid
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                v1 <= '0'; v2 <= '0';
+            elsif avance = '1' then
+                v1 <= s_valid;
+                v2 <= v1;
+            end if;
+        end if;
+    end process;
 end architecture rtl;

@@ -5,10 +5,10 @@
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 2.1
+--  Version    : 2.2
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 12 unités, dans l'ordre d'analyse :
+--  Contenu    : 13 unités, dans l'ordre d'analyse :
 --               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
 --               tb_octets     modules à flux d'octets (09, 10, 11, TS)
 --               tb_conv       codeur convolutif, 5 taux
@@ -21,6 +21,7 @@
 --               tb_rc         régulation de débit TM5
 --               tb_mire       mire animée
 --               tb_dvbs       tête de chaîne et émetteur complet
+--               tb_sdm        sortie sigma-delta
 --  Conventions: context jpeg2dvb_ctx (déclaré dans jpeg2dvb_fpga.vhd) ;
 --               trous aléatoires en entrée et en sortie de chaque module ;
 --               process commentés « E : entrées → T : traitement → S : sorties »
@@ -33,6 +34,7 @@
 --                                tb_bloc G_CODE = 0 : code de chaque rangée ;
 --                                tb_es : slice_ok, code par slice ; tb_dvbs sans
 --                                entrée code ; nouveau banc tb_rc
+--               2.2  2026-10-19  nouveau banc tb_sdm (sortie sigma-delta)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1398,6 +1400,113 @@ begin
                     end if;
                     finish;
                 end if;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_sdm : banc de test de la sortie sigma-delta : échantillons I/Q de
+--   iq.cs16 (étape 14) en entrée, avec trous aléatoires ; 8 bits I et 8 bits Q
+--   par échantillon comparés à sd_iq.bin (fpga_test/sdm.js) ; contre-pression
+--   aléatoire en sortie
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_sdm is
+    generic (
+        G_N : natural := 160000              -- échantillons I/Q
+    );
+end entity tb_sdm;
+
+architecture sim of tb_sdm is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal s_valid : std_logic := '0';
+    signal s_ready : std_logic;
+    signal s_i     : signed(15 downto 0) := (others => '0');
+    signal s_q     : signed(15 downto 0) := (others => '0');
+    signal m_valid : std_logic;
+    signal m_ready : std_logic := '1';
+    signal m_i     : std_logic_vector(7 downto 0);
+    signal m_q     : std_logic_vector(7 downto 0);
+begin
+    clk <= not clk after 6.25 ns;            -- 80 MHz
+    dut : entity work.sigma_delta port map (clk, rst, s_valid, s_ready, s_i, s_q, m_valid, m_ready, m_i, m_q);
+
+    -- source : E : iq.cs16 → T : un échantillon par acceptation, trous
+    --   aléatoires → S : I, Q vers le module
+    source : process
+        file f        : octets_f open read_mode is REF & "iq.cs16";
+        variable a, b : character;
+        variable r    : std_logic_vector(15 downto 0) := x"ACE1";
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        for k in 0 to G_N - 1 loop
+            read(f, a); read(f, b); s_i <= signed(std_logic_vector'(octet(b) & octet(a)));
+            read(f, a); read(f, b); s_q <= signed(std_logic_vector'(octet(b) & octet(a)));
+            r := alea(r);
+            if r(0) = '1' and r(1) = '1' and r(2) = '1' then
+                s_valid <= '0';
+                wait until rising_edge(clk);
+            end if;
+            s_valid <= '1';
+            loop
+                wait until rising_edge(clk);
+                exit when s_ready = '1';
+            end loop;
+        end loop;
+        s_valid <= '0';
+        wait;
+    end process;
+
+    -- pression : E : — → T : m_ready pseudo-aléatoire → S : contrôle de flux en
+    --   sortie
+    pression : process (clk)
+        variable r : std_logic_vector(15 downto 0) := x"1D0F";
+    begin
+        if rising_edge(clk) then
+            r := alea(r);
+            m_ready <= r(0) or r(2);
+        end if;
+    end process;
+
+    -- contrôle : E : bits acceptés, sd_iq.bin → T : comparaison octet par
+    --   octet, délai maximal → S : verdict OK / ECHEC
+    controle : process (clk)
+        file f          : octets_f open read_mode is REF & "sd_iq.bin";
+        variable a, b   : character;
+        variable n, err : natural := 0;
+        variable cycles : natural := 0;
+    begin
+        if rising_edge(clk) then
+            cycles := cycles + 1;
+            if m_valid = '1' and m_ready = '1' and n < G_N then
+                read(f, a); read(f, b);
+                if m_i /= octet(a) or m_q /= octet(b) then
+                    if err < 10 then
+                        report "ecart a l'echantillon " & integer'image(n) & " : I " & to_hstring(m_i) & " au lieu de " & to_hstring(octet(a)) &
+                               ", Q " & to_hstring(m_q) & " au lieu de " & to_hstring(octet(b)) severity warning;
+                    end if;
+                    err := err + 1;
+                end if;
+                n := n + 1;
+                if n = G_N then
+                    if err = 0 then
+                        report "OK sd_iq.bin : " & integer'image(n) & " echantillons, " & integer'image(16 * n) & " bits sigma-delta identiques (" & integer'image(cycles) & " cycles)";
+                    else
+                        report "ECHEC sd_iq.bin : " & integer'image(err) & " echantillons differents sur " & integer'image(n) severity error;
+                    end if;
+                    finish;
+                end if;
+            end if;
+            if cycles > 4 * G_N + 10000 then
+                report "ECHEC sd_iq.bin : delai depasse, " & integer'image(n) & " echantillons recus" severity error;
+                finish;
             end if;
         end if;
     end process;
