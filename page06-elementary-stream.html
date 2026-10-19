@@ -6,7 +6,7 @@
   Objet      : Page 06 - Assemblage Elementary Stream
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.3
+  Version    : 2.4
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -25,6 +25,7 @@
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
                2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+               2.4  2026-10-19  quantiser_scale_code propre à chaque slice (régulation TM5 de l'étape 03)
 ================================================================================
 -->
 <html lang="fr">
@@ -891,6 +892,12 @@ var CANAL = {
             };
         }
         
+        // code de la rangée : régulation TM5 de la page 03 (slice_codes), sinon code unique
+        function codeRangee(r) {
+            const q = (inputData && inputData.quantization) || {};
+            return (q.slice_codes && q.slice_codes[r]) || quantParams().code;
+        }
+
         function buildSequenceHeader() {
             const bits = new BitWriter();
             bits.writeBits(0x000001B3, 32);
@@ -1040,7 +1047,8 @@ var CANAL = {
             
             bits.writeBits(0x000001, 24);
             bits.writeBits(sliceCode, 8);
-            bits.writeBits(quantParams().code, 5);  // quantiser_scale_code (page 03)
+            const qs = codeRangee(sliceRow);
+            bits.writeBits(qs, 5);  // quantiser_scale_code de la rangée (page 03, TM5)
             bits.writeBits(0, 1);   // extra_bit_slice
             
             const startMB = sliceRow * MB_WIDTH;
@@ -1071,7 +1079,7 @@ var CANAL = {
                 startCode: `00 00 01 ${sliceCode.toString(16).padStart(2, '0').toUpperCase()}`,
                 fields: {
                     'slice_vertical_position': sliceRow + 1,
-                    'quantiser_scale_code': quantParams().code,
+                    'quantiser_scale_code': qs,
                     'macroblocs': `${startMB} - ${Math.min(endMB, encodedMacroblocs.length) - 1}`,
                     'mb_count': Math.min(MB_WIDTH, encodedMacroblocs.length - startMB)
                 }

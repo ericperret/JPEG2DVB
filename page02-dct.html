@@ -6,7 +6,7 @@
   Objet      : Page 02 - DCT 8×8
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.3
+  Version    : 3.0
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -23,6 +23,8 @@
                2.1  2026-10-19  numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
                2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+               3.0  2026-10-19  DCT entière seule (case « virgule fixe » retirée) : identique au
+                     bit près à celle du FPGA, à ±1 de la DCT flottante arrondie
 ================================================================================
 -->
 <html lang="fr">
@@ -241,7 +243,7 @@
         <strong>Entrée :</strong> Fichier JSON des macroblocs (sortie Page 01)<br>
         <strong>Sortie :</strong> Fichier JSON des coefficients DCT pour chaque bloc
     </div>
-    <div class="note-norme"><strong>DCT conforme MPEG-2 intra (ISO 13818-2 §7.5, annexe A) :</strong><br>• Pas de centrage à −128 (c'est une convention JPEG) : les pixels 0 à 255 sont transformés tels quels, le <b>DC vaut 8 × la moyenne du bloc</b> (0 à 2040) et sera divisé par 8 en page 03.<br>• Coefficients rangés en ordre naturel <code>F[v][u]</code> : ligne = fréquence verticale, colonne = fréquence horizontale, comme le suppose le balayage zigzag de la page 04.</div>
+    <div class="note-norme"><strong>DCT conforme MPEG-2 intra (ISO 13818-2 §7.5, annexe A) :</strong><br>• Pas de centrage à −128 (c'est une convention JPEG) : les pixels 0 à 255 sont transformés tels quels, le <b>DC vaut 8 × la moyenne du bloc</b> (0 à 2040) et sera divisé par 8 en page 03.<br>• Coefficients rangés en ordre naturel <code>F[v][u]</code> : ligne = fréquence verticale, colonne = fréquence horizontale, comme le suppose le balayage zigzag de la page 04.<br>• <b>DCT entière</b>, celle du FPGA : coefficients <code>Ci = round(4096·c(k)/2·cos((2n+1)kπ/16))</code> sur 13 bits, passe lignes <code>(Σ + 32) &gt;&gt; 6</code>, passe colonnes <code>(Σ + 2¹⁷) &gt;&gt; 18</code>, tout tient sur 32 bits. La norme n'impose pas de DCT exacte au codeur ; celle-ci reste à ±1 de la DCT flottante arrondie (98,6 % des coefficients identiques) et donne au bit près les mêmes coefficients que le FPGA.</div>
     
     <div class="pipeline">
         <span class="pipeline-step">Macroblocs</span>
@@ -273,7 +275,6 @@
             <canvas id="canvasProcess" width="352" height="288"></canvas>
             <div class="controls">
                 <button id="btnDCT" onclick="computeDCT()" disabled>⚙️ Calculer DCT</button>
-                <span class="multi-ctl"><label><input type="checkbox" id="dctFixe"> virgule fixe</label></span>
                 <button id="btnStep" onclick="stepDCT()" disabled>⏭️ Pas à pas</button>
             </div>
             <div class="progress-container">
@@ -1024,7 +1025,7 @@ var CANAL = {
         };
 
         // ============================================================
-        // DCT EN VIRGULE FIXE (2.0) : référence bit à bit du FPGA
+        // DCT ENTIÈRE (3.0) : référence bit à bit du FPGA
         // ============================================================
         // F = Σx Σy C[u][x]·C[v][y]·f(x,y) avec C[k][n] = c(k)/2·cos((2n+1)kπ/16),
         // c(0) = 1/√2. Coefficients entiers Ci = round(4096·C) (13 bits signés).
@@ -1064,10 +1065,8 @@ var CANAL = {
             return F;
         }
 
-        const _computeBlockDCT1 = computeBlockDCT;
-        computeBlockDCT = function (block) {
-            return document.getElementById('dctFixe').checked ? dctFixe(block) : _computeBlockDCT1(block);
-        };
+        // DCT entière seule : référence au bit près du FPGA
+        computeBlockDCT = dctFixe;
 
         // ============================================================
         // FLUX MULTI-IMAGES (2.0)
@@ -1093,8 +1092,7 @@ var CANAL = {
                 const st = document.getElementById('statsInput');
                 st.style.display = 'block';
                 st.innerHTML = '<strong>Flux chargé :</strong><br>• Images : ' + lu.meta.frames + '<br>• Macroblocs par image : 396<br>• Affichage : image 1';
-                MULTI_UI.montrer('<b>' + lu.meta.frames + ' images</b> chargées. ⚙️ calcule la DCT de toutes les images (' +
-                    (document.getElementById('dctFixe').checked ? 'virgule fixe' : 'virgule flottante') + ').');
+                MULTI_UI.montrer('<b>' + lu.meta.frames + ' images</b> chargées. ⚙️ calcule la DCT entière de toutes les images.');
             });
         };
 
@@ -1118,8 +1116,7 @@ var CANAL = {
                 multiCoef = out;
                 dctMacroblocs = MB384.depaqueter(out, 0);
                 finalizeDCT();
-                MULTI_UI.montrer('<b>' + N + ' images</b> transformées (' + (document.getElementById('dctFixe').checked ? 'DCT en virgule fixe, référence FPGA' : 'DCT en virgule flottante') +
-                    '). Affichage : image 1. Export : <code>coefficients_dct.j2d</code>.');
+                MULTI_UI.montrer('<b>' + N + ' images</b> transformées (DCT entière, identique au FPGA). Affichage : image 1. Export : <code>coefficients_dct.j2d</code>.');
             });
         };
 
@@ -1129,7 +1126,7 @@ var CANAL = {
             J2D.telecharger(J2D.ecrire(Object.assign({}, multi.meta, {
                 format: 'J2D_DCT_V2', source: multi.meta.format, date: new Date().toISOString(),
                 description: 'Coefficients DCT 8×8 (ordre naturel F[v][u]), flux multi-images',
-                dct: document.getElementById('dctFixe').checked ? 'fixe' : 'flottante'
+                dct: 'entiere'
             }), { coef: multiCoef }), 'coefficients_dct.j2d');
         };
     </script>

@@ -26,11 +26,11 @@ No library, no installation. User interfaces in French.
 |---|---|---|---|---|
 | 00 | ▶️ [Camera](https://ericperret.github.io/JPEG2DVB/page00-camera.html) | Image capture from the webcam | webcam → image | [view](captures/page00-camera.png) |
 | 01 | ▶️ [Macroblocks](https://ericperret.github.io/JPEG2DVB/page01-image-to-macroblocs.html) | RGB → YCbCr 4:2:0, 16×16 macroblocks (4 Y + 1 Cb + 1 Cr) | image → macroblock JSON | [view](captures/page01-image-to-macroblocs.png) |
-| 02 | ▶️ [DCT](https://ericperret.github.io/JPEG2DVB/page02-dct.html) | 8×8 2D DCT, MPEG-2 intra (no centring, DC = 8 × mean), natural order F[v][u] | macroblocks → coefficients | [view](captures/page02-dct.png) |
-| 03 | ▶️ [Quantisation](https://ericperret.github.io/JPEG2DVB/page03-quantification.html) | MPEG-2 quantisation: DC / 8, AC = 16·F / (W·quantiser_scale); matrix and scale code passed on to step 06 | coefficients → quantised integers | [view](captures/page03-quantification.png) |
+| 02 | ▶️ [DCT](https://ericperret.github.io/JPEG2DVB/page02-dct.html) | 8×8 2D DCT, MPEG-2 intra (no centring, DC = 8 × mean), natural order F[v][u]; integer DCT, identical bit for bit to the FPGA | macroblocks → coefficients | [view](captures/page02-dct.png) |
+| 03 | ▶️ [Quantisation](https://ericperret.github.io/JPEG2DVB/page03-quantification.html) | MPEG-2 quantisation with TM5 rate control: one quantiser_scale_code per macroblock row, chosen from the channel budget (Rs, FEC, video share); integers only; scale codes passed on to step 06 | coefficients → quantised integers | [view](captures/page03-quantification.png) |
 | 04 | ▶️ [Zigzag](https://ericperret.github.io/JPEG2DVB/page04-zigzag.html) | Zigzag scan of the 64 coefficients | blocks → 64-value vectors | [view](captures/page04-zigzag.png) |
 | 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | (run, level) pairs, MPEG-2 tables B.12 / B.13 (DC) and B.14 (AC), escape, per-component DC predictors | vectors → bitstreams | [view](captures/page05-rle-huffman.png) |
-| 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices; quantiser matrix and scale code from step 03; decodable by ffmpeg / VLC | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
+| 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices; quantiser matrix and per-slice scale codes from step 03; decodable by ffmpeg / VLC | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
 | 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | PES packets, PTS = initial PCR + 0.7 s (no DTS for an I picture), data alignment | ES → PES | [view](captures/page07-pes.png) |
 | 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | 188-byte packets, PAT and PMT tables, PCR in the first video packet | PES → .ts file, plays in VLC and ffplay | [view](captures/page08-ts.png) |
 | 09 | ▶️ [PRBS](https://ericperret.github.io/JPEG2DVB/page09-prbs.html) | Energy dispersal, polynomial 1 + X¹⁴ + X¹⁵, 8-packet super-frame | TS → randomised TS | [view](captures/page09-prbs.png) |
@@ -74,6 +74,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 | 2026-10-19 | Step 15 (1.0): DVB-S reception in HTML/JS; the step-14 .cs16 gives back the step-08 TS byte for byte (6,367 packets out of 6,367 for 1 s of stream) |
 | 2026-10-19 | [vhdl/](vhdl/README.md) folder: FPGA port in VHDL-2008, steps 02 to 14 reproduced bit for bit (19 GHDL testbenches); page 08 at 2.4: multiplexer timing in exact integers |
 | 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
+| 2026-10-19 | Step 02 (3.0): integer DCT only (fixed-point checkbox removed). Step 03 (3.0): TM5 rate control only, in integers, budget from the channel (Rs, FEC, video share), one code per row, ready for 720 × 576. Step 06 (2.4): per-slice quantiser_scale_code |
 
 ## License
 
