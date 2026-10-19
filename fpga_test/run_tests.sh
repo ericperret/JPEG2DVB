@@ -7,13 +7,15 @@
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
 #  Date       : 2026-10-19
-#  Version    : 1.1
+#  Version    : 1.2
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
 #  Historique : 1.0  2026-10-19  création
 #               1.1  2026-10-19  sources fusionnées ../vhdl/jpeg2dvb_fpga.vhd et
 #                                jpeg2dvb_fpga_tb.vhd ; rate_ctrl au contrôle de synthèse
+#               1.2  2026-10-19  régulation TM5 : banc rc, quant8 à G_CODE = 0 (code par
+#                                rangée), tailles es / ts / video des nouvelles références
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -40,15 +42,16 @@ qpsk|tb_qpsk|
 srrc|tb_srrc|
 chaine|tb_backend|
 dct|tb_bloc|-gG_DUT=1 -gG_IN=mb0.bin -gG_OUT=dct0.bin
-quant8|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0.bin -gG_CODE=8
+quant8|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0.bin -gG_CODE=0
 quant1|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0_c1.bin -gG_CODE=1
 quant31|tb_bloc|-gG_DUT=2 -gG_IN=dct0.bin -gG_OUT=q0_c31.bin -gG_CODE=31
 zigzag|tb_bloc|-gG_DUT=3 -gG_IN=q0.bin -gG_OUT=zz0.bin
 vlc|tb_vlc|
-es|tb_es|
-ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=79147 -gG_N_OUT=165628 -gG_PKT=188
+es|tb_es|-gG_N_OUT=115224
+rc|tb_rc|
+ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=115224 -gG_N_OUT=183488 -gG_PKT=188
 mire|tb_mire|
-video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=144572
+video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
 emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000"
 
 OK=0; KO=0
