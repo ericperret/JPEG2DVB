@@ -5,11 +5,11 @@
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
 --  Date       : 2026-10-19
---  Version    : 2.0
+--  Version    : 2.1
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 11 unités, dans l'ordre d'analyse :
---               tb_pkg        lecture des fichiers, générateur pseudo-aléatoire
+--  Contenu    : 12 unités, dans l'ordre d'analyse :
+--               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
 --               tb_octets     modules à flux d'octets (09, 10, 11, TS)
 --               tb_conv       codeur convolutif, 5 taux
 --               tb_qpsk       QPSK
@@ -18,6 +18,7 @@
 --               tb_bloc       DCT, quantification, zigzag
 --               tb_vlc        codage VLC
 --               tb_es         flux élémentaire
+--               tb_rc         régulation de débit TM5
 --               tb_mire       mire animée
 --               tb_dvbs       tête de chaîne et émetteur complet
 --  Conventions: context jpeg2dvb_ctx (déclaré dans jpeg2dvb_fpga.vhd) ;
@@ -28,6 +29,10 @@
 --                    tb_octets 1.1 : multiplexeur TS (G_DUT = 4)
 --               2.0  2026-10-19  fusion propre : cartouche unique, context
 --                                commun, commentaires de fonction
+--               2.1  2026-10-19  régulation TM5 : tb_pkg lit qcode.bin ;
+--                                tb_bloc G_CODE = 0 : code de chaque rangée ;
+--                                tb_es : slice_ok, code par slice ; tb_dvbs sans
+--                                entrée code ; nouveau banc tb_rc
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -45,6 +50,9 @@ package tb_pkg is
     function alea(r : std_logic_vector(15 downto 0)) return std_logic_vector;
     -- références : dossier de lancement (fpga_test/)
     constant REF : string := "./";
+    -- quantiser_scale_code de chaque slice (qcode.bin, étape 03)
+    type codes_t is array (natural range <>) of natural range 0 to 31;
+    impure function lire_qcode(n : natural) return codes_t;
 end package tb_pkg;
 
 package body tb_pkg is
@@ -64,6 +72,20 @@ package body tb_pkg is
             v := '0' & v(15 downto 1);
         end if;
         return v;
+    end function;
+
+    -- lire_qcode : E : nombre de slices → T : un octet par slice dans qcode.bin
+    --   → S : codes des n premières slices
+    impure function lire_qcode(n : natural) return codes_t is
+        file f     : octets_f open read_mode is REF & "qcode.bin";
+        variable c : character;
+        variable r : codes_t(0 to n - 1);
+    begin
+        for i in r'range loop
+            read(f, c);
+            r(i) := character'pos(c);
+        end loop;
+        return r;
     end function;
 end package body tb_pkg;
 
@@ -610,7 +632,9 @@ end architecture sim;
 --   entière, quantification, zigzag) : entrée et sortie comparées
 --   aux fichiers de JPEG2DVB (image 0, 2 376 blocs)
 --   Paramètres : G_DUT 1 = dct8x8_int (entrée octets), 2 = quant_intra,
---                3 = zigzag (entrée int16 LE) ; sortie int16 LE
+--                3 = zigzag (entrée int16 LE) ; sortie int16 LE ;
+--                G_CODE (quant_intra) : code fixe 1 à 31, ou 0 : code de chaque
+--                rangée lu dans qcode.bin (rangée = coefficient / 8 448)
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
 use std.env.all;
@@ -637,6 +661,8 @@ architecture sim of tb_bloc is
     signal m_ready : std_logic := '1';
     signal m_data  : signed(15 downto 0);
     signal code    : unsigned(4 downto 0) := to_unsigned(G_CODE, 5);
+    constant RANGEE : natural := 22 * 384;           -- coefficients par rangée de macroblocs
+    constant QC     : codes_t := lire_qcode(G_N / RANGEE);
 begin
     clk <= not clk after 5 ns;
 
@@ -665,6 +691,9 @@ begin
             else
                 read(f, a); read(f, b);
                 s_coef <= signed(std_logic_vector'(octet(b) & octet(a)));
+                if G_DUT = 2 and G_CODE = 0 then
+                    code <= to_unsigned(QC(k / RANGEE), 5);
+                end if;
             end if;
             r := alea(r);
             if r(0) = '1' and r(1) = '1' and r(2) = '1' then
@@ -860,7 +889,8 @@ end architecture sim;
 -- tb_es : banc de test de l'assemblage du flux élémentaire : bits VLC
 --   des macroblocs de l'étape 05 (toutes les images) en entrée,
 --   découpés en mots de 1 à 24 bits ; sortie comparée octet par
---   octet au flux élémentaire de l'étape 06 (fin de séquence comprise)
+--   octet au flux élémentaire de l'étape 06 (fin de séquence comprise) ;
+--   code de chaque slice lu dans qcode.bin, slice_ok = 1 (code toujours prêt)
 --------------------------------------------------------------------------------
 context work.jpeg2dvb_ctx;
 use std.env.all;
@@ -869,8 +899,7 @@ use work.tb_pkg.all;
 entity tb_es is
     generic (
         G_IMAGES : natural := 3;
-        G_N_OUT  : natural := 79147;         -- taille de es.bin
-        G_CODE   : natural := 8
+        G_N_OUT  : natural := 115224         -- taille de es.bin
     );
 end entity tb_es;
 
@@ -885,11 +914,32 @@ architecture sim of tb_es is
     signal m_valid  : std_logic;
     signal m_ready  : std_logic := '1';
     signal m_data   : std_logic_vector(7 downto 0);
-    signal code     : unsigned(4 downto 0) := to_unsigned(G_CODE, 5);
+    constant QC     : codes_t := lire_qcode(G_IMAGES * 18);
+    signal slice    : natural range 0 to G_IMAGES * 18 - 1 := 0;
+    signal code     : unsigned(4 downto 0);
+    signal slice_ok : std_logic := '1';
 begin
     clk <= not clk after 5 ns;
+    code <= to_unsigned(QC(slice), 5);
     dut : entity work.es_mux generic map (G_IMAGES => G_IMAGES)
-        port map (clk, rst, code, s_valid, s_ready, s_code, s_lg, s_fin_mb, m_valid, m_ready, m_data);
+        port map (clk, rst, code, slice_ok, s_valid, s_ready, s_code, s_lg, s_fin_mb, m_valid, m_ready, m_data);
+
+    -- slices : E : macroblocs acceptés → T : slice suivante après le dernier
+    --   macrobloc de chaque rangée → S : rang de la slice, donc son code
+    slices : process (clk)
+        variable mb : natural range 0 to 21 := 0;
+    begin
+        if rising_edge(clk) then
+            if s_valid = '1' and s_ready = '1' and s_fin_mb = '1' then
+                if mb = 21 then
+                    mb := 0;
+                    if slice < G_IMAGES * 18 - 1 then slice <= slice + 1; end if;
+                else
+                    mb := mb + 1;
+                end if;
+            end if;
+        end if;
+    end process;
 
     -- source : bits de chaque macrobloc, découpés en mots de longueur pseudo-aléatoire
     source : process
@@ -985,6 +1035,183 @@ begin
 end architecture sim;
 
 --------------------------------------------------------------------------------
+-- tb_rc : banc de test de la régulation de débit TM5 (rate_ctrl) : compteur
+--   en entrée de la vanne, mots VLC simulés depuis mbbits.bin (étape 05,
+--   longueur de chaque macrobloc, mots de 1 à 24 bits) dès que les
+--   coefficients du macrobloc ont franchi la vanne ; contrôle à chaque
+--   coefficient sorti : donnée transmise telle quelle, code prêt et égal à
+--   qcode.bin (étape 03) pour sa rangée, bits VLC de la rangée précédente
+--   tous comptés (vanne)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_rc is
+    generic (
+        G_IMAGES : natural := 3;
+        G_COLS   : natural := 22;
+        G_ROWS   : natural := 18;
+        G_T      : natural := 350196
+    );
+end entity tb_rc;
+
+architecture sim of tb_rc is
+    constant NR    : natural := G_IMAGES * G_ROWS;        -- rangées (slices)
+    constant NMB   : natural := NR * G_COLS;              -- macroblocs
+    constant COEFS : natural := G_COLS * 384;             -- coefficients par rangée
+    constant NC    : natural := NMB * 384;                -- coefficients
+    constant QC    : codes_t := lire_qcode(NR);
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal s_valid : std_logic := '0';
+    signal s_ready : std_logic;
+    signal s_data  : signed(15 downto 0) := (others => '0');
+    signal m_valid : std_logic;
+    signal m_ready : std_logic := '1';
+    signal m_data  : signed(15 downto 0);
+    signal v_valid : std_logic := '0';
+    signal v_ready : std_logic := '1';
+    signal v_lg    : unsigned(5 downto 0) := (others => '0');
+    signal v_fin   : std_logic := '0';
+    signal code    : unsigned(4 downto 0);
+    signal code_ok : std_logic;
+    signal mb_q    : natural := 0;                        -- macroblocs passés par la vanne
+begin
+    clk <= not clk after 5 ns;
+    dut : entity work.rate_ctrl generic map (G_COLS => G_COLS, G_ROWS => G_ROWS, G_T => G_T, G_GOP => 12)
+        port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
+
+    -- source : E : — → T : compteur, un coefficient par acceptation, trous
+    --   aléatoires → S : flux vers la vanne
+    source : process
+        variable r : std_logic_vector(15 downto 0) := x"ACE1";
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        for k in 0 to NC - 1 loop
+            s_data <= to_signed(k mod 32768, 16);
+            r := alea(r);
+            if r(0) = '1' and r(1) = '1' and r(2) = '1' then
+                s_valid <= '0';
+                wait until rising_edge(clk);
+            end if;
+            s_valid <= '1';
+            loop
+                wait until rising_edge(clk);
+                exit when s_ready = '1';
+            end loop;
+        end loop;
+        s_valid <= '0';
+        wait;
+    end process;
+
+    -- vlc : E : mbbits.bin, macroblocs passés par la vanne → T : bits de chaque
+    --   macrobloc en mots de longueur pseudo-aléatoire, dernier mot marqué →
+    --   S : mots VLC vers rate_ctrl
+    vlc : process
+        file fl       : octets_f open read_mode is REF & "mbbits.bin";
+        variable a, b : character;
+        variable reste, lg : natural;
+        variable r    : std_logic_vector(15 downto 0) := x"BEEF";
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        for m in 0 to NMB - 1 loop
+            read(fl, a); read(fl, b);
+            reste := character'pos(b) * 256 + character'pos(a);
+            v_valid <= '0';
+            while mb_q <= m loop
+                wait until rising_edge(clk);
+            end loop;
+            while reste > 0 loop
+                r  := alea(r);
+                lg := 1 + to_integer(unsigned(r(4 downto 0))) mod 24;
+                if lg > reste then lg := reste; end if;
+                reste := reste - lg;
+                v_lg    <= to_unsigned(lg, 6);
+                v_fin   <= '1' when reste = 0 else '0';
+                v_valid <= '1';
+                loop
+                    wait until rising_edge(clk);
+                    exit when v_ready = '1';
+                end loop;
+            end loop;
+        end loop;
+        v_valid <= '0';
+        wait;
+    end process;
+
+    -- pression : E : — → T : m_ready et v_ready pseudo-aléatoires → S : contrôle
+    --   de flux en sortie de la vanne et côté assemblage
+    pression : process (clk)
+        variable r : std_logic_vector(15 downto 0) := x"1D0F";
+    begin
+        if rising_edge(clk) then
+            r := alea(r);
+            m_ready <= r(0) or r(2);
+            v_ready <= r(5) or r(9);
+        end if;
+    end process;
+
+    -- contrôle : E : coefficients sortis, mots VLC acceptés, code, code_ok,
+    --   qcode.bin → T : donnée, code de la rangée, ordre vanne / VLC, délai
+    --   maximal → S : verdict OK / ECHEC
+    controle : process (clk)
+        variable n, s       : natural := 0;
+        variable mv         : natural := 0;
+        variable err_d, err_c, err_v : natural := 0;
+        variable vu         : natural := 0;                  -- rangées contrôlées
+        variable cycles     : natural := 0;
+    begin
+        if rising_edge(clk) then
+            cycles := cycles + 1;
+            if v_valid = '1' and v_ready = '1' and v_fin = '1' then
+                mv := mv + 1;
+            end if;
+            if m_valid = '1' and m_ready = '1' and n < NC then
+                s := n / COEFS;
+                if m_data /= to_signed(n mod 32768, 16) then
+                    if err_d < 10 then
+                        report "coefficient " & integer'image(n) & " altere par la vanne" severity warning;
+                    end if;
+                    err_d := err_d + 1;
+                end if;
+                if code_ok /= '1' or to_integer(code) /= QC(s) then
+                    if err_c < 10 then
+                        report "rangee " & integer'image(s) & " (image " & integer'image(s / G_ROWS) & ", slice " & integer'image(s mod G_ROWS) & ") : code " &
+                               integer'image(to_integer(code)) & " (code_ok " & std_logic'image(code_ok) & ") au lieu de " & integer'image(QC(s)) severity warning;
+                    end if;
+                    err_c := err_c + 1;
+                end if;
+                if mv < s * G_COLS then
+                    if err_v < 10 then
+                        report "vanne ouverte trop tot : rangee " & integer'image(s) & " avec " & integer'image(mv) & " macroblocs VLC comptes" severity warning;
+                    end if;
+                    err_v := err_v + 1;
+                end if;
+                if n mod COEFS = 0 then vu := vu + 1; end if;
+                n := n + 1;
+                if n mod 384 = 0 then mb_q <= n / 384; end if;
+            end if;
+            if n = NC and mv = NMB then
+                if err_d = 0 and err_c = 0 and err_v = 0 then
+                    report "OK qcode.bin : " & integer'image(vu) & " codes de rangee identiques, " & integer'image(n) & " coefficients transmis, vanne respectee (" & integer'image(cycles) & " cycles)";
+                else
+                    report "ECHEC qcode.bin : " & integer'image(err_c) & " coefficients sous un mauvais code, " & integer'image(err_d) & " alteres, " & integer'image(err_v) & " passes trop tot" severity error;
+                end if;
+                finish;
+            end if;
+            if cycles > 8 * NC + 100000 then
+                report "ECHEC qcode.bin : delai depasse, " & integer'image(n) & " coefficients et " & integer'image(mv) & " macroblocs VLC" severity error;
+                finish;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
 -- tb_mire : banc de test de la mire animée : macroblocs des 2 premières
 --   images comparés à ceux de l'étape 01 (fpga_test/mire.png chargée,
 --   option « mobile »)
@@ -1067,7 +1294,7 @@ end architecture sim;
 
 --------------------------------------------------------------------------------
 -- tb_dvbs : bancs de test de bout en bout, mire animée (fpga_test/mire.png,
---   3 images, DCT en virgule fixe, code d'échelle 8) :
+--   3 images, DCT entière, régulation TM5 interne) :
 --   G_DUT = 1 : video_enc, paquets TS prélevés au rythme du canal
 --   (un par 13 056 cycles), comparés au TS de l'étape 08 ;
 --   G_DUT = 2 : dvbs_tx, échantillons I/Q comparés au .cs16 de
@@ -1081,14 +1308,13 @@ entity tb_dvbs is
     generic (
         G_DUT : natural := 1;
         G_OUT : string  := "mire_ts.bin";
-        G_N   : natural := 144572          -- octets TS (1) ou échantillons I/Q (2)
+        G_N   : natural := 148708          -- octets TS (1) ou échantillons I/Q (2)
     );
 end entity tb_dvbs;
 
 architecture sim of tb_dvbs is
     signal clk     : std_logic := '0';
     signal rst     : std_logic := '1';
-    signal code    : unsigned(4 downto 0) := to_unsigned(8, 5);
     signal m_valid : std_logic;
     signal m_ready : std_logic := '0';
     signal m_data  : std_logic_vector(7 downto 0);
@@ -1099,7 +1325,7 @@ begin
 
     g1 : if G_DUT = 1 generate
         dut : entity work.video_enc generic map (G_IMAGES => 3)
-            port map (clk, rst, code, m_valid, m_ready, m_data, m_sop);
+            port map (clk, rst, m_valid, m_ready, m_data, m_sop);
         -- un paquet de 188 octets par créneau de 13 056 cycles
         rythme : process (clk)
             variable cyc    : natural := 0;
@@ -1116,7 +1342,7 @@ begin
         end process;
     elsif G_DUT = 2 generate
         dut : entity work.dvbs_tx generic map (G_IMAGES => 3)
-            port map (clk, rst, code, m_valid, m_ready, m_i, m_q);
+            port map (clk, rst, m_valid, m_ready, m_i, m_q);
         m_ready <= '1';
     end generate;
 
