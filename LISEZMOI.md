@@ -75,6 +75,7 @@ Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite a
 | 2026-10-19 | Dossier [vhdl/](vhdl/LISEZMOI.md) : portage FPGA en VHDL-2008, étapes 02 à 14 reproduites au bit près (19 bancs GHDL) ; page 08 en 2.4 : instants du multiplexage en entiers exacts |
 | 2026-10-19 | Pages 01, 12, 14 (2.2) : pré-réglage du projet — 25 images (1 s de flux), FEC 1/2, α = 0,35 ; la chaîne se déroule sans toucher aux paramètres |
 | 2026-10-19 | Étape 02 (3.0) : DCT entière seule (case « virgule fixe » retirée). Étape 03 (3.0) : régulation TM5 seule, en entiers, budget tiré du canal (Rs, FEC, part vidéo), un code par rangée, prête pour le 720 × 576. Étape 06 (2.4) : quantiser_scale_code propre à chaque slice |
+| 2026-10-19 | Étape 03 (3.1) : suivi pas à pas de la régulation — sélecteurs image et rangée, graphe de chaque image (codes, tampon virtuel d, bits cumulés face au budget cumulé), rangée surlignée, matrice des diviseurs au code de cette rangée, note « image simple » ; calculs et exports inchangés |
 
 ## Licence
 

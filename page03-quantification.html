@@ -6,7 +6,7 @@
   Objet      : Page 03 - Quantification
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 3.0
+  Version    : 3.1
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -28,6 +28,11 @@
                      canal affiché sur la page ; matrice intra par défaut, curseur
                      qualité et choix de matrice retirés ; dimensions non figées
                      (prêt pour 720 × 576)
+               3.1  2026-10-19  suivi pas à pas de la régulation : sélecteurs image et
+                     rangée, graphe de chaque image (codes, tampon d, bits cumulés
+                     et budget cumulé), rangée surlignée, matrice des diviseurs au
+                     code de la rangée choisie, note « image simple » ; calculs et
+                     exports inchangés
 ================================================================================
 -->
 <html lang="fr">
@@ -118,6 +123,12 @@
         input[type="file"] {
             display: none;
         }
+        .rc-nav { margin-top: 8px; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; font-size: 12px; color: #a9b7bf; }
+        .rc-nav .rc-sel { display: inline-block; margin: 0 6px; white-space: nowrap; }
+        .rc-nav button { padding: 3px 10px; margin: 2px; font-size: 13px; }
+        .rc-nav .rc-val { display: inline-block; min-width: 56px; color: #5cc8d6; }
+        .rc-nav .info { margin-top: 4px; font-family: inherit; color: #dfe7ec; }
+        canvas { max-width: 100%; height: auto; }
         .info {
             margin-top: 10px;
             font-size: 12px;
@@ -269,6 +280,8 @@
 • <b>Budget</b> : le canal impose <code>T</code> bits par image (débit TS × part vidéo / 25 images/s, 350 196 bits à 10 MS/s en FEC 1/2).<br>
 • <b>Régulation</b> : un tampon virtuel <code>d</code> mesure l'avance ou le retard de l'image sur son budget avant chaque rangée : <code>d = d₀ + bits déjà produits − T·j/N</code> (j : premier macrobloc de la rangée, N : macroblocs par image). Le code de la rangée vaut <code>31·d / r</code> arrondi (r = 2T), borné à 1..31 : en retard on quantifie plus fort, en avance plus finement. En fin d'image, <code>d₀ ← max(0, d₀ + bits − T)</code> : le débit non utilisé n'est pas reporté, le multiplexeur (page 08) le comble par des paquets de bourrage.<br>
 • <b>Comptage exact</b> : les bits de chaque rangée sont comptés comme les pages 04 à 06 les produiront (VLC, en-têtes de macroblocs et de slice, alignement). Tout est calculé en entiers : le FPGA choisit les mêmes codes au bit près.<br>
+• <b>Image simple</b> : si l'image demande moins que son budget même au code 1 (quantification la plus fine), la vidéo reste sous T ; le TS garde son débit constant grâce aux paquets de bourrage de la page 08. Une photo riche ou un canal plus étroit (Rs plus bas) fait travailler la régulation.<br>
+• <b>Suivi pas à pas</b> : après ⚙️, les sélecteurs sous le graphe (ou un clic sur une barre, ou sur la sortie) choisissent l'image et la rangée ; la matrice des diviseurs suit le code de la rangée.<br>
 • <b>720 × 576</b> : mêmes formules, N = 1 620 macroblocs en 36 rangées de 45 ; rien n'est figé à 352 × 288.</div>
     
     <div class="pipeline">
@@ -299,6 +312,11 @@
         <div class="canvas-box">
             <h3>2. TRAITEMENT - Régulation de débit</h3>
             <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="rc-nav" id="rcNav" style="display:none">
+                <span class="rc-sel">Image <button id="rcImgM" onclick="rcVoir(rcVue.f - 1, rcVue.s)" title="image précédente">◀</button><span class="rc-val" id="rcImgN">1 / 1</span><button id="rcImgP" onclick="rcVoir(rcVue.f + 1, rcVue.s)" title="image suivante">▶</button></span>
+                <span class="rc-sel">Rangée <button id="rcRangM" onclick="rcVoir(rcVue.f, rcVue.s - 1)" title="rangée précédente">◀</button><span class="rc-val" id="rcRangN">1 / 18</span><button id="rcRangP" onclick="rcVoir(rcVue.f, rcVue.s + 1)" title="rangée suivante">▶</button></span>
+                <div class="info" id="rcRang"></div>
+            </div>
             <div class="controls">
 <button id="btnQuantize" onclick="quantize()" disabled>⚙️ Quantifier</button>
             </div>
@@ -335,7 +353,7 @@
     
     <!-- Affichage de la matrice Q -->
     <div style="text-align: center; margin-top: 20px;">
-        <h3 style="color: #00d4ff;">Matrice de Quantification (8×8)</h3>
+        <h3 style="color: #00d4ff;">Matrice de Quantification (8×8)<span id="matRang" style="color:#f0a63a;font-weight:normal"></span></h3>
         <div id="matrixDisplay" class="matrix-display"></div>
         <div id="blockComparison" class="stats" style="display:none; max-width: 800px; margin: 20px auto;"></div>
     </div>
@@ -874,8 +892,8 @@ var CANAL = {
             if (!quantized) return;
             
             const rect = this.getBoundingClientRect();
-            const x = Math.floor(e.clientX - rect.left);
-            const y = Math.floor(e.clientY - rect.top);
+            const x = Math.floor((e.clientX - rect.left) * this.width / rect.width);
+            const y = Math.floor((e.clientY - rect.top) * this.height / rect.height);
             
             const blockX = Math.floor(x / 8);
             const blockY = Math.floor(y / 8);
@@ -887,10 +905,11 @@ var CANAL = {
             const blockIndex = localBlockY * 2 + localBlockX;
             
             if (mbIndex < quantizedMacroblocs.length) {
+                if (rcTraces) { rcVoir(rcVue.f, mbY); }
                 displayBlockComparison(mbIndex, blockIndex);
                 
                 // Highlight
-                displayQuantizedOutput();
+                if (rcTraces) { rcSortie(); } else { displayQuantizedOutput(); }
                 const ctx = this.getContext('2d');
                 ctx.strokeStyle = '#ff0';
                 ctx.lineWidth = 2;
@@ -1097,7 +1116,8 @@ var CANAL = {
         })();
 
         let multi = null;                 // {meta, t} du fichier .j2d chargé (flux)
-        let rcQ = null, rcCodes = null, rcBitsImg = null, rcInfo = null, rcTrace = null;
+        let rcQ = null, rcCodes = null, rcBitsImg = null, rcInfo = null, rcTraces = null;
+        let rcVue = { f: 0, s: 0, init: false };   // image et rangée suivies
         let rcCols = MB_COLS, rcRows = MB_ROWS;
         let codeAffiche = 10;             // code montré par la matrice des diviseurs
 
@@ -1183,43 +1203,130 @@ var CANAL = {
         }
         function majInfoQS() {
             const el = document.getElementById('qsInfo');
-            if (el) { el.textContent = 'Matrice ci-dessous : diviseurs pour quantiser_scale_code = ' + codeAffiche + ' (quantiser_scale = ' + (2 * codeAffiche) + ')'; }
+            if (el) { el.textContent = 'Matrice ci-dessous : diviseurs pour quantiser_scale_code = ' + codeAffiche + ' (quantiser_scale = ' + (2 * codeAffiche) + ')' + (rcTraces ? ', rangée ' + (rcVue.s + 1) + ' de l\'image ' + (rcVue.f + 1) : ''); }
         }
         function updateMatrix() { currentMatrix = MATRICES.mpeg2_intra; displayMatrixVisualization(); displayMatrixOnCanvas(); }
 
-        /* rcCourbe — rangées de l'image 1 : barres = quantiser_scale_code, trait =
-           tampon virtuel d, pointillé = budget de la rangée */
-        function rcCourbe(trace, P) {
-            const ctx = document.getElementById('canvasProcess').getContext('2d');
+        /* rcCourbe — E : image f (rcTraces, rcInfo, rcVue) → T : panneau haut :
+           barres = quantiser_scale_code de chaque rangée, trait = tampon virtuel d ;
+           panneau bas : bits cumulés B des slices et budget cumulé ⌊T·(s+1)/rangées⌋
+           → S : graphe, rangée suivie surlignée */
+        const RC_X0 = 34;
+        function rcCourbe(f) {
+            const P = rcInfo, trace = rcTraces[f], ctx = document.getElementById('canvasProcess').getContext('2d');
+            const n = trace.length, x0 = RC_X0, x1 = WIDTH - 10, w = (x1 - x0) / n, sel = rcVue.s;
+            const a0 = 28, a1 = 138, b0 = 156, b1 = 234;
+            ctx.setLineDash([]); ctx.lineWidth = 1;
             ctx.fillStyle = '#0e1418'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
-            const n = trace.length, x0 = 34, x1 = WIDTH - 10, y0 = 30, y1 = HEIGHT - 50, w = (x1 - x0) / n;
-            ctx.font = 'bold 13px Arial'; ctx.fillStyle = '#5cc8d6'; ctx.textAlign = 'center';
-            ctx.fillText('Régulation TM5 — image 1, ' + n + ' rangées', WIDTH / 2, 18);
-            ctx.strokeStyle = '#26343e'; ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+            ctx.font = 'bold 13px Arial'; ctx.fillStyle = '#5cc8d6'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.fillText('Régulation TM5 — image ' + (f + 1) + ' / ' + rcTraces.length + ', ' + n + ' rangées', WIDTH / 2, 18);
+            // rangée suivie : bande verticale sur les deux panneaux
+            ctx.fillStyle = 'rgba(240,166,58,0.12)';
+            ctx.fillRect(x0 + sel * w, a0, w, a1 - a0); ctx.fillRect(x0 + sel * w, b0, w, b1 - b0);
+            ctx.strokeStyle = '#26343e'; ctx.strokeRect(x0, a0, x1 - x0, a1 - a0); ctx.strokeRect(x0, b0, x1 - x0, b1 - b0);
             // codes (échelle 0..31)
-            for (let s = 0; s < n; s++) {
-                const h = (y1 - y0) * trace[s].code / 31;
-                ctx.fillStyle = 'rgba(240,166,58,0.75)';
-                ctx.fillRect(x0 + s * w + 1, y1 - h, Math.max(1, w - 2), h);
+            for (let k = 0; k < n; k++) {
+                const h = (a1 - a0) * trace[k].code / 31;
+                ctx.fillStyle = k === sel ? '#f0a63a' : 'rgba(240,166,58,0.5)';
+                ctx.fillRect(x0 + k * w + 1, a1 - h, Math.max(1, w - 2), h);
             }
             // tampon virtuel d (échelle 0..r)
             ctx.strokeStyle = '#5cc8d6'; ctx.lineWidth = 2; ctx.beginPath();
-            for (let s = 0; s < n; s++) {
-                const y = y1 - (y1 - y0) * Math.max(0, Math.min(1, trace[s].d / P.r));
-                const x = x0 + (s + 0.5) * w;
-                if (s) { ctx.lineTo(x, y); } else { ctx.moveTo(x, y); }
+            for (let k = 0; k < n; k++) {
+                const y = a1 - (a1 - a0) * Math.max(0, Math.min(1, trace[k].d / P.r)), x = x0 + (k + 0.5) * w;
+                if (k) { ctx.lineTo(x, y); } else { ctx.moveTo(x, y); }
             }
+            ctx.stroke();
+            // bits cumulés et budget cumulé
+            const cum = []; let B = 0, max = P.T;
+            for (let k = 0; k < n; k++) { B += trace[k].bits; cum.push(B); max = Math.max(max, B); }
+            const yb = v => b1 - (b1 - b0) * v / max;
+            ctx.setLineDash([4, 3]); ctx.strokeStyle = '#dfe7ec'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x0, b1);
+            for (let k = 0; k < n; k++) { ctx.lineTo(x0 + (k + 1) * w, yb(Math.floor(P.T * (k + 1) / n))); }
+            ctx.stroke(); ctx.setLineDash([]);
+            ctx.strokeStyle = '#3fb950'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, b1);
+            for (let k = 0; k < n; k++) { ctx.lineTo(x0 + (k + 1) * w, yb(cum[k])); }
             ctx.stroke(); ctx.lineWidth = 1;
+            // axes et légende
             ctx.font = '10px Arial'; ctx.textAlign = 'right'; ctx.fillStyle = '#8fa1ad';
-            ctx.fillText('31', x0 - 4, y0 + 8); ctx.fillText('0', x0 - 4, y1);
+            ctx.fillText('31', x0 - 4, a0 + 8); ctx.fillText('0', x0 - 4, a1);
+            ctx.fillText(Math.round(max / 1000) + 'k', x0 - 2, b0 + 8); ctx.fillText('0', x0 - 4, b1);
             ctx.textAlign = 'left';
-            ctx.fillStyle = '#f0a63a'; ctx.fillText('■ quantiser_scale_code par rangée', x0, y1 + 18);
-            ctx.fillStyle = '#5cc8d6'; ctx.fillText('— tampon virtuel d (0 à r = 2T)', x0, y1 + 32);
+            ctx.fillStyle = '#f0a63a'; ctx.fillText('■ code par rangée (0–31)', x0, 250);
+            ctx.fillStyle = '#5cc8d6'; ctx.fillText('— tampon d (0 à r = 2T)', x0 + 150, 250);
+            ctx.fillStyle = '#3fb950'; ctx.fillText('— bits cumulés B (slices)', x0, 264);
+            ctx.fillStyle = '#dfe7ec'; ctx.fillText('- - budget cumulé T·s/rangées', x0 + 150, 264);
+            ctx.fillStyle = '#8fa1ad'; ctx.fillText('clic sur une barre : choisir la rangée', x0, 280);
         }
+
+        /* rcSortie — E : rangée suivie → S : sortie quantifiée, rangée encadrée */
+        function rcSortie() {
+            displayQuantizedOutput();
+            const ctx = document.getElementById('canvasOutput').getContext('2d');
+            ctx.strokeStyle = '#f0a63a'; ctx.lineWidth = 2;
+            ctx.strokeRect(1, rcVue.s * 16 + 1, WIDTH - 2, 14);
+            ctx.lineWidth = 1;
+        }
+
+        /* rcZeros — E : image f → S : taux de zéros des coefficients AC */
+        function rcZeros(f) {
+            const par = rcCols * rcRows * 384, o = f * par;
+            let z = 0;
+            for (let b = 0; b < rcCols * rcRows * 6; b++) { for (let i = 1; i < 64; i++) { if (rcQ[o + b * 64 + i] === 0) { z++; } } }
+            const zp = (100 * z / (rcCols * rcRows * 6 * 63)).toFixed(1);
+            document.getElementById('zeroStats').style.display = 'block';
+            document.getElementById('zeroFill').style.width = zp + '%';
+            document.getElementById('zeroPercent').textContent = zp + '% (image ' + (f + 1) + ')';
+        }
+
+        /* rcVoir — E : image f, rangée s → T : bornage, macroblocs de l'image,
+           code de la rangée → S : entrée, sortie, graphe, matrice et détail de la
+           rangée mis à jour */
+        function rcVoir(f, s) {
+            if (!rcTraces) { return; }
+            const N = rcTraces.length;
+            f = Math.max(0, Math.min(N - 1, f)); s = Math.max(0, Math.min(rcRows - 1, s));
+            const neuve = !rcVue.init || f !== rcVue.f;
+            rcVue = { f: f, s: s, init: true };
+            if (neuve) {
+                if (multi) {
+                    dctMacroblocs = MB384.depaqueter(multi.t.coef, f);
+                    const st = document.getElementById('statsInput');
+                    st.style.display = 'block';
+                    st.innerHTML = '<strong>Flux chargé :</strong><br>• Images : ' + N + ' (' + rcCols + ' × ' + rcRows + ' macroblocs)<br>• Affichage : image ' + (f + 1);
+                }
+                quantizedMacroblocs = MB384.depaqueter(rcQ, f);
+                displayDCTInput(); rcZeros(f);
+                document.getElementById('blockComparison').style.display = 'none';
+            }
+            const t = rcTraces[f], code = rcCodes[f * rcRows + s];
+            let B = 0; for (let k = 0; k < s; k++) { B += t[k].bits; }
+            codeAffiche = code;
+            displayMatrixVisualization(); majInfoQS(); rcCourbe(f); rcSortie();
+            const fr = v => v.toLocaleString('fr-FR');
+            document.getElementById('rcImgN').textContent = (f + 1) + ' / ' + N;
+            document.getElementById('rcRangN').textContent = (s + 1) + ' / ' + rcRows;
+            document.getElementById('rcImgM').disabled = f === 0;
+            document.getElementById('rcImgP').disabled = f === N - 1;
+            document.getElementById('rcRangM').disabled = s === 0;
+            document.getElementById('rcRangP').disabled = s === rcRows - 1;
+            document.getElementById('rcRang').innerHTML = 'avant la rangée : B = ' + fr(B) + ' bits, cible ⌊T·' + s + '/' + rcRows + '⌋ = ' + fr(Math.floor(rcInfo.T * s / rcRows)) +
+                '<br>d = ' + fr(t[s].d) + ' → code <b style="color:#f0a63a">' + code + '</b> (pas ' + (2 * code) + ') → slice de ' + fr(t[s].bits) + ' bits';
+            document.getElementById('matRang').textContent = ' — rangée ' + (s + 1) + ', image ' + (f + 1) + ', code ' + code;
+        }
+        document.getElementById('canvasProcess').addEventListener('click', function (e) {
+            if (!rcTraces) { return; }
+            const rect = this.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * this.width / rect.width;
+            const w = (WIDTH - 10 - RC_X0) / rcRows, k = Math.floor((x - RC_X0) / w);
+            if (k >= 0 && k < rcRows) { rcVoir(rcVue.f, k); }
+        });
 
         const _loadJSON1 = loadJSON;
         loadJSON = function (files) {
-            rcQ = null;
+            rcQ = null; rcTraces = null; rcVue = { f: 0, s: 0, init: false };
+            document.getElementById('rcNav').style.display = 'none';
+            document.getElementById('matRang').textContent = '';
             if (!J2D.estJ2D(files)) { multi = null; MULTI_UI.cacher(); _loadJSON1(files); rcCols = MB_COLS; rcRows = MB_ROWS; rcMajInfo(); return; }
             J2D.charger(files[0], ['J2D_DCT_V2'], function (lu) {
                 multi = lu;
@@ -1249,32 +1356,24 @@ var CANAL = {
             else { N = 1; src = new Float32Array(MB384.PAR_IMAGE); MB384.paqueter(dctMacroblocs, src, 0); }
             const cols = rcCols, rows = rcRows, par = cols * rows * 384;
             const out = new Int16Array(N * par), codes = new Uint8Array(N * rows), bitsImg = new Uint32Array(N);
-            const etat = { d0: P.d0 }, trace = [];
+            const etat = { d0: P.d0 }, traces = [];
             let dMin = Infinity, dMax = -Infinity;
             document.getElementById('btnQuantize').disabled = true;
             J2D.boucle(N, function (f) {
-                const t = f === 0 ? trace : null;
-                bitsImg[f] = rcImage(src, out, f, cols, rows, etat, P, codes, t);
+                traces[f] = [];
+                bitsImg[f] = rcImage(src, out, f, cols, rows, etat, P, codes, traces[f]);
             }, function (i, n) { if (multi) { MULTI_UI.progres(i, n, 'quantification image ' + i + ' / ' + n); } }, function () {
-                rcQ = out; rcCodes = codes; rcBitsImg = bitsImg; rcTrace = trace;
+                rcQ = out; rcCodes = codes; rcBitsImg = bitsImg;
                 let s = 0, mn = Infinity, mx = 0, cmin = 31, cmax = 1, csum = 0;
                 for (let f = 0; f < N; f++) { s += bitsImg[f]; mn = Math.min(mn, bitsImg[f]); mx = Math.max(mx, bitsImg[f]); }
                 for (let i = 0; i < codes.length; i++) { cmin = Math.min(cmin, codes[i]); cmax = Math.max(cmax, codes[i]); csum += codes[i]; }
-                for (const t of trace) { dMin = Math.min(dMin, t.d); dMax = Math.max(dMax, t.d); }
+                for (const t of traces[0]) { dMin = Math.min(dMin, t.d); dMax = Math.max(dMax, t.d); }
                 rcInfo = Object.assign({}, P, { bitsMoyen: s / N, bitsMin: mn, bitsMax: mx, debitMesure: s / N * P.fps,
                     codeMin: cmin, codeMax: cmax, codeMoyen: csum / codes.length });
-                let c0 = 0; for (let k = 0; k < rows; k++) { c0 += codes[k]; }
-                codeAffiche = Math.round(c0 / rows);
-                quantizedMacroblocs = MB384.depaqueter(out, 0);
                 quantized = true;
-                displayQuantizedOutput(); displayMatrixVisualization(); majInfoQS(); rcCourbe(trace, P);
-                // taux de zéros (image 1)
-                let z = 0;
-                for (let b = 0; b < cols * rows * 6; b++) { for (let i = 1; i < 64; i++) { if (out[b * 64 + i] === 0) { z++; } } }
-                const zp = (100 * z / (cols * rows * 6 * 63)).toFixed(1);
-                document.getElementById('zeroStats').style.display = 'block';
-                document.getElementById('zeroFill').style.width = zp + '%';
-                document.getElementById('zeroPercent').textContent = zp + '%';
+                rcTraces = traces; rcVue = { f: 0, s: 0, init: false };
+                document.getElementById('rcNav').style.display = 'block';
+                rcVoir(0, 0);
                 document.getElementById('btnExport').disabled = false;
                 document.getElementById('btnDequant').disabled = false;
                 document.getElementById('btnQuantize').disabled = false;
@@ -1283,16 +1382,19 @@ var CANAL = {
                     '• Débit vidéo : ' + (s / N * P.fps / 1e6).toFixed(3) + ' Mbit/s pour ' + (P.R_video / 1e6).toFixed(3) + ' Mbit/s alloués<br>' +
                     '• quantiser_scale_code : ' + cmin + ' à ' + cmax + ' (moyenne ' + (csum / codes.length).toFixed(1) + ')<br>' +
                     '• Tampon virtuel d (image 1) : ' + dMin.toLocaleString('fr-FR') + ' à ' + dMax.toLocaleString('fr-FR') + ' bits';
+                let c1 = 0; for (let i = 0; i < codes.length; i++) { if (codes[i] === 1) { c1++; } }
+                const txtSimple = (s / N < 0.8 * P.T) ? '<br>• <b>Image simple</b> : la vidéo n\'emploie que ' + Math.round(100 * s / N / P.T) + ' % du budget, code 1 sur ' + c1 + ' rangées sur ' + codes.length +
+                    ' ; le multiplexeur (page 08) comble par du bourrage. Une photo riche ou un canal plus étroit (Rs plus bas) fait travailler la régulation.' : '';
                 const st = document.getElementById('rcStats');
-                st.style.display = 'block'; st.innerHTML = txt;
-                if (multi) { MULTI_UI.montrer(txt + '<br>Affichage : image 1. Export : <code>coefficients_quantified.j2d</code>.'); }
+                st.style.display = 'block'; st.innerHTML = txt + txtSimple;
+                if (multi) { MULTI_UI.montrer(txt + txtSimple + '<br>Affichage : image choisie sous le graphe. Export : <code>coefficients_quantified.j2d</code>.'); }
             });
         };
 
         /* paramsRangee — E : indice de macrobloc → S : paramètres de quantification
            de sa rangée (prévisualisation) */
         function paramsRangee(index) {
-            const c = rcCodes ? rcCodes[Math.floor(index / rcCols)] : codeAffiche;
+            const c = rcCodes ? rcCodes[rcVue.f * rcRows + Math.floor(index / rcCols)] : codeAffiche;
             return { quantiser_scale_code: c, quantiser_scale: 2 * c, W: W_INTRA };
         }
 

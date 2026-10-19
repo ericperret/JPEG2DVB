@@ -75,6 +75,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 | 2026-10-19 | [vhdl/](vhdl/README.md) folder: FPGA port in VHDL-2008, steps 02 to 14 reproduced bit for bit (19 GHDL testbenches); page 08 at 2.4: multiplexer timing in exact integers |
 | 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
 | 2026-10-19 | Step 02 (3.0): integer DCT only (fixed-point checkbox removed). Step 03 (3.0): TM5 rate control only, in integers, budget from the channel (Rs, FEC, video share), one code per row, ready for 720 × 576. Step 06 (2.4): per-slice quantiser_scale_code |
+| 2026-10-19 | Step 03 (3.1): step-by-step view of the rate control — picture and row selectors, graph for every picture (scale codes, virtual buffer d, cumulated bits against cumulated budget), selected row highlighted, divisor matrix at the code of that row, « simple picture » note; computation and exports unchanged |
 
 ## License
 
