@@ -10,7 +10,7 @@
 
 🇬🇧 [English version: README.md](README.md)
 
-▶️ **[Page d'accueil des 15 étapes](https://ericperret.github.io/JPEG2DVB/index2.html)**
+▶️ **[Page d'accueil des 16 étapes](https://ericperret.github.io/JPEG2DVB/index2.html)**
 
 [![Licence : CC BY-NC 4.0](https://img.shields.io/badge/Licence-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/deed.fr)
 
@@ -39,6 +39,7 @@ Aucune librairie, aucune installation. Interfaces en français.
 | 12 | ▶️ [Codeur convolutif](https://ericperret.github.io/JPEG2DVB/page12-convolutional_1.html) | K = 7, taux 1/2, G1 = 171₈, G2 = 133₈, poinçonnage optionnel | flux → bits codés | [voir](captures/page12-convolutional_1.png) |
 | 13 | ▶️ [QPSK](https://ericperret.github.io/JPEG2DVB/page13-qpsk.html) | 2 bits → symbole I/Q, codage de Gray | bits → symboles I/Q | [voir](captures/page13-qpsk.png) |
 | 14 | ▶️ [Filtre SRRC](https://ericperret.github.io/JPEG2DVB/page14-srrc-v2.html) | Mise en forme en racine de cosinus surélevé | symboles → signal mis en forme | [voir](captures/page14-srrc-v2.png) |
+| 15 | ▶️ [Réception](https://ericperret.github.io/JPEG2DVB/page15-reception.html) | Chemin inverse : filtre adapté, Viterbi, désentrelacement, Reed-Solomon, dérandomisation ; comparaison octet par octet au TS de l'étape 08 | signal .cs16 → TS | [voir](captures/page15-reception.png) |
 
 ## Utilisation
 
@@ -70,6 +71,7 @@ Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite a
 | 2026-10-18 | Pages 07 et 08 (1.5) : horodatage ISO 13818-1 — PCR dans l'adaptation field du premier paquet vidéo (PID annoncé par la PMT), PTS = PCR + 0,7 s, indicateurs data_alignment et random_access, PTS 33 bits sans débordement 32 bits |
 | 2026-10-19 | Pages 2.0 : flux multi-images (conteneur .j2d, DCT en virgule fixe, régulation de débit TM5, multiplexage à débit constant, traitement par blocs, SRRC en virgule fixe et écriture au fil de l'eau). Conformité EN 300 421 corrigée sur trois étapes : générateur PRBS (initialisation et sortie), ordre des octets de parité Reed-Solomon, registre du codeur convolutif. Vérifié par démodulation avec un récepteur DVB-S indépendant |
 | 2026-10-19 | Pages 2.1 : numéro de version affiché dans la barre de navigation (lu dans le cartouche) ; étape 14 : bouton 💾 Export I/Q .cs16 (entiers 16 bits), en flux comme en mode une image, écriture directe sur le disque en option |
+| 2026-10-19 | Étape 15 (1.0) : réception DVB-S en HTML/JS ; le .cs16 de l'étape 14 redonne le TS de l'étape 08 octet pour octet (6 367 paquets sur 6 367 pour 1 s de flux) |
 | 2026-10-19 | Pages 01, 12, 14 (2.2) : pré-réglage du projet — 25 images (1 s de flux), FEC 1/2, α = 0,35 ; la chaîne se déroule sans toucher aux paramètres |
 
 ## Licence

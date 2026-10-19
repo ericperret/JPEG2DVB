@@ -10,7 +10,7 @@
 
 🇫🇷 [Version française : LISEZMOI.md](LISEZMOI.md)
 
-▶️ **[Home page of the 15 steps](https://ericperret.github.io/JPEG2DVB/index2.html)**
+▶️ **[Home page of the 16 steps](https://ericperret.github.io/JPEG2DVB/index2.html)**
 
 [![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
@@ -39,6 +39,7 @@ No library, no installation. User interfaces in French.
 | 12 | ▶️ [Convolutional coder](https://ericperret.github.io/JPEG2DVB/page12-convolutional_1.html) | K = 7, rate 1/2, G1 = 171₈, G2 = 133₈, optional puncturing | stream → coded bits | [view](captures/page12-convolutional_1.png) |
 | 13 | ▶️ [QPSK](https://ericperret.github.io/JPEG2DVB/page13-qpsk.html) | 2 bits → I/Q symbol, Gray coding | bits → I/Q symbols | [view](captures/page13-qpsk.png) |
 | 14 | ▶️ [SRRC filter](https://ericperret.github.io/JPEG2DVB/page14-srrc-v2.html) | Square-root raised-cosine pulse shaping | symbols → shaped signal | [view](captures/page14-srrc-v2.png) |
+| 15 | ▶️ [Reception](https://ericperret.github.io/JPEG2DVB/page15-reception.html) | Reverse path: matched filter, Viterbi, deinterleaving, Reed-Solomon, derandomisation; byte-by-byte comparison with the step-08 TS | .cs16 signal → TS | [view](captures/page15-reception.png) |
 
 ## Usage
 
@@ -70,6 +71,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 | 2026-10-18 | Pages 07 and 08 (1.5): ISO 13818-1 timing — PCR in the adaptation field of the first video packet (PID announced by the PMT), PTS = PCR + 0.7 s, data_alignment and random_access indicators, 33-bit PTS without 32-bit overflow |
 | 2026-10-19 | Pages 2.0: multi-picture stream (.j2d container, fixed-point DCT, TM5 rate control, constant-rate multiplex, block processing, fixed-point SRRC written to disk on the fly). EN 300 421 conformance fixed in three steps: PRBS generator (initialisation and output), Reed-Solomon parity byte order, convolutional encoder register. Checked by demodulation with an independent DVB-S receiver |
 | 2026-10-19 | Pages 2.1: version number shown in the navigation bar (read from the header block); step 14: 💾 Export I/Q .cs16 button (16-bit integers), for streams as for a single picture, direct write to disk as an option |
+| 2026-10-19 | Step 15 (1.0): DVB-S reception in HTML/JS; the step-14 .cs16 gives back the step-08 TS byte for byte (6,367 packets out of 6,367 for 1 s of stream) |
 | 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
 
 ## License

@@ -6,7 +6,7 @@
   Objet      : Page 14 - Filtre SRRC (State of the Art+)
   Auteur     : Eric PERRET
   Date       : 2026-01-17
-  Version    : 2.2
+  Version    : 2.3
   Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
   Licence    : CC BY-NC 4.0
   Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
@@ -21,6 +21,7 @@
                      une image ; écriture directe sur le disque en option (décochée) ;
                      numéro de version affiché dans la barre de navigation
                2.2  2026-10-19  pré-réglage projet : α = 0,35 (EN 300 421) par défaut
+               2.3  2026-10-19  suivante ▶ vers l'étape 15 (Réception), qui reçoit le .cs16
 ================================================================================
 -->
 <html lang="fr">
@@ -123,7 +124,7 @@
     </style>
 </head>
 <body>
-<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page15-reception.html">15 · Réception ▶</a></nav>
     <h1>📻 Page 14 - Filtre SRRC <span>★ State of the Art+ ★</span></h1>
     
     <div class="description">
@@ -1455,7 +1456,7 @@ var CANAL = {
             J2D.telecharger(multiSortie, multiDesc.fichier);
         };
     </script>
-<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 14</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page13-qpsk.html">◀ 13 · QPSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 14 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC" class="ici" aria-current="page"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page15-reception.html">15 · Réception ▶</a></nav>
 
 <script>
 /* ===== Passage automatique des données d'une étape à la suivante (1.3) =====
@@ -1464,7 +1465,7 @@ var CANAL = {
    l'étape suivante via son propre « Charger ». Le traitement reste au clic.
    Les boutons Exporter / Charger restent disponibles. */
 (function () {
-  var N = 14, NEXT = null;
+  var N = 14, NEXT = 'page15-reception.html';
   var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
   function base(fn) {
     try {
@@ -1484,7 +1485,7 @@ var CANAL = {
     }
     var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
     URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
-    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.cs16$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
     try {
       var bs = document.querySelectorAll('button');
       for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
