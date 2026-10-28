@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page15-reception.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 15 - Réception : du signal en bande de base au Transport Stream
+  Auteur     : Eric PERRET
+  Date       : 2026-10-19
+  Version    : 1.2
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Historique : 1.0  2026-10-19  création : filtre adapté, Viterbi, désentrelacement,
+                     Reed-Solomon, dérandomisation ; comparaison au TS de l'étape 08
+               1.1  2026-10-19  affichage au fil du traitement : signal en cours de lecture,
+                     constellation vivante, paquets TS reçus et comparés un à un
+               1.2  2026-10-19  source (image d'origine) affichée, signal et référence
+                     contrôlés comme issus du même traitement ; .ts reçu nommé d'après
+                     la source ; correction : chargement d'office de la sortie de l'étape 14
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 15 - Réception DVB-S</title>
+    <style>
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        h1 { color: #5cc8d6; text-align: center; }
+        .description { background: #18222a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5cc8d6; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #26343e; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #5cc8d6; color: #000; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-arrow { color: #5cc8d6; font-size: 20px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #5cc8d6; }
+        canvas { border: 2px solid #26343e; }
+        .controls { margin-top: 10px; }
+        button { background: #26343e; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #5cc8d6; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .qpsk-diagram { font-family: monospace; font-size: 11px; background: #141c22; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
+        table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: center; }
+        table.info-table th { background: #26343e; }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-auto { max-width: 1100px; margin: -8px auto 18px; padding: 9px 14px; background: rgba(240,166,58,.10); border: 1px solid #f0a63a; border-radius: 8px; color: #dfe7ec; font-size: 13px; }
+        .j2d-auto b { color: #f0a63a; font-weight: 600; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
+    </style>
+    <style>
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
+        .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
+    </style>
+    <style>
+        .param-ligne { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; margin: 0 auto 18px; font-size: 13px; color: #a9b7bf; }
+        .param-ligne select { padding: 4px 6px; }
+        .barre { max-width: 1100px; height: 6px; background: #26343e; border-radius: 3px; margin: 0 auto 4px; overflow: hidden; }
+        .barre div { height: 100%; width: 0; background: #f0a63a; }
+        #etat { max-width: 1100px; margin: 0 auto 14px; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #8fa1ad; }
+        #globalStats { line-height: 1.7; font-size: 13px; }
+        #globalStats code { color: #5cc8d6; }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page14-srrc-v2.html">◀ 14 · Filtre SRRC</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 15 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+    <h1>📥 Page 15 - Réception DVB-S</h1>
+
+    <div class="description">
+        <strong>Fonction :</strong> chemin inverse des étapes 09 à 14, pour vérifier la chaîne d'émission de bout en bout.<br>
+        <strong>Principe :</strong> récepteur synchrone (bande de base, sans décalage de fréquence) : choix de l'instant d'échantillonnage,
+        filtre adapté SRRC, décisions souples, décodeur de Viterbi (K = 7, 171 / 133), désentrelacement (I = 12, M = 17),
+        Reed-Solomon (204,188), dérandomisation.<br>
+        <strong>Entrée :</strong> I/Q 16 bits de l'étape 14 (<code>.cs16</code>) — <strong>Sortie :</strong> Transport Stream, comparé octet par octet à celui de l'étape 08
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step done">I/Q</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Filtre adapté</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Viterbi</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Désentrelacement</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Reed-Solomon</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">TS</span>
+    </div>
+
+    <div class="param-ligne">
+        <label>Éch./symbole <select id="sps"><option>4</option><option selected>8</option><option>16</option></select></label>
+        <label>α <select id="rolloff"><option>0.2</option><option>0.25</option><option selected>0.35</option><option>0.5</option></select></label>
+        <label>FEC <select id="fec"><option selected>1/2</option><option>2/3</option><option>3/4</option><option>5/6</option><option>7/8</option></select></label>
+        <span id="refInfo"></span>
+    </div>
+    <div class="barre"><div id="barre"></div></div>
+    <div id="etat"></div>
+
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Signal I/Q</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger .cs16</button>
+                <input type="file" id="fileInput" accept=".cs16" onchange="chargerIQ(this.files)">
+            </div>
+            <div class="info">Sortie de l'étape 14 ; réglages lus dans le nom du fichier</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Constellation</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnRecevoir" onclick="recevoir()" disabled>⚙️ Recevoir</button>
+            </div>
+            <div class="info">Après filtre adapté, aux instants symbole</div>
+        </div>
+        <div class="canvas-box">
+            <h3>3. SORTIE - Transport Stream</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('refInput').click()">📁 Référence</button>
+                <input type="file" id="refInput" accept=".ts,.j2d,.json" onchange="chargerReference(this.files)">
+                <button id="btnExportTS" onclick="exportTS()" disabled>💾 .ts reçu</button>
+            </div>
+            <div class="info">Référence : TS de l'étape 08 (chargé d'office dans la session)</div>
+        </div>
+    </div>
+
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none;"></div>
+    </div>
+
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
+    <script>
+        // ============================================================
+        // RÉCEPTEUR DVB-S (EN 300 421), chemin inverse des étapes 09 à 14
+        // ============================================================
+        // Récepteur synchrone : le fichier est en bande de base, sans décalage de
+        // fréquence ni de phase. On retrouve l'instant d'échantillonnage (phase de
+        // symbole d'énergie maximale), puis : filtre adapté SRRC → décisions
+        // souples → dépoinçonnage → Viterbi (K = 7, 171 / 133, décisions souples,
+        // fenêtre glissante) → désentrelacement (I = 12, M = 17) → RS(204,188)
+        // (Berlekamp-Massey, Chien, Forney) → dérandomisation PRBS → TS.
+
+        // ---------- filtre SRRC (formules et fenêtre de la page 14) ----------
+        function rxSRRC(alpha, span, sps) {
+            const n = span * sps + 1, h = new Float64Array(n);
+            for (let i = 0; i < n; i++) {
+                const t = (i - (n - 1) / 2) / sps;
+                let v;
+                if (Math.abs(t) < 1e-12) { v = 1 - alpha + 4 * alpha / Math.PI; }
+                else if (Math.abs(Math.abs(t) - 1 / (4 * alpha)) < 1e-12) {
+                    v = (alpha / Math.SQRT2) * ((1 + 2 / Math.PI) * Math.sin(Math.PI / (4 * alpha)) + (1 - 2 / Math.PI) * Math.cos(Math.PI / (4 * alpha)));
+                } else {
+                    const pt = Math.PI * t, f = 4 * alpha * t;
+                    v = (Math.sin(pt * (1 - alpha)) + f * Math.cos(pt * (1 + alpha))) / (pt * (1 - f * f));
+                }
+                h[i] = v;
+            }
+            // fenêtre de Kaiser, β pour −60 dB
+            const beta = 0.1102 * (60 - 8.7);
+            function i0(x) { let s = 1, t = 1; const q = (x / 2) * (x / 2); for (let k = 1; k < 25; k++) { t *= q / (k * k); s += t; if (t < 1e-12 * s) { break; } } return s; }
+            const ib = i0(beta);
+            let somme = 0;
+            for (let i = 0; i < n; i++) { const x = 2 * i / (n - 1) - 1; h[i] *= i0(beta * Math.sqrt(1 - x * x)) / ib; somme += h[i]; }
+            for (let i = 0; i < n; i++) { h[i] /= somme; }
+            return h;
+        }
+
+        // ---------- codeur convolutif (pour le Viterbi et le contrôle du BER) ----------
+        const RX_G1 = 0b1111001, RX_G2 = 0b1011011;
+        const RX_POINC = { '1/2': [[1], [1]], '2/3': [[1, 0], [1, 1]], '3/4': [[1, 0, 1], [1, 1, 0]],
+                           '5/6': [[1, 0, 1, 0, 1], [1, 1, 0, 1, 0]], '7/8': [[1, 0, 0, 0, 1, 0, 1], [1, 1, 1, 1, 0, 1, 0]] };
+        const RX_PAR = (function () { const p = new Uint8Array(128); for (let v = 1; v < 128; v++) { p[v] = (v & 1) ^ p[v >> 1]; } return p; })();
+
+        /* Viterbi à fenêtre glissante — états : registre de 6 bits, D0 (dernier bit
+           entré) en bit 5 ; état suivant = (b << 5) | (registre >> 1) */
+        function RxViterbi(nPas) {
+            const L = 4096, D = 128, W = 2 * L + D;
+            this.SX = new Float64Array(128); this.SY = new Float64Array(128);
+            for (let ns = 0; ns < 64; ns++) {
+                for (let c = 0; c < 2; c++) {
+                    const p = ((ns & 31) << 1) | c, b = ns >> 5, s = (b << 6) | p;
+                    this.SX[ns * 2 + c] = RX_PAR[s & RX_G1] ? -1 : 1;
+                    this.SY[ns * 2 + c] = RX_PAR[s & RX_G2] ? -1 : 1;
+                }
+            }
+            this.L = L; this.D = D; this.W = W;
+            this.dec = new Uint8Array(W * 64);
+            this.m = new Float64Array(64).fill(-1e9); this.m[0] = 0;
+            this.n = new Float64Array(64);
+            this.pas = 0; this.sortis = 0;
+            this.out = new Uint8Array(Math.ceil(nPas / 8) + 8);
+        }
+        RxViterbi.prototype.etape = function (sx, sy) {
+            const m = this.m, n = this.n, SX = this.SX, SY = this.SY, base = (this.pas % this.W) * 64, dec = this.dec;
+            let max = -Infinity;
+            for (let ns = 0; ns < 64; ns++) {
+                const p0 = (ns & 31) << 1, k = ns * 2;
+                const a = m[p0] + SX[k] * sx + SY[k] * sy, b = m[p0 | 1] + SX[k + 1] * sx + SY[k + 1] * sy;
+                if (b > a) { n[ns] = b; dec[base + ns] = 1; } else { n[ns] = a; dec[base + ns] = 0; }
+                if (n[ns] > max) { max = n[ns]; }
+            }
+            for (let ns = 0; ns < 64; ns++) { m[ns] = n[ns] - max; }
+            this.pas++;
+            if (this.pas - this.D - this.sortis >= this.L) {
+                let best = 0; for (let s = 1; s < 64; s++) { if (m[s] > m[best]) { best = s; } }
+                this.remonter(best, this.pas - this.D);
+            }
+        };
+        /* remonter — trace arrière depuis l'état e au dernier pas ; écrit les bits des pas [sortis, fin) */
+        RxViterbi.prototype.remonter = function (e, fin) {
+            let st = e;
+            for (let s = this.pas - 1; s >= this.sortis; s--) {
+                if (s < fin && (st >> 5)) { this.out[s >> 3] |= 0x80 >> (s & 7); }
+                const c = this.dec[(s % this.W) * 64 + st];
+                st = ((st & 31) << 1) | c;
+            }
+            this.sortis = fin;
+        };
+        RxViterbi.prototype.terminer = function () { this.remonter(0, this.pas); };   // vidage : état final 0
+
+        // ---------- Reed-Solomon (204,188), GF(2⁸) 0x11D, racines λ⁰ à λ¹⁵ ----------
+        const RX_EXP = new Uint8Array(512), RX_LOG = new Uint8Array(256);
+        (function () { let x = 1; for (let i = 0; i < 255; i++) { RX_EXP[i] = x; RX_LOG[x] = i; x <<= 1; if (x & 256) { x ^= 0x11D; } } for (let i = 255; i < 512; i++) { RX_EXP[i] = RX_EXP[i - 255]; } })();
+        function rxMul(a, b) { return (a && b) ? RX_EXP[RX_LOG[a] + RX_LOG[b]] : 0; }
+        function rxDiv(a, b) { return a ? RX_EXP[(RX_LOG[a] + 255 - RX_LOG[b]) % 255] : 0; }
+        function rxEval(p, x) { let s = 0; for (let i = p.length - 1; i >= 0; i--) { s = rxMul(s, x) ^ p[i]; } return s; }   // p[i] = coefficient de x^i
+
+        /* rxRS — E : tampon, décalage d'un mot de 204 octets → T : correction sur
+           place → S : nombre d'octets corrigés, ou −1 si mot non corrigible */
+        function rxRS(c, o) {
+            const S = new Uint8Array(16);
+            let nul = true;
+            for (let i = 0; i < 16; i++) {
+                let s = 0; const a = RX_EXP[i];
+                for (let j = 0; j < 204; j++) { s = rxMul(s, a) ^ c[o + j]; }
+                S[i] = s; if (s) { nul = false; }
+            }
+            if (nul) { return 0; }
+            // Berlekamp-Massey
+            let Lam = [1], B = [1], L = 0, m = 1, b = 1;
+            for (let n = 0; n < 16; n++) {
+                let d = S[n];
+                for (let i = 1; i <= L; i++) { d ^= rxMul(Lam[i] || 0, S[n - i]); }
+                if (d === 0) { m++; continue; }
+                const coef = rxDiv(d, b), T = Lam.slice();
+                const nl = Math.max(Lam.length, B.length + m), N = new Array(nl).fill(0);
+                for (let i = 0; i < Lam.length; i++) { N[i] = Lam[i]; }
+                for (let i = 0; i < B.length; i++) { N[i + m] ^= rxMul(coef, B[i]); }
+                Lam = N;
+                if (2 * L <= n) { L = n + 1 - L; B = T; b = d; m = 1; } else { m++; }
+            }
+            // Ω = S·Λ mod x^16
+            const Om = new Array(16).fill(0);
+            for (let i = 0; i < 16; i++) { for (let j = 0; j < Lam.length && i + j < 16; j++) { Om[i + j] ^= rxMul(S[i], Lam[j]); } }
+            const dLam = Lam.map(function (v, i) { return (i & 1) ? v : 0; }).slice(1);   // Λ'(x)
+            let nb = 0;
+            const pos = [], val = [];
+            for (let p = 0; p < 204; p++) {
+                const e = 203 - p, Xi = RX_EXP[(255 - e) % 255];               // X⁻¹ = λ^−e
+                if (rxEval(Lam, Xi) === 0) {
+                    const den = rxEval(dLam, Xi);
+                    if (!den) { return -1; }
+                    pos.push(p); val.push(rxMul(RX_EXP[e], rxDiv(rxEval(Om, Xi), den)));   // Forney, première racine λ⁰
+                    nb++;
+                }
+            }
+            if (nb !== L || nb > 8) { return -1; }
+            for (let k = 0; k < nb; k++) { c[o + pos[k]] ^= val[k]; }
+            return nb;
+        }
+
+        // ---------- PRBS de dérandomisation (masque d'une super-trame, comme l'étape 09) ----------
+        function rxMasquePRBS() {
+            const m = new Uint8Array(8 * 188);
+            let r = 0x00A9;                                   // étages 1 à 15 = 100101010000000
+            function pas() { const f = ((r >> 13) ^ (r >> 14)) & 1; r = ((r << 1) | f) & 0x7FFF; return f; }
+            for (let p = 0; p < 8; p++) {
+                if (p > 0) { for (let k = 0; k < 8; k++) { pas(); } }
+                for (let j = 1; j < 188; j++) { let by = 0; for (let k = 7; k >= 0; k--) { by |= pas() << k; } m[p * 188 + j] = by; }
+            }
+            return m;
+        }
+
+        /* rxRecevoir — E : lire(a, b) → Int16Array I/Q des échantillons [a, b) (zéros hors
+           fichier), nombre d'échantillons, paramètres {sps, alpha, span, fec},
+           progression(texte, fraction), vue facultative {debut(nP), signal(iq, n0),
+           constellation(points), paquets(ts, p0, p1)} → S : {ts, mesures, constellation} */
+        async function rxRecevoir(lire, nEch, P, progression, V) {
+            const sps = P.sps, h = rxSRRC(P.alpha, P.span, sps), H = (h.length - 1) / 2, nT = h.length;
+            const nSym = Math.floor(nEch / sps), M = {};
+            // 1. instant d'échantillonnage : phase d'énergie maximale sur 4 096 symboles
+            const nA = Math.min(nSym, 4096);
+            const ap = await lire(-H, nA * sps + sps + H);
+            let tau = 0, eMax = -1;
+            function filtrer(buf, a0, k, t) {           // sortie du filtre adapté à l'échantillon k·sps + t
+                let yi = 0, yq = 0;
+                const c = k * sps + t - H - a0;
+                for (let j = 0; j < nT; j++) {
+                    const o = 2 * (c + j), w = h[j];
+                    yi += w * buf[o]; yq += w * buf[o + 1];
+                }
+                return [yi, yq];
+            }
+            for (let t = 0; t < sps; t++) {
+                let e = 0;
+                for (let k = 0; k < nA; k++) { const y = filtrer(ap, -H, k, t); e += y[0] * y[0] + y[1] * y[1]; }
+                if (e > eMax) { eMax = e; tau = t; }
+            }
+            let A = 0;
+            for (let k = 0; k < nA; k++) { const y = filtrer(ap, -H, k, tau); A += Math.abs(y[0]) + Math.abs(y[1]); }
+            A /= 2 * nA;
+            M.tau = tau; M.sps = sps; M.symboles = nSym;
+            // 2. au fil des tranches : filtre adapté, décisions souples, dépoinçonnage,
+            //    Viterbi, puis désentrelacement, RS et dérandomisation des paquets complets
+            const [PX, PY] = RX_POINC[P.fec], Lp = PX.length;
+            let parPeriode = 0; for (let k = 0; k < Lp; k++) { parPeriode += PX[k] + PY[k]; }
+            const nSouple = 2 * nSym, nPas = Math.floor(nSouple / parPeriode) * Lp;
+            const vit = new RxViterbi(nPas), y = vit.out;
+            const nOct = Math.floor((nPas - 6) / 8), nX = Math.max(0, nOct - 11 * 17 * 12), nP = Math.floor(nX / 204);
+            const durs = new Uint8Array(Math.ceil(nSouple / 8));    // décisions fermes (contrôle du BER canal)
+            const constel = new Float32Array(2 * Math.min(nSym, 3000));
+            const mask = rxMasquePRBS(), ts = new Uint8Array(nP * 188), mot = new Uint8Array(204);
+            let errQ = 0, nQ = 0, iS = 0, pFait = 0, syncKO = 0, corriges = 0, motsCorriges = 0, nonCorr = 0;
+            const file = new Float64Array(16); let nf = 0, kp = 0;  // valeurs souples en attente
+            if (V && V.debut) { V.debut(nP); }
+            /* paquets — traite les paquets dont tous les octets sont sortis du Viterbi */
+            function paquets(nDispo) {
+                const p0 = pFait;
+                while (pFait < nP && (pFait + 1) * 204 + 2244 <= nDispo) {
+                    const p = pFait;
+                    for (let j = 0; j < 204; j++) { const q = p * 204 + j; mot[j] = y[q + (q % 12) * 204]; }   // désentrelacement
+                    if (mot[0] !== (p % 8 === 0 ? 0xB8 : 0x47)) { syncKO++; }
+                    const r = rxRS(mot, 0);
+                    if (r < 0) { nonCorr++; } else if (r > 0) { corriges += r; motsCorriges++; }
+                    const d = p * 188, mo = (p % 8) * 188;
+                    ts[d] = 0x47;
+                    for (let j = 1; j < 188; j++) { ts[d + j] = mot[j] ^ mask[mo + j]; }       // dérandomisation
+                    pFait++;
+                }
+                if (V && V.paquets && pFait > p0) { V.paquets(ts, p0, pFait); }
+            }
+            const tranche = 16384;
+            for (let a = 0; a < nSym; a += tranche) {
+                const b = Math.min(nSym, a + tranche);
+                const a0 = a * sps + tau - H;
+                const buf = await lire(a0, b * sps + tau + H + 1);
+                const vue = V && V.constellation ? new Float32Array(2 * Math.min(400, b - a)) : null;
+                for (let k = a; k < b; k++) {
+                    const yv = filtrer(buf, a0, k, tau);
+                    const yi = yv[0] / A, yq = yv[1] / A;
+                    if (k < 3000) { constel[2 * k] = yi; constel[2 * k + 1] = yq; }
+                    if (vue && k - a < 400) { vue[2 * (k - a)] = yi; vue[2 * (k - a) + 1] = yq; }
+                    const ei = yi - (yi >= 0 ? 1 : -1), eq = yq - (yq >= 0 ? 1 : -1);
+                    errQ += ei * ei + eq * eq; nQ += 2;
+                    for (let u = 0; u < 2; u++) {
+                        const v = u ? yq : yi;
+                        if (v < 0) { durs[iS >> 3] |= 0x80 >> (iS & 7); }
+                        iS++;
+                        file[nf++] = v;
+                        // un pas de Viterbi dès que les valeurs de l'instant kp sont disponibles
+                        for (;;) {
+                            const k2 = kp % Lp, besoin = PX[k2] + PY[k2];
+                            if (nf < besoin || vit.pas >= nPas) { break; }
+                            let q = 0;
+                            const sx = PX[k2] ? file[q++] : 0, sy = PY[k2] ? file[q++] : 0;
+                            for (let r = q; r < nf; r++) { file[r - q] = file[r]; }
+                            nf -= q;
+                            vit.etape(sx, sy); kp++;
+                        }
+                    }
+                }
+                paquets(vit.sortis >> 3);
+                if (V && V.signal) { V.signal(buf.subarray(2 * H, 2 * H + 2 * 400 * 1), a * sps); }
+                if (vue) { V.constellation(vue); }
+                progression('symboles ' + b.toLocaleString() + ' / ' + nSym.toLocaleString() + '  |  octets Viterbi ' + (vit.sortis >> 3).toLocaleString() +
+                    '  |  paquets TS ' + pFait.toLocaleString() + ' / ' + nP.toLocaleString(), b / nSym);
+                await new Promise(function (r) { setTimeout(r, 0); });
+            }
+            vit.terminer();
+            paquets(nOct);
+            M.mer = 10 * Math.log10(nQ / errQ);
+            // 3. BER avant Viterbi : on recode les bits décodés et on compare aux décisions fermes
+            let berErr = 0, berN = 0;
+            {
+                let reg = 0, q = 0;
+                for (let i = 0; i < vit.pas && q < iS; i++) {
+                    const bit = (y[i >> 3] >> (7 - (i & 7))) & 1, sv = (bit << 6) | reg, k2 = i % Lp;
+                    if (PX[k2]) { berErr += RX_PAR[sv & RX_G1] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
+                    if (PY[k2] && q < iS) { berErr += RX_PAR[sv & RX_G2] ^ ((durs[q >> 3] >> (7 - (q & 7))) & 1); q++; berN++; }
+                    reg = ((reg >> 1) | (bit << 5)) & 0x3F;
+                }
+            }
+            M.berCanal = berErr / berN; M.bitsCanal = berN; M.octetsViterbi = nOct;
+            M.paquets = nP; M.syncKO = syncKO; M.rsOctets = corriges; M.rsMots = motsCorriges; M.rsEchecs = nonCorr;
+            progression('terminé', 1);
+            return { ts: ts, mesures: M, constellation: constel };
+        }
+
+        // ============================================================
+        // PAGE 15 : interface
+        // ============================================================
+        const WIDTH = 352, HEIGHT = 288;
+        let fichierIQ = null, refTS = null, refNom = '', refSource = null, sourceIQ = null, recu = null, mesures = null;
+
+        window.onload = function () {
+            ['canvasInput', 'canvasProcess', 'canvasOutput'].forEach(clearCanvas);
+            chargerReferenceSession();
+        };
+
+        function clearCanvas(id) {
+            const ctx = document.getElementById(id).getContext('2d');
+            ctx.fillStyle = '#0e1418'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        function etat(texte, f) {
+            document.getElementById('barre').style.width = (100 * f).toFixed(1) + '%';
+            document.getElementById('etat').textContent = texte;
+        }
+
+        /* chargerIQ — E : fichier .cs16 (I/Q 16 bits entrelacés) → T : réglages
+           déduits du nom (…_x8_a0.35.cs16), aperçu du signal */
+        async function chargerIQ(files) {
+            if (!files || !files.length) { return; }
+            fichierIQ = files[0]; recu = null;
+            // nom produit par l'étape 14 : dvbs_iq_s16_10MSs_x8_a0.35_<source>.cs16
+            const m = /_x(\d+)_a(\d+(?:\.\d+)?)(?:_([A-Za-z0-9-]+))?/i.exec(fichierIQ.name), r = /_([0-9.]+)MSs_/i.exec(fichierIQ.name);
+            sourceIQ = m && m[3] ? m[3] : null;
+            if (m) {
+                document.getElementById('sps').value = m[1];
+                document.getElementById('rolloff').value = String(parseFloat(m[2]));
+            }
+            const nEch = fichierIQ.size / 4, sps = +document.getElementById('sps').value;
+            const rs = r ? parseFloat(r[1]) : null;
+            // aperçu pris en cours de flux : au début, l'entrelaceur sort surtout des zéros
+            const d0 = Math.max(0, Math.min(nEch - 4096, 200000));
+            const ap = new Int16Array(await fichierIQ.slice(4 * d0, 4 * Math.min(nEch, d0 + 4096)).arrayBuffer());
+            dessinerSignal(ap, d0);
+            clearCanvas('canvasProcess'); clearCanvas('canvasOutput');
+            document.getElementById('btnRecevoir').disabled = false;
+            document.getElementById('btnExportTS').disabled = true;
+            document.getElementById('globalStats').style.display = 'none';
+            const st = document.getElementById('statsInput');
+            st.style.display = 'block';
+            st.innerHTML = '<strong>Signal chargé :</strong><br>• ' + fichierIQ.name + '<br>• ' + nEch.toLocaleString() + ' échantillons I/Q, ' +
+                Math.floor(nEch / sps).toLocaleString() + ' symboles' + (rs ? ' (' + (nEch / sps / rs / 1e6).toFixed(3) + ' s à ' + rs + ' MS/s)' : '') +
+                '<br>• Source : ' + (sourceIQ ? '<b>' + sourceIQ + '</b>' : 'non indiquée dans le nom du fichier');
+            majRef();
+        }
+
+        function dessinerSignal(iq, d0, libelle) {
+            const ctx = document.getElementById('canvasInput').getContext('2d');
+            clearCanvas('canvasInput');
+            let c = 1; for (let i = 0; i < iq.length; i++) { c = Math.max(c, Math.abs(iq[i])); }
+            const n = Math.min(iq.length / 2, 400);
+            [['#5cc8d6', 0, 80], ['#f0a63a', 1, 200]].forEach(function (v) {
+                ctx.strokeStyle = v[0]; ctx.beginPath();
+                for (let i = 0; i < n; i++) { const x = 10 + i * (WIDTH - 20) / n, y = v[2] - 50 * iq[2 * i + v[1]] / c; if (i) { ctx.lineTo(x, y); } else { ctx.moveTo(x, y); } }
+                ctx.stroke();
+            });
+            ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+            ctx.fillText((libelle || 'I (cyan), Q (ambre) : ' + n + ' échantillons dès le n° ') + d0.toLocaleString(), 10, HEIGHT - 10);
+        }
+
+        function dessinerConstellation(pts) {
+            const ctx = document.getElementById('canvasProcess').getContext('2d');
+            clearCanvas('canvasProcess');
+            const cx = WIDTH / 2, cy = HEIGHT / 2, k = 80;
+            ctx.strokeStyle = '#26343e'; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(WIDTH, cy); ctx.moveTo(cx, 0); ctx.lineTo(cx, HEIGHT); ctx.stroke();
+            ctx.fillStyle = 'rgba(92,200,214,0.6)';
+            for (let i = 0; i < pts.length; i += 2) { ctx.fillRect(cx + k * pts[i] - 1, cy - k * pts[i + 1] - 1, 2, 2); }
+            ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+            ctx.fillText('Filtre adapté, instants symbole (' + pts.length / 2 + ' points)', 10, HEIGHT - 10);
+        }
+
+        /* dessinerPaquets — vert : identique à la référence, rouge : différent, gris : pas de référence */
+        function dessinerPaquets(ts, ref) {
+            const ctx = document.getElementById('canvasOutput').getContext('2d');
+            clearCanvas('canvasOutput');
+            const n = ts.length / 188, cols = 64, rows = Math.ceil(n / cols), ch = Math.max(1, Math.floor((HEIGHT - 40) / rows)), cw = (WIDTH - 20) / cols;
+            for (let p = 0; p < n; p++) {
+                let c = '#5a6b75';
+                if (ref) {
+                    c = '#3fbf6f';
+                    if (p * 188 + 188 > ref.length) { c = '#c0392b'; }
+                    else { for (let j = 0; j < 188; j++) { if (ts[p * 188 + j] !== ref[p * 188 + j]) { c = '#c0392b'; break; } } }
+                }
+                ctx.fillStyle = c;
+                ctx.fillRect(10 + (p % cols) * cw, 10 + Math.floor(p / cols) * ch, Math.max(1, cw - 0.5), Math.max(1, ch - (ch > 2 ? 1 : 0)));
+            }
+            ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+            ctx.fillText(n.toLocaleString() + ' paquets TS' + (ref ? ' — vert : identique, rouge : différent' : ''), 10, HEIGHT - 10);
+        }
+
+        /* vue — affichages mis à jour à chaque tranche : signal en cours de lecture,
+           constellation (les points anciens s'estompent), paquets TS au fur et à mesure */
+        const vue = {
+            grille: null,
+            debut: function (nP) {
+                const cols = 64, rows = Math.ceil(nP / cols);
+                this.grille = { n: nP, cols: cols, ch: Math.max(1, Math.floor((HEIGHT - 40) / rows)), cw: (WIDTH - 20) / cols };
+                clearCanvas('canvasOutput'); clearCanvas('canvasProcess');
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                ctx.fillStyle = '#1d2a33';
+                for (let p = 0; p < nP; p++) { this.case(ctx, p); }
+                this.legende(0);
+            },
+            case: function (ctx, p) {
+                const g = this.grille;
+                ctx.fillRect(10 + (p % g.cols) * g.cw, 10 + Math.floor(p / g.cols) * g.ch, Math.max(1, g.cw - 0.5), Math.max(1, g.ch - (g.ch > 2 ? 1 : 0)));
+            },
+            legende: function (n) {
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                ctx.fillStyle = '#0e1418'; ctx.fillRect(0, HEIGHT - 24, WIDTH, 24);
+                ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+                ctx.fillText(n.toLocaleString() + ' / ' + this.grille.n.toLocaleString() + ' paquets TS' + (refTS ? ' — vert : identique, rouge : différent' : ''), 10, HEIGHT - 10);
+            },
+            signal: function (iq, n0) { dessinerSignal(iq, n0, 'I (cyan), Q (ambre) en cours de lecture : échantillon '); },
+            constellation: function (pts) {
+                const ctx = document.getElementById('canvasProcess').getContext('2d'), cx = WIDTH / 2, cy = HEIGHT / 2, k = 80;
+                ctx.fillStyle = 'rgba(14,20,24,0.25)'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                ctx.strokeStyle = '#26343e'; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(WIDTH, cy); ctx.moveTo(cx, 0); ctx.lineTo(cx, HEIGHT); ctx.stroke();
+                ctx.fillStyle = 'rgba(92,200,214,0.8)';
+                for (let i = 0; i < pts.length; i += 2) { ctx.fillRect(cx + k * pts[i] - 1, cy - k * pts[i + 1] - 1, 2, 2); }
+            },
+            paquets: function (ts, p0, p1) {
+                const ctx = document.getElementById('canvasOutput').getContext('2d');
+                for (let p = p0; p < p1; p++) {
+                    let c = '#5cc8d6';
+                    if (refTS) {
+                        c = '#3fbf6f';
+                        if (p * 188 + 188 > refTS.length) { c = '#c0392b'; }
+                        else { for (let j = 0; j < 188; j++) { if (ts[p * 188 + j] !== refTS[p * 188 + j]) { c = '#c0392b'; break; } } }
+                    }
+                    ctx.fillStyle = c; this.case(ctx, p);
+                }
+                this.legende(p1);
+            }
+        };
+
+        /* recevoir — lecture du .cs16 par tranches, chaîne de réception, comparaison */
+        async function recevoir() {
+            if (!fichierIQ) { return; }
+            const P = { sps: +document.getElementById('sps').value, alpha: parseFloat(document.getElementById('rolloff').value),
+                        span: 12, fec: document.getElementById('fec').value };
+            const nEch = Math.floor(fichierIQ.size / 4);
+            async function lire(a, b) {
+                const out = new Int16Array(2 * (b - a)), a1 = Math.max(0, a), b1 = Math.min(nEch, b);
+                if (b1 > a1) { out.set(new Int16Array(await fichierIQ.slice(4 * a1, 4 * b1).arrayBuffer()), 2 * (a1 - a)); }
+                return out;
+            }
+            document.getElementById('btnRecevoir').disabled = true;
+            const t0 = performance.now();
+            let r;
+            try { r = await rxRecevoir(lire, nEch, P, etat, vue); }
+            catch (e) { alert('Erreur de réception : ' + e.message); document.getElementById('btnRecevoir').disabled = false; return; }
+            recu = r.ts; mesures = r.mesures; mesures.duree = (performance.now() - t0) / 1000;
+            afficherBilan(true);
+            document.getElementById('btnRecevoir').disabled = false;
+            document.getElementById('btnExportTS').disabled = false;
+        }
+
+        function afficherBilan(direct) {
+            if (!recu) { return; }
+            const M = mesures, ok = function (c) { return c ? '<span style="color:#5cd65c">✔</span>' : '<span style="color:#ff5c5c">✘</span>'; };
+            let cmp = '• Pas de TS de référence : chargez la sortie de l\'étape 08 (📁 Référence) pour la comparaison.';
+            if (refTS) {
+                const n = recu.length / 188, nr = Math.floor(refTS.length / 188);
+                let id = 0, premier = -1;
+                for (let p = 0; p < n; p++) {
+                    let eg = p < nr;
+                    for (let j = 0; eg && j < 188; j++) { if (recu[p * 188 + j] !== refTS[p * 188 + j]) { eg = false; } }
+                    if (eg) { id++; } else if (premier < 0) { premier = p; }
+                }
+                const tout = id === n && n === nr;
+                cmp = ok(tout) + ' Comparaison avec <code>' + refNom + '</code> : ' + id.toLocaleString() + ' paquets identiques sur ' + nr.toLocaleString() +
+                    (tout ? ' — <b>flux restitué octet pour octet</b>' : ' (premier écart au paquet ' + premier + ', reçus ' + n.toLocaleString() + ')');
+            }
+            if (!direct) { dessinerPaquets(recu, refTS); }
+            const gs = document.getElementById('globalStats');
+            gs.style.display = 'block';
+            gs.innerHTML = '<strong>Réception :</strong><br>' + ligneSource() +
+                '• Instant d\'échantillonnage : phase ' + M.tau + ' / ' + M.sps + ' ; MER mesuré ' + M.mer.toFixed(1) + ' dB<br>' +
+                ok(M.berCanal === 0) + ' Viterbi : ' + M.octetsViterbi.toLocaleString() + ' octets ; bits du canal recodés à l\'identique : ' + (100 * (1 - M.berCanal)).toFixed(4) + ' %<br>' +
+                ok(M.syncKO === 0) + ' Désentrelacement : ' + M.paquets.toLocaleString() + ' paquets de 204 octets, synchros 0x47 / 0xB8 à leur place (' + M.syncKO + ' écart)<br>' +
+                ok(M.rsEchecs === 0 && M.rsMots === 0) + ' Reed-Solomon : syndromes nuls sur ' + (M.paquets - M.rsMots - M.rsEchecs).toLocaleString() + ' paquets, ' + M.rsOctets + ' octet corrigé, ' + M.rsEchecs + ' paquet non corrigible<br>' +
+                '• Dérandomisation : ' + (recu.length / 188).toLocaleString() + ' paquets TS de 188 octets<br>' + cmp + '<br>' +
+                '• Durée de calcul : ' + M.duree.toFixed(1) + ' s';
+        }
+
+        /* référence : fichier .ts, .j2d (J2D_TS_V2) ou .json (MPEG2_TS_V1) de l'étape 08 */
+        async function lireReference(nom, blob) {
+            const buf = await blob.arrayBuffer();
+            if (/\.j2d$/i.test(nom)) { const lu = J2D.lire(buf); if (lu.meta.format !== 'J2D_TS_V2') { throw new Error('format ' + lu.meta.format); } return { ts: new Uint8Array(lu.t.ts), source: lu.meta.origine || null }; }
+            if (/\.json$/i.test(nom)) {
+                const o = JSON.parse(new TextDecoder().decode(buf)); if (o.format !== 'MPEG2_TS_V1') { throw new Error('format ' + o.format); }
+                const s = atob(o.binary), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { u[i] = s.charCodeAt(i); } return { ts: u, source: null };
+            }
+            return { ts: new Uint8Array(buf), source: null };
+        }
+        async function chargerReference(files) {
+            if (!files || !files.length) { return; }
+            try { const l = await lireReference(files[0].name, files[0]); refTS = l.ts; refSource = l.source; refNom = files[0].name; majRef(); afficherBilan(); }
+            catch (e) { alert('Référence non reconnue : ' + e.message); }
+        }
+        function majRef() {
+            const el = document.getElementById('refInfo');
+            if (!refTS) { el.textContent = 'Référence : aucune'; return; }
+            el.innerHTML = 'Référence : ' + refNom + ' (' + (refTS.length / 188).toLocaleString() + ' paquets)' +
+                (refSource ? ' — source <b>' + refSource.nom + '</b>' : '') + (sourcesDifferentes() ? ' <span style="color:#ff5c5c">✘ autre source que le signal (' + sourceIQ + ')</span>' : '');
+        }
+        function sourcesDifferentes() { return !!(refSource && sourceIQ && MULTI_UI.etiquette(refSource.nom) !== sourceIQ); }
+        function ligneSource() {
+            if (!refSource && !sourceIQ) { return '• Source : non indiquée<br>'; }
+            if (sourcesDifferentes()) { return '<span style="color:#ff5c5c">✘</span> Source du signal : <b>' + sourceIQ + '</b> ; source de la référence : <b>' + refSource.nom + '</b> — fichiers de deux traitements différents<br>'; }
+            return '• Source : <b>' + (refSource ? MULTI_UI.texteSource(refSource) : sourceIQ) + '</b><br>';
+        }
+        /* sortie de l'étape 08 gardée par « suivante ▶ » dans la session en cours */
+        function chargerReferenceSession() {
+            majRef();
+            let sid = null; try { sid = sessionStorage.getItem('j2d-sid'); } catch (e) { return; }
+            if (!sid) { return; }
+            try {
+                const r = indexedDB.open('jpeg2dvb', 1);
+                r.onupgradeneeded = function () { r.result.createObjectStore('etapes'); };
+                r.onsuccess = function () {
+                    const q = r.result.transaction('etapes', 'readonly').objectStore('etapes').get(8);
+                    q.onsuccess = async function () {
+                        const rec = q.result;
+                        if (!rec || rec.sid !== sid || refTS) { return; }
+                        try { const l = await lireReference(rec.name, rec.data); refTS = l.ts; refSource = l.source; refNom = rec.name + ' (étape 08, session)'; majRef(); afficherBilan(); } catch (e) {}
+                    };
+                };
+            } catch (e) {}
+        }
+
+        function exportTS() {
+            if (!recu) { return; }
+            // nom propre au traitement : un ancien « recu.ts » du dossier de téléchargement ne peut pas être repris par erreur
+            const tag = sourceIQ || (refSource ? MULTI_UI.etiquette(refSource.nom) : 'flux');
+            J2D.telecharger(new Blob([recu], { type: 'video/mp2t' }), 'recu_' + tag + '.ts');
+        }
+    </script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page14-srrc-v2.html">◀ 14 · Filtre SRRC</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 15 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+<script>
+/* ===== Passage automatique des données d'une étape à la suivante (1.3) =====
+   « suivante ▶ » : la sortie de l'étape est produite sans téléchargement, gardée
+   dans le navigateur (IndexedDB, session courante) puis chargée d'office par
+   l'étape suivante via son propre « Charger ». Le traitement reste au clic.
+   Les boutons Exporter / Charger restent disponibles. */
+(function () {
+  var N = 15, NEXT = null;
+  var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
+  function base(fn) {
+    try {
+      var r = indexedDB.open('jpeg2dvb', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('etapes'); };
+      r.onsuccess = function () { fn(r.result); };
+      r.onerror = function () { fn(null); };
+    } catch (e) { fn(null); }
+  }
+  function ranger(rec, fin) { base(function (db) { if (!db) { fin(); return; } var t = db.transaction('etapes', 'readwrite'); if (rec) { t.objectStore('etapes').put(rec, N); } else { t.objectStore('etapes').delete(N); } t.oncomplete = fin; t.onerror = fin; }); }
+  /* sortie de l'étape, capturée au lieu d'être téléchargée */
+  function produire(fin) {
+    if (N === 0) {
+      var cv = document.getElementById('canvasRGB');
+      if (typeof yCbCrData === 'undefined' || !yCbCrData || !cv) { fin(null); return; }
+      cv.toBlob(function (b) { fin(b ? { name: 'camera_capture.png', blob: b } : null); }, 'image/png'); return;
+    }
+    var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.cs16$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    try {
+      var bs = document.querySelectorAll('button');
+      for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
+    } catch (e) {}
+    URL.createObjectURL = creer; HTMLAnchorElement.prototype.click = cliquer;
+    fin(pris);
+  }
+  /* départ : « suivante ▶ » */
+  if (NEXT) {
+    document.querySelectorAll('.j2d-nav > a:last-child').forEach(function (a) {
+      if (a.getAttribute('href') !== NEXT) { return; }
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        produire(function (s) {
+          ranger(s ? { sid: SID, name: s.name, type: s.blob.type || 'application/json', data: s.blob } : null, function () { location.href = NEXT; });
+        });
+      });
+    });
+  }
+  /* arrivée : chargement d'office de la sortie de l'étape précédente */
+  if (N > 0) {
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        base(function (db) {
+          if (!db) { return; }
+          var q = db.transaction('etapes', 'readonly').objectStore('etapes').get(N - 1);
+          q.onsuccess = function () {
+            var r = q.result, inp = document.getElementById('fileInput');
+            if (!r || r.sid !== SID || !inp || typeof DataTransfer === 'undefined') { return; }
+            var dt = new DataTransfer();
+            dt.items.add(new File([r.data], r.name, { type: r.type }));
+            inp.files = dt.files;
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+            var nav = document.querySelector('.j2d-nav'), m = document.createElement('div');
+            m.className = 'j2d-auto';
+            m.innerHTML = '↪ Sortie de l\'étape ' + (N - 1 < 10 ? '0' : '') + (N - 1) + ' chargée automatiquement : <b>' + r.name + '</b> — lancez le traitement ⚙️ (ou chargez un autre fichier).';
+            if (nav) { nav.parentNode.insertBefore(m, nav.nextSibling); }
+          };
+        });
+      }, 300);
+    });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
+  }
+})();
+</script>
+</body>
+</html>

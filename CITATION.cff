@@ -1,0 +1,43 @@
+# ==============================================================================
+#  Nom / Name : CITATION.cff
+#  Projet     : JPEG2DVB — https://github.com/ericperret/JPEG2DVB
+#  Auteur     : Eric PERRET
+#  Date       : 2026-10-27
+#  Version    : 1.0
+#  Objet      : métadonnées de citation (bouton « Cite this repository » de GitHub)
+#  Licence    : CC BY-NC 4.0 — usage commercial sur autorisation écrite (eperret@azs.fr)
+# ==============================================================================
+cff-version: 1.2.0
+message: "If you use or cite this work, please credit it as below. / Merci de citer ce travail comme ci-dessous."
+type: software
+title: "JPEG2DVB — interactive DVB-S transmission tutorial"
+abstract: "Interactive DVB-S transmission chain, from JPEG/DCT/Huffman to MPEG-TS, Reed-Solomon, interleaving, convolutional code and QPSK/SRRC. Pure HTML/JS, offline."
+authors:
+  - family-names: "PERRET"
+    given-names: "Eric"
+    email: "eperret@azs.fr"
+repository-code: "https://github.com/ericperret/JPEG2DVB"
+url: "https://ericperret.github.io/JPEG2DVB/index2.html"
+license: CC-BY-NC-4.0
+date-released: "2026-10-27"
+keywords:
+  - dvb-s
+  - mpeg-ts
+  - reed-solomon
+  - qpsk
+  - dct
+  - huffman
+  - jpeg
+  - convolutional-code
+  - video-compression
+  - digital-modulation
+  - satellite
+  - broadcast
+  - signal-processing
+  - telecommunications
+  - fpga
+  - vhdl
+  - educational
+  - interactive
+  - vanilla-javascript
+  - no-dependencies

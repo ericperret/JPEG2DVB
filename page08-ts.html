@@ -1,0 +1,1656 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page08-ts.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 08 - Empaquetage Transport Stream
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Version    : 2.4
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
+                     suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
+               1.3  2026-10-18  passage automatique des données : « suivante ▶ »
+                     garde la sortie et l'étape suivante la charge d'office
+               1.4  2026-10-18  export JSON des gros flux (conversion base64 par
+                     morceaux : dépassement de pile au-delà de ~100 000 octets)
+               1.5  2026-10-18  PCR dans l'adaptation field du premier paquet vidéo
+                     (PID 0x0101 annoncé par la PMT), random_access_indicator ;
+                     ffmpeg trouve l'heure de début du flux
+               2.0  2026-10-19  multiplexage à débit constant : PAT/PMT 80 ms, PCR 30 ms,
+                     paquets nuls, contrôle du tampon EB et des PTS, flux .j2d
+               2.1  2026-10-19  numéro de version affiché dans la barre de navigation
+               2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
+               2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+               2.4  2026-10-19  instants du multiplexage en entiers exacts (PAT/PMT, PCR,
+                     disponibilité des images, valeur du PCR) : décisions identiques
+                     au FPGA, plus d'écart d'arrondi flottant aux instants ronds
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 08 - Empaquetage Transport Stream</title>
+    <style>
+        body {
+            font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+            margin: 20px;
+            background: #0e1418;
+            color: #dfe7ec;
+        }
+        h1 {
+            color: #5cc8d6;
+            text-align: center;
+        }
+        .description {
+            background: #18222a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #5cc8d6;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #26343e;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #5cc8d6;
+            color: #000;
+        }
+        .pipeline-arrow {
+            color: #5cc8d6;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #18222a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #5cc8d6;
+        }
+        canvas {
+            border: 2px solid #26343e;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #26343e;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #5cc8d6;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #8fa1ad;
+        }
+        .stats {
+            background: #26343e;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1100px;
+            margin: 20px auto;
+        }
+        .hex-display {
+            font-family: monospace;
+            font-size: 11px;
+            background: #141c22;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 120px;
+            overflow-y: auto;
+            word-break: break-all;
+            text-align: left;
+        }
+        .hex-display .sync { color: #ff4444; font-weight: bold; }
+        .hex-display .hdr { color: #f0a63a; }
+        .hex-display .adapt { color: #ffcc00; }
+        .hex-display .payload { color: #5cc8d6; }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+        }
+        .legend-color {
+            width: 16px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        table.header-table {
+            border-collapse: collapse;
+            font-size: 11px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        table.header-table th, table.header-table td {
+            border: 1px solid #333;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        table.header-table th {
+            background: #26343e;
+        }
+        table.header-table tr:nth-child(even) {
+            background: #18222a;
+        }
+        .code {
+            font-family: monospace;
+            color: #5cc8d6;
+        }
+        .section-detail {
+            background: #26343e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .section-detail h4 {
+            margin-top: 0;
+            color: #5cc8d6;
+        }
+        .field-list {
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .field-list .field-name { color: #f0a63a; }
+        .field-list .field-value { color: #00ff88; }
+        .ts-header-diagram {
+            font-family: monospace;
+            font-size: 10px;
+            background: #141c22;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        .pid-bar {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin: 10px 0;
+            flex-wrap: wrap;
+        }
+        .pid-item {
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+    
+        .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
+        .note-norme strong { color: #f0a63a; }
+        .note-norme b { color: #dfe7ec; }
+        .note-norme code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-auto { max-width: 1100px; margin: -8px auto 18px; padding: 9px 14px; background: rgba(240,166,58,.10); border: 1px solid #f0a63a; border-radius: 8px; color: #dfe7ec; font-size: 13px; }
+        .j2d-auto b { color: #f0a63a; font-weight: 600; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
+    </style>
+    <style>
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
+        .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page07-pes.html">◀ 07 · PES</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 08 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream" class="ici" aria-current="page"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page09-prbs.html">09 · PRBS ▶</a></nav>
+    <h1>📺 Page 08 - Empaquetage Transport Stream</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Découpe le flux PES en paquets Transport Stream de 188 octets.<br>
+        Ajoute les tables PSI : PAT (Program Association Table) et PMT (Program Map Table).<br>
+        <strong>Entrée :</strong> Fichier JSON du PES (sortie Page 07)<br>
+        <strong>Sortie :</strong> Fichier .ts compatible lecteurs multimédia
+    </div>
+    <div class="note-norme"><strong>Horloge de référence conforme ISO 13818-1 (§2.4.3.4, §2.4.3.5) :</strong><br>• La PMT désigne le PID qui porte le <b>PCR</b> (Program Clock Reference) : ici la vidéo, PID <code>0x0101</code>. Le PCR recale l'horloge 27 MHz du décodeur sur celle de l'émetteur ; sans lui, le PTS de la page 07 n'a pas de référence.<br>• Le PCR est écrit dans l'<b>adaptation field</b> du premier paquet vidéo : base 33 bits à 90 kHz + extension 9 bits (PCR = base × 300 + extension). PCR initial = 0, PTS = 63 000 : l'image s'affiche 0,7 s après.<br>• <code>random_access_indicator</code> = 1 : ce paquet est un point d'entrée (Sequence Header + image I). En diffusion réelle, le PCR est répété au moins toutes les 100 ms.</div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step">PES</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">PAT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">PMT</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Paquets 188 oct</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">TS</span>
+    </div>
+    
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
+    <div class="canvas-container">
+        <!-- CANVAS 1 : PES en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Flux PES</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json,.j2d" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">PES MPEG-2 Video (sortie Page 07)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Structure TS -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Création TS</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnPacketize" onclick="createTS()" disabled>⚙️ Créer TS</button>
+            </div>
+            <div class="info">Tables PSI + découpage 188 octets</div>
+        </div>
+        
+        <!-- CANVAS 3 : Paquets TS -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Transport Stream</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .ts</button>
+            </div>
+            <div class="info">Cliquez sur un paquet pour le détail</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#ff4444"></div> PAT</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff8800"></div> PMT</div>
+                <div class="legend-item"><div class="legend-color" style="background:#0099cc"></div> Vidéo</div>
+                <div class="legend-item"><div class="legend-color" style="background:#444"></div> Null</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Détails -->
+    <div class="detail-section">
+        <div id="packetDetail" class="section-detail" style="display:none;">
+            <h4 id="detailTitle">Paquet TS</h4>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Champs du header :</strong>
+                    <div id="detailFields" class="field-list"></div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Hexdump complet (188 octets) :</strong>
+                    <div id="detailHex" class="hex-display"></div>
+                </div>
+            </div>
+            <div id="detailStats" style="margin-top: 10px; font-size: 11px; color: #888;"></div>
+        </div>
+        
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <!-- PID utilisés -->
+        <h4 style="color: #00d4ff; margin-top: 20px;">PIDs utilisés</h4>
+        <div class="pid-bar">
+            <div class="pid-item" style="background:#ff4444">PID 0x0000<br>PAT</div>
+            <div class="pid-item" style="background:#ff8800">PID 0x0100<br>PMT</div>
+            <div class="pid-item" style="background:#0099cc">PID 0x0101<br>Vidéo</div>
+            <div class="pid-item" style="background:#444">PID 0x1FFF<br>Null</div>
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Structure du paquet TS (188 octets)</h4>
+        <div class="ts-header-diagram">
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│                              HEADER (4 octets)                                        │
+├───────────┬───────────┬───────────────────────────────────────────────────────────────┤
+│ sync_byte │ TEI│PUSI│TP│         PID (13 bits)        │ TSC │ AFC │    CC (4 bits)   │
+│   0x47    │ 1  │ 1  │1 │  0x0000=PAT, 0x0100=PMT...   │  2  │  2  │ continuity cnt   │
+├───────────┴───────────┴───────────────────────────────────────────────────────────────┤
+│                    ADAPTATION FIELD (optionnel, si AFC=10 ou 11)                      │
+│  adaptation_field_length │ flags │ [stuffing bytes 0xFF]                              │
+├───────────────────────────────────────────────────────────────────────────────────────┤
+│                              PAYLOAD (max 184 octets)                                 │
+│  Pour PAT/PMT: pointer_field + table_section                                          │
+│  Pour Vidéo: données PES                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+
+Légende:
+  TEI  = Transport Error Indicator       TSC = Transport Scrambling Control
+  PUSI = Payload Unit Start Indicator    AFC = Adaptation Field Control
+  TP   = Transport Priority              CC  = Continuity Counter
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Tables PSI</h4>
+        <table class="header-table">
+            <tr>
+                <th>Table</th>
+                <th>PID</th>
+                <th>Table ID</th>
+                <th>Contenu</th>
+            </tr>
+            <tr>
+                <td>PAT (Program Association Table)</td>
+                <td class="code">0x0000</td>
+                <td class="code">0x00</td>
+                <td>Liste des programmes → PID de leur PMT</td>
+            </tr>
+            <tr>
+                <td>PMT (Program Map Table)</td>
+                <td class="code">0x0100</td>
+                <td class="code">0x02</td>
+                <td>Liste des flux du programme → leurs PIDs</td>
+            </tr>
+            <tr>
+                <td>Null Packet</td>
+                <td class="code">0x1FFF</td>
+                <td>-</td>
+                <td>Remplissage (padding)</td>
+            </tr>
+        </table>
+    </div>
+
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
+    <script>
+        // ============================================================
+        // CONSTANTES TS
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        
+        const TS_PACKET_SIZE = 188;
+        const TS_HEADER_SIZE = 4;
+        const TS_SYNC_BYTE = 0x47;
+        
+        // PIDs
+        const PID_PAT = 0x0000;
+        const PID_PMT = 0x0100;
+        const PID_VIDEO = 0x0101;
+        
+        // PCR initial (base 90 kHz) : le PTS de la page 07 vaut PCR_BASE_INIT + 63000 (0,7 s)
+        const PCR_BASE_INIT = 0;
+        const PID_NULL = 0x1FFF;
+        
+        // Table IDs
+        const TABLE_ID_PAT = 0x00;
+        const TABLE_ID_PMT = 0x02;
+        
+        // Stream types
+        const STREAM_TYPE_VIDEO_MPEG2 = 0x02;
+        
+        // Programme
+        const PROGRAM_NUMBER = 1;
+        
+        // Couleurs par PID
+        const PID_COLORS = {
+            [PID_PAT]: '#ff4444',
+            [PID_PMT]: '#f0a63a',
+            [PID_VIDEO]: '#0099cc',
+            [PID_NULL]: '#444444'
+        };
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let pesBinary = [];
+        let tsPackets = [];
+        let created = false;
+        let selectedPacket = null;
+        let continuityCounters = {};
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            clearCanvas('canvasProcess');
+            clearCanvas('canvasOutput');
+            displayProcessInit();
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'MPEG2_PES_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 07.');
+                        return;
+                    }
+                    
+                    // Décoder le binaire base64
+                    const binaryString = atob(inputData.binary);
+                    pesBinary = [];
+                    for (let i = 0; i < binaryString.length; i++) {
+                        pesBinary.push(binaryString.charCodeAt(i));
+                    }
+                    
+                    tsPackets = [];
+                    created = false;
+                    selectedPacket = null;
+                    continuityCounters = {};
+                    
+                    displayInputPES();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnPacketize').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('packetDetail').style.display = 'none';
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>PES chargé :</strong><br>
+                        • Taille : ${pesBinary.length.toLocaleString()} octets<br>
+                        • Paquets PES : ${inputData.pes.packetCount}<br>
+                        • Stream ID : 0x${inputData.pes.streamId.toString(16).toUpperCase()}
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PES ENTRÉE
+        // ============================================================
+        
+        function displayInputPES() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText('Packetized Elementary Stream', WIDTH / 2, 20);
+            ctx.fillText(`${pesBinary.length.toLocaleString()} octets`, WIDTH / 2, 35);
+            
+            // Visualisation comme une bande continue
+            const bytesPerRow = Math.ceil(pesBinary.length / (HEIGHT - 50));
+            const startY = 50;
+            const rowHeight = 3;
+            
+            for (let row = 0; row < (HEIGHT - startY) / rowHeight; row++) {
+                const byteStart = row * bytesPerRow;
+                if (byteStart >= pesBinary.length) break;
+                
+                const byteEnd = Math.min(byteStart + bytesPerRow, pesBinary.length);
+                const widthRatio = (byteEnd - byteStart) / bytesPerRow;
+                
+                ctx.fillStyle = '#0099cc';
+                ctx.fillRect(10, startY + row * rowHeight, (WIDTH - 20) * widthRatio, rowHeight - 1);
+            }
+            
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Flux PES continu à découper', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PROCESS
+        // ============================================================
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText('Création Transport Stream', WIDTH / 2, 25);
+            
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            
+            let y = 50;
+            ctx.fillText('1. Créer la PAT (Program Association Table)', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   • PID 0x0000, Table ID 0x00', 20, y + 15);
+            ctx.fillText('   • Programme 1 → PMT PID 0x0100', 20, y + 30);
+            
+            y += 50;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('2. Créer la PMT (Program Map Table)', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   • PID 0x0100, Table ID 0x02', 20, y + 15);
+            ctx.fillText('   • Vidéo MPEG-2 → PID 0x0101', 20, y + 30);
+            
+            y += 50;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('3. Découper le PES en paquets 188 octets', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   • Header 4 octets + payload 184 octets', 20, y + 15);
+            ctx.fillText('   • 1er paquet : PUSI=1 + PCR (adaptation)', 20, y + 30);
+            ctx.fillText('   • Continuity counter incrémenté', 20, y + 45);
+            
+            y += 65;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('4. Assembler le flux TS', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   • PAT en premier', 20, y + 15);
+            ctx.fillText('   • PMT ensuite', 20, y + 30);
+            ctx.fillText('   • Paquets vidéo', 20, y + 45);
+        }
+        
+        // ============================================================
+        // CRÉATION TRANSPORT STREAM
+        // ============================================================
+        
+        function createTS() {
+            if (!pesBinary.length) return;
+            
+            tsPackets = [];
+            continuityCounters = {
+                [PID_PAT]: 0,
+                [PID_PMT]: 0,
+                [PID_VIDEO]: 0
+            };
+            
+            // 1. Créer la PAT
+            const patPacket = createPAT();
+            tsPackets.push(patPacket);
+            
+            // 2. Créer la PMT
+            const pmtPacket = createPMT();
+            tsPackets.push(pmtPacket);
+            
+            // 3. Découper le PES en paquets TS
+            let pesOffset = 0;
+            let isFirst = true;
+            
+            while (pesOffset < pesBinary.length) {
+                const packet = createVideoPacket(pesOffset, isFirst);
+                tsPackets.push(packet);
+                pesOffset += packet.payloadSize;
+                isFirst = false;
+            }
+            
+            created = true;
+            displayOutputTS();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            // Stats
+            const videoPackets = tsPackets.filter(p => p.pid === PID_VIDEO).length;
+            const totalSize = tsPackets.length * TS_PACKET_SIZE;
+            
+            const globalStats = document.getElementById('globalStats');
+            globalStats.style.display = 'block';
+            globalStats.innerHTML = `
+                <strong>Transport Stream créé :</strong><br>
+                • Paquets TS total : ${tsPackets.length}<br>
+                • PAT : 1 paquet (PID 0x0000)<br>
+                • PMT : 1 paquet (PID 0x0100)<br>
+                • Vidéo : ${videoPackets} paquets (PID 0x0101)<br>
+                • PCR : ${PCR_BASE_INIT * 300} (premier paquet vidéo, PTS 0,7 s plus tard)<br>
+                • Taille totale : ${totalSize.toLocaleString()} octets (${(totalSize / 1024).toFixed(2)} Ko)<br>
+                • Overhead TS : ${((totalSize - pesBinary.length) / pesBinary.length * 100).toFixed(1)}%
+            `;
+        }
+        
+        // ============================================================
+        // CRÉATION PAT
+        // ============================================================
+        
+        function createPAT() {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            // Header TS (4 octets)
+            packet[0] = TS_SYNC_BYTE;
+            packet[1] = 0x40 | ((PID_PAT >> 8) & 0x1F); // PUSI=1, PID high
+            packet[2] = PID_PAT & 0xFF;                  // PID low
+            packet[3] = 0x10 | (continuityCounters[PID_PAT] & 0x0F); // AFC=01 (payload only), CC
+            continuityCounters[PID_PAT] = (continuityCounters[PID_PAT] + 1) & 0x0F;
+            
+            // Pointer field (pour tables PSI)
+            packet[4] = 0x00;
+            
+            // PAT Section
+            let offset = 5;
+            packet[offset++] = TABLE_ID_PAT;           // table_id
+            packet[offset++] = 0xB0;                   // section_syntax_indicator=1, '0', reserved, section_length high
+            packet[offset++] = 13;                     // section_length low (13 bytes après ce champ)
+            packet[offset++] = 0x00;                   // transport_stream_id high
+            packet[offset++] = 0x01;                   // transport_stream_id low
+            packet[offset++] = 0xC1;                   // reserved, version=0, current_next=1
+            packet[offset++] = 0x00;                   // section_number
+            packet[offset++] = 0x00;                   // last_section_number
+            
+            // Programme 1 -> PMT PID 0x0100
+            packet[offset++] = (PROGRAM_NUMBER >> 8) & 0xFF;  // program_number high
+            packet[offset++] = PROGRAM_NUMBER & 0xFF;          // program_number low
+            packet[offset++] = 0xE0 | ((PID_PMT >> 8) & 0x1F); // reserved + PMT PID high
+            packet[offset++] = PID_PMT & 0xFF;                 // PMT PID low
+            
+            // CRC32
+            const crc = calculateCRC32(packet.slice(5, offset));
+            packet[offset++] = (crc >> 24) & 0xFF;
+            packet[offset++] = (crc >> 16) & 0xFF;
+            packet[offset++] = (crc >> 8) & 0xFF;
+            packet[offset++] = crc & 0xFF;
+            
+            return {
+                index: 0,
+                pid: PID_PAT,
+                type: 'PAT',
+                pusi: true,
+                cc: 0,
+                bytes: packet,
+                payloadSize: offset - 4,
+                fields: {
+                    'sync_byte': '0x47',
+                    'PID': '0x0000 (PAT)',
+                    'PUSI': '1 (start of section)',
+                    'table_id': '0x00 (PAT)',
+                    'transport_stream_id': '0x0001',
+                    'program_number': PROGRAM_NUMBER,
+                    'PMT_PID': '0x0100'
+                }
+            };
+        }
+        
+        // ============================================================
+        // CRÉATION PMT
+        // ============================================================
+        
+        function createPMT() {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            // Header TS
+            packet[0] = TS_SYNC_BYTE;
+            packet[1] = 0x40 | ((PID_PMT >> 8) & 0x1F);
+            packet[2] = PID_PMT & 0xFF;
+            packet[3] = 0x10 | (continuityCounters[PID_PMT] & 0x0F);
+            continuityCounters[PID_PMT] = (continuityCounters[PID_PMT] + 1) & 0x0F;
+            
+            // Pointer field
+            packet[4] = 0x00;
+            
+            // PMT Section
+            let offset = 5;
+            packet[offset++] = TABLE_ID_PMT;           // table_id
+            packet[offset++] = 0xB0;                   // section_syntax_indicator=1, section_length high
+            packet[offset++] = 18;                     // section_length low
+            packet[offset++] = (PROGRAM_NUMBER >> 8) & 0xFF;  // program_number high
+            packet[offset++] = PROGRAM_NUMBER & 0xFF;  // program_number low
+            packet[offset++] = 0xC1;                   // reserved, version=0, current_next=1
+            packet[offset++] = 0x00;                   // section_number
+            packet[offset++] = 0x00;                   // last_section_number
+            packet[offset++] = 0xE0 | ((PID_VIDEO >> 8) & 0x1F); // PCR_PID high (same as video)
+            packet[offset++] = PID_VIDEO & 0xFF;       // PCR_PID low
+            packet[offset++] = 0xF0;                   // reserved + program_info_length high
+            packet[offset++] = 0x00;                   // program_info_length low
+            
+            // Stream info: Video MPEG-2
+            packet[offset++] = STREAM_TYPE_VIDEO_MPEG2; // stream_type
+            packet[offset++] = 0xE0 | ((PID_VIDEO >> 8) & 0x1F); // reserved + elementary_PID high
+            packet[offset++] = PID_VIDEO & 0xFF;       // elementary_PID low
+            packet[offset++] = 0xF0;                   // reserved + ES_info_length high
+            packet[offset++] = 0x00;                   // ES_info_length low
+            
+            // CRC32
+            const crc = calculateCRC32(packet.slice(5, offset));
+            packet[offset++] = (crc >> 24) & 0xFF;
+            packet[offset++] = (crc >> 16) & 0xFF;
+            packet[offset++] = (crc >> 8) & 0xFF;
+            packet[offset++] = crc & 0xFF;
+            
+            return {
+                index: 1,
+                pid: PID_PMT,
+                type: 'PMT',
+                pusi: true,
+                cc: 0,
+                bytes: packet,
+                payloadSize: offset - 4,
+                fields: {
+                    'sync_byte': '0x47',
+                    'PID': '0x0100 (PMT)',
+                    'PUSI': '1 (start of section)',
+                    'table_id': '0x02 (PMT)',
+                    'program_number': PROGRAM_NUMBER,
+                    'PCR_PID': '0x0101 (Video)',
+                    'stream_type': '0x02 (MPEG-2 Video)',
+                    'video_PID': '0x0101'
+                }
+            };
+        }
+        
+        // ============================================================
+        // CRÉATION PAQUET VIDÉO
+        // ============================================================
+        
+        function createVideoPacket(pesOffset, isFirst) {
+            const packet = new Array(TS_PACKET_SIZE).fill(0xFF);
+            
+            // Premier paquet : adaptation field avec PCR (1 longueur + 1 flags + 6 PCR = 8 octets)
+            const pcrBytes = isFirst ? 8 : 0;
+            const remainingPES = pesBinary.length - pesOffset;
+            const maxPayload = TS_PACKET_SIZE - TS_HEADER_SIZE - pcrBytes;
+            const payloadSize = Math.min(remainingPES, maxPayload);
+            // Dernier paquet incomplet : bourrage dans l'adaptation field
+            const adaptationFieldLength = pcrBytes + (maxPayload - payloadSize);
+            
+            // Header TS
+            packet[0] = TS_SYNC_BYTE;
+            const pusi = isFirst ? 0x40 : 0x00;
+            packet[1] = pusi | ((PID_VIDEO >> 8) & 0x1F);
+            packet[2] = PID_VIDEO & 0xFF;
+            
+            const hasAdaptation = adaptationFieldLength > 0;
+            const afc = hasAdaptation ? 0x30 : 0x10; // 11 = both, 01 = payload only
+            packet[3] = afc | (continuityCounters[PID_VIDEO] & 0x0F);
+            const cc = continuityCounters[PID_VIDEO];
+            continuityCounters[PID_VIDEO] = (continuityCounters[PID_VIDEO] + 1) & 0x0F;
+            
+            let offset = 4;
+            
+            // Adaptation field (longueur totale = adaptationFieldLength, octet de longueur compris)
+            if (hasAdaptation) {
+                packet[offset++] = adaptationFieldLength - 1; // adaptation_field_length
+                if (adaptationFieldLength > 1) {
+                    if (isFirst) {
+                        packet[offset++] = 0x50; // random_access_indicator=1, PCR_flag=1
+                        const pcr = encodePCR(PCR_BASE_INIT, 0);
+                        for (let i = 0; i < 6; i++) packet[offset++] = pcr[i];
+                    } else {
+                        packet[offset++] = 0x00; // flags (pas de PCR)
+                    }
+                    // Stuffing bytes (déjà 0xFF)
+                    offset = 4 + adaptationFieldLength;
+                }
+            }
+            
+            // Payload
+            for (let i = 0; i < payloadSize; i++) {
+                packet[offset + i] = pesBinary[pesOffset + i];
+            }
+            
+            const fields = {
+                'sync_byte': '0x47',
+                'PID': '0x0101 (Video)',
+                'PUSI': isFirst ? '1 (PES start)' : '0 (continuation)',
+                'AFC': hasAdaptation ? '11 (adaptation + payload)' : '01 (payload only)',
+                'continuity_counter': cc,
+                'adaptation_length': adaptationFieldLength
+            };
+            if (isFirst) {
+                fields['random_access'] = '1 (point d\'accès : Sequence Header)';
+                fields['PCR'] = `base ${PCR_BASE_INIT} × 300 + ext 0 = ${PCR_BASE_INIT * 300} (27 MHz, ${(PCR_BASE_INIT / 90000).toFixed(3)} s)`;
+            }
+            fields['payload_size'] = payloadSize;
+            fields['PES_offset'] = pesOffset;
+            
+            return {
+                index: tsPackets.length,
+                pid: PID_VIDEO,
+                type: 'Video',
+                pusi: isFirst,
+                cc: cc,
+                bytes: packet,
+                payloadSize: payloadSize,
+                adaptationFieldLength: adaptationFieldLength,
+                pesOffset: pesOffset,
+                pcr: isFirst ? PCR_BASE_INIT * 300 : null,
+                fields: fields
+            };
+        }
+        
+        // PCR : base 33 bits (90 kHz) + 6 bits réservés '111111' + extension 9 bits (27 MHz)
+        function encodePCR(base, ext) {
+            const hi = Math.floor(base / 2);            // bits 32..1 de la base
+            return [
+                Math.floor(hi / 16777216) & 0xFF,
+                Math.floor(hi / 65536) & 0xFF,
+                Math.floor(hi / 256) & 0xFF,
+                hi & 0xFF,
+                ((base % 2) << 7) | 0x7E | ((ext >> 8) & 0x01),
+                ext & 0xFF
+            ];
+        }
+        
+        // ============================================================
+        // CRC32 MPEG-2
+        // ============================================================
+        
+        function calculateCRC32(data) {
+            let crc = 0xFFFFFFFF;
+            const polynomial = 0x04C11DB7;
+            
+            for (const byte of data) {
+                for (let bit = 0; bit < 8; bit++) {
+                    const msb = (crc >> 31) & 1;
+                    const dataBit = (byte >> (7 - bit)) & 1;
+                    crc = (crc << 1) >>> 0;
+                    if (msb !== dataBit) {
+                        crc = (crc ^ polynomial) >>> 0;
+                    }
+                }
+            }
+            
+            return crc >>> 0;
+        }
+        
+        // ============================================================
+        // AFFICHAGE PAQUETS TS
+        // ============================================================
+        
+        function displayOutputTS() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            // Afficher les paquets comme une grille
+            const packetsPerRow = 22; // ~352/16
+            const packetWidth = Math.floor(WIDTH / packetsPerRow);
+            const packetHeight = 12;
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${tsPackets.length} paquets TS (188 octets chacun)`, WIDTH / 2, 15);
+            
+            const startY = 25;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const packet = tsPackets[i];
+                const row = Math.floor(i / packetsPerRow);
+                const col = i % packetsPerRow;
+                
+                const x = col * packetWidth;
+                const y = startY + row * (packetHeight + 2);
+                
+                if (y + packetHeight > HEIGHT) break;
+                
+                // Couleur selon le PID
+                ctx.fillStyle = PID_COLORS[packet.pid] || '#666';
+                ctx.fillRect(x + 1, y, packetWidth - 2, packetHeight);
+                
+                // Bordure de sélection
+                if (selectedPacket === i) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y, packetWidth - 2, packetHeight);
+                }
+                
+                // Marquer PUSI
+                if (packet.pusi) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x + 2, y + 1, 3, 3);
+                }
+                
+                // Stocker pour le clic
+                packet.displayX = x;
+                packet.displayY = y;
+                packet.displayWidth = packetWidth;
+                packet.displayHeight = packetHeight;
+            }
+            
+            // Légende compacte en bas
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('□ = PUSI (Payload Unit Start)', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // CLIC SUR PAQUET
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!created) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const packet = tsPackets[i];
+                if (x >= packet.displayX && x < packet.displayX + packet.displayWidth &&
+                    y >= packet.displayY && y < packet.displayY + packet.displayHeight) {
+                    selectedPacket = i;
+                    displayOutputTS();
+                    displayPacketDetail(packet);
+                    return;
+                }
+            }
+        });
+        
+        function displayPacketDetail(packet) {
+            const detailDiv = document.getElementById('packetDetail');
+            detailDiv.style.display = 'block';
+            
+            // Titre
+            const pidName = packet.pid === PID_PAT ? 'PAT' : 
+                           packet.pid === PID_PMT ? 'PMT' : 
+                           packet.pid === PID_VIDEO ? 'Video' : 'Unknown';
+            document.getElementById('detailTitle').textContent = 
+                `Paquet TS #${packet.index} — ${pidName} (PID 0x${packet.pid.toString(16).padStart(4, '0')})`;
+            
+            // Champs
+            const fieldsDiv = document.getElementById('detailFields');
+            let fieldsHtml = '';
+            for (const [key, value] of Object.entries(packet.fields)) {
+                fieldsHtml += `<span class="field-name">${key}</span>: <span class="field-value">${value}</span><br>`;
+            }
+            fieldsDiv.innerHTML = fieldsHtml;
+            
+            // Hexdump complet (188 octets)
+            const hexDiv = document.getElementById('detailHex');
+            let hexHtml = '';
+            
+            for (let i = 0; i < TS_PACKET_SIZE; i++) {
+                const byte = packet.bytes[i];
+                const hex = byte.toString(16).padStart(2, '0').toUpperCase();
+                
+                if (i === 0) {
+                    hexHtml += `<span class="sync">${hex}</span> `;
+                } else if (i < 4) {
+                    hexHtml += `<span class="hdr">${hex}</span> `;
+                } else if (packet.adaptationFieldLength > 0 && i < 4 + packet.adaptationFieldLength) {
+                    hexHtml += `<span class="adapt">${hex}</span> `;
+                } else {
+                    hexHtml += `<span class="payload">${hex}</span> `;
+                }
+                
+                if ((i + 1) % 16 === 0) hexHtml += '\n';
+            }
+            
+            hexDiv.innerHTML = hexHtml;
+            
+            // Stats
+            document.getElementById('detailStats').innerHTML = 
+                `Header: 4 oct | Adaptation: ${packet.adaptationFieldLength} oct | ` +
+                `Payload: ${packet.payloadSize} oct | Total: 188 oct`;
+        }
+        
+        // ============================================================
+        // EXPORT
+        // ============================================================
+        
+        function exportJSON() {
+            if (!created) return;
+            
+            // Construire le binaire TS complet
+            let tsBinary = [];
+            for (const packet of tsPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const output = {
+                format: 'MPEG2_TS_V1',
+                description: 'MPEG-2 Transport Stream',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                ts: {
+                    packetSize: TS_PACKET_SIZE,
+                    packetCount: tsPackets.length,
+                    totalBytes: tsBinary.length,
+                    pcrPid: PID_VIDEO,
+                    pcrBaseInit: PCR_BASE_INIT,
+                    pids: {
+                        PAT: PID_PAT,
+                        PMT: PID_PMT,
+                        Video: PID_VIDEO
+                    },
+                    packets: tsPackets.map(p => ({
+                        index: p.index,
+                        pid: p.pid,
+                        type: p.type,
+                        pusi: p.pusi,
+                        cc: p.cc,
+                        payloadSize: p.payloadSize
+                    }))
+                },
+                binary: (function (b) { let s = ''; for (let i = 0; i < b.length; i += 8192) { s += String.fromCharCode.apply(null, Array.prototype.slice.call(b, i, i + 8192)); } return btoa(s); })(tsBinary)
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'transport_stream.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportBinary() {
+            if (!created) return;
+            
+            let tsBinary = [];
+            for (const packet of tsPackets) {
+                tsBinary.push(...packet.bytes);
+            }
+            
+            const blob = new Blob([new Uint8Array(tsBinary)], { type: 'video/mp2t' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'video.ts';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+
+        // ============================================================
+        // FLUX MULTI-IMAGES (2.0) : multiplexage à débit constant
+        // ============================================================
+        // Le paquet k occupe l'intervalle [k, k+1] × 1504 / R_ts (R_ts = débit TS
+        // utile du canal DVB-S, 9,216 Mbit/s à 10 MS/s en FEC 1/2). Ordre de
+        // priorité à chaque créneau :
+        //   1. PAT puis PMT, toutes les 80 ms ;
+        //   2. PCR toutes les 30 ms : dans le paquet vidéo du créneau, ou paquet
+        //      vidéo réduit à un adaptation field (AFC = 10, compteur inchangé) ;
+        //   3. vidéo : l'image n est disponible à (n+1)/fps (modèle de la page 07) ;
+        //   4. paquet nul (PID 0x1FFF) : bourrage pour un débit constant.
+        // PCR = instant d'arrivée de l'octet qui porte la fin de PCR_base
+        // (octet 10 du paquet) en périodes de 27 MHz, arrondi au plus proche.
+        // Instants calculés en entiers exacts (2.4) : R_ts = NUM / DEN, et
+        // « t_k ≥ a/b » ⇔ k·1504·DEN·b ≥ a·NUM ; aucun cumul flottant, mêmes
+        // décisions que le FPGA à chaque créneau.
+        // Contrôles : chaque image complète avant son PTS, tampon du décodeur EB
+        // ≤ 1 835 008 bits (VBV MP@ML), intervalles PCR et PSI.
+        const PSI_PERIODE = 0.08, PCR_PERIODE = 0.03, EB_MAX = 1835008;
+        let multi = null, multiTS = null, multiBilan = null;
+
+        const _loadJSON1 = loadJSON;
+        loadJSON = function (files) {
+            if (!J2D.estJ2D(files)) { multi = null; multiTS = null; MULTI_UI.cacher(); _loadJSON1(files); return; }
+            J2D.charger(files[0], ['J2D_PES_V2'], function (lu) {
+                multi = lu; multiTS = null;
+                inputData = { format: lu.meta.format, image: lu.meta.image, pes: { packetCount: lu.meta.frames, streamId: 0xE0 } };
+                pesBinary = Array.from(lu.t.pes.subarray(0, lu.t.offsets[Math.min(3, lu.meta.frames)]));
+                tsPackets = []; created = false; selectedPacket = null; continuityCounters = {};
+                displayInputPES(); displayProcessInit(); clearCanvas('canvasOutput');
+                document.getElementById('btnPacketize').disabled = false;
+                document.getElementById('btnExportJSON').disabled = true;
+                document.getElementById('btnExportBin').disabled = true;
+                document.getElementById('packetDetail').style.display = 'none';
+                document.getElementById('globalStats').style.display = 'none';
+                const r = lu.meta.rate || {};
+                const st = document.getElementById('statsInput');
+                st.style.display = 'block';
+                st.innerHTML = '<strong>PES chargé :</strong><br>• Paquets PES : ' + lu.meta.frames + '<br>• Taille : ' + lu.t.pes.length.toLocaleString() + ' octets<br>• Débit TS : ' + ((r.R_ts || CANAL.debitTS(10e6, '1/2')) / 1e6).toFixed(3) + ' Mbit/s';
+                MULTI_UI.montrer('<b>' + lu.meta.frames + ' images</b> chargées. ⚙️ multiplexe à débit constant (PAT/PMT 80 ms, PCR 30 ms, paquets nuls).');
+            });
+        };
+
+        const _createTS1 = createTS;
+        createTS = function () {
+            if (!multi) { _createTS1(); return; }
+            const N = multi.meta.frames, fps = multi.meta.fps || 25, rate = multi.meta.rate || {};
+            const Rts = rate.R_ts || CANAL.debitTS(10e6, '1/2'), GOP = rate.gop || 12;
+            const pes = multi.t.pes, off = multi.t.offsets, pts = multi.t.pts;
+            const Tp = 1504 / Rts;
+            // débit TS exact : Rs × 2 × FEC × 188/204
+            const FECS = { '1/2': [1, 2], '2/3': [2, 3], '3/4': [3, 4], '5/6': [5, 6], '7/8': [7, 8] };
+            const fq = FECS[rate.fec || '1/2'];
+            const NUM = BigInt(Math.round(rate.Rs || 10e6)) * 2n * BigInt(fq[0]) * 188n, DEN = BigInt(fq[1]) * 204n;
+            /* atteint — vrai si l'instant du créneau k est ≥ a/b secondes */
+            function atteint(kk, a, b) { return BigInt(kk) * 1504n * DEN * BigInt(b) >= BigInt(a) * NUM; }
+            /* pcrDe — PCR du créneau k : round((188k + 10) · 8 · 27·10⁶ / R_ts) */
+            function pcrDe(kk) { const x = BigInt(kk * 188 + 10); return Number((2n * x * 216000000n * DEN + NUM) / (2n * NUM)); }
+            let mPSI = 0, mPCR = 0;
+            const Kmax = Math.ceil(((N + 2) / fps + 1) / Tp);
+            const out = new Uint8Array(Kmax * 188);
+            continuityCounters = { [PID_PAT]: 0, [PID_PMT]: 0, [PID_VIDEO]: 0 };
+            const pat = createPAT().bytes, pmt = createPMT().bytes;   // CC remis à jour à chaque envoi
+            const nul = new Uint8Array(188).fill(0xFF);
+            nul[0] = 0x47; nul[1] = 0x1F; nul[2] = 0xFF; nul[3] = 0x10;
+            let k = 0, nextPSI = 0, pmtDue = false, nextPCR = 0, ccV = 0, ccPAT = 0, ccPMT = 0;
+            let n = 0, pos = off[0];                   // image en cours d'émission, octet suivant du PES
+            const cpt = { pat: 0, pmt: 0, pcr: 0, pcrSeul: 0, video: 0, nul: 0 };
+            let dernierPCR = -1, maxPCR = 0, dernierPAT = -1, maxPAT = 0, dernierPMT = -1, maxPMT = 0;
+            // tampon EB : octets d'ES reçus, décodages aux PTS
+            let eb = 0, ebMax = 0, nDec = 0, retard = 0, margeMin = Infinity;
+            const recu = new Float64Array(N);
+            const tailleES = new Float64Array(N);
+            for (let f = 0; f < N; f++) { tailleES[f] = off[f + 1] - off[f] - (9 + pes[off[f] + 8]); }
+            function poserPCR(o, t) {
+                const pcr = pcrDe(k), base = Math.floor(pcr / 300), ext = pcr % 300;
+                out.set(encodePCR(base, ext), o);
+                if (dernierPCR >= 0) { maxPCR = Math.max(maxPCR, t - dernierPCR); }
+                dernierPCR = t; cpt.pcr++;
+            }
+            function psi(src, pid) {
+                const o = k * 188;
+                out.set(src, o);
+                if (pid === PID_PAT) { out[o + 3] = 0x10 | ccPAT; ccPAT = (ccPAT + 1) & 15; } else { out[o + 3] = 0x10 | ccPMT; ccPMT = (ccPMT + 1) & 15; }
+            }
+            const tranche = 4096, tours = Math.ceil(Kmax / tranche);
+            let fini = false;
+            J2D.boucle(tours, function () {
+                for (let j = 0; j < tranche && !fini && k < Kmax; j++, k++) {
+                    const t = k * Tp, o = k * 188;
+                    // décodages survenus avant ce créneau
+                    while (nDec < N && pts[nDec] / 90000 <= t) {
+                        if (recu[nDec] < tailleES[nDec]) { retard++; }
+                        eb -= recu[nDec]; nDec++;
+                    }
+                    const pret = n < N && atteint(k, n + 1, fps);
+                    if (atteint(k, 2 * mPSI, 25)) {                       // toutes les 80 ms = 2/25 s
+                        psi(pat, PID_PAT); cpt.pat++; pmtDue = true; mPSI++;
+                        if (dernierPAT >= 0) { maxPAT = Math.max(maxPAT, t - dernierPAT); } dernierPAT = t;
+                        continue;
+                    }
+                    if (pmtDue) {
+                        psi(pmt, PID_PMT); cpt.pmt++; pmtDue = false;
+                        if (dernierPMT >= 0) { maxPMT = Math.max(maxPMT, t - dernierPMT); } dernierPMT = t;
+                        continue;
+                    }
+                    const avecPCR = atteint(k, 3 * mPCR, 100);           // toutes les 30 ms = 3/100 s
+                    if (avecPCR) { mPCR++; }
+                    if (!pret) {
+                        if (avecPCR) {
+                            // paquet vidéo sans charge utile : adaptation field seul
+                            out[o] = 0x47; out[o + 1] = (PID_VIDEO >> 8) & 0x1F; out[o + 2] = PID_VIDEO & 0xFF;
+                            out[o + 3] = 0x20 | ccV;
+                            out[o + 4] = 183; out[o + 5] = 0x10;
+                            poserPCR(o + 6, (k * 188 + 10) * 8 / Rts);
+                            out.fill(0xFF, o + 12, o + 188);
+                            cpt.pcrSeul++;
+                        } else {
+                            out.set(nul, o); cpt.nul++;
+                            if (n >= N) { fini = true; k++; break; }
+                        }
+                        continue;
+                    }
+                    // paquet vidéo
+                    const debut = pos === off[n], fin = off[n + 1];
+                    const rai = debut && n % GOP === 0, af = avecPCR ? 8 : (rai ? 2 : 0), maxCU = 184 - af, cu = Math.min(fin - pos, maxCU);
+                    const afl = af + (maxCU - cu);
+                    out[o] = 0x47;
+                    out[o + 1] = (debut ? 0x40 : 0) | ((PID_VIDEO >> 8) & 0x1F);
+                    out[o + 2] = PID_VIDEO & 0xFF;
+                    out[o + 3] = (afl > 0 ? 0x30 : 0x10) | ccV; ccV = (ccV + 1) & 15;
+                    let q = o + 4;
+                    if (afl > 0) {
+                        out[q] = afl - 1;
+                        if (afl > 1) {
+                            out[q + 1] = (rai ? 0x40 : 0) | (avecPCR ? 0x10 : 0);
+                            if (avecPCR) { poserPCR(q + 2, (k * 188 + 10) * 8 / Rts); }
+                            out.fill(0xFF, q + 2 + (avecPCR ? 6 : 0), q + afl);
+                        }
+                        q += afl;
+                    }
+                    out.set(pes.subarray(pos, pos + cu), q);
+                    // octets d'ES (hors en-tête PES) entrés dans EB à la fin du créneau
+                    const tete = 9 + pes[off[n] + 8];
+                    const dejaPES = pos - off[n];
+                    const es = Math.max(0, dejaPES + cu - Math.max(dejaPES, tete));
+                    recu[n] += es; eb += es; ebMax = Math.max(ebMax, eb);
+                    pos += cu; cpt.video++;
+                    if (pos >= fin) {
+                        margeMin = Math.min(margeMin, pts[n] / 90000 - (k + 1) * Tp);
+                        n++;
+                    }
+                }
+            }, function (i, nn) { MULTI_UI.progres(Math.min(N, n), N, 'multiplexage : image ' + Math.min(N, n) + ' / ' + N + ', paquet ' + k); }, function () {
+                const K = k;
+                multiTS = out.subarray(0, K * 188);
+                const duree = K * Tp;
+                multiBilan = {
+                    paquets: K, duree: duree, R_ts: Rts, compte: cpt,
+                    pcrMax_ms: maxPCR * 1000, patMax_ms: maxPAT * 1000, pmtMax_ms: maxPMT * 1000,
+                    ebMax_bits: ebMax * 8, eb_limite: EB_MAX, imagesEnRetard: retard + (n < N ? N - n : 0),
+                    margeMin_ms: margeMin * 1000, remplissage: (cpt.video) / K
+                };
+                // vue détaillée : 396 premiers paquets
+                tsPackets = [];
+                const noms = { 0: 'PAT', 256: 'PMT', 257: 'Video', 8191: 'Null' };
+                for (let i = 0; i < Math.min(K, 396); i++) {
+                    const b = Array.from(out.subarray(i * 188, i * 188 + 188));
+                    const pid = ((b[1] & 0x1F) << 8) | b[2], afc = (b[3] >> 4) & 3;
+                    const afl = (afc & 2) ? b[4] + 1 : 0;
+                    const fields = { 'sync_byte': '0x47', 'PID': '0x' + pid.toString(16).padStart(4, '0') + ' (' + noms[pid] + ')',
+                        'PUSI': (b[1] & 0x40) ? '1' : '0', 'AFC': afc.toString(2).padStart(2, '0'), 'continuity_counter': b[3] & 15,
+                        'adaptation_length': afl };
+                    if (afl > 1 && (b[5] & 0x10)) {
+                        const base = (b[6] * 16777216 + b[7] * 65536 + b[8] * 256 + b[9]) * 2 + (b[10] >> 7), ext = ((b[10] & 1) << 8) | b[11];
+                        fields['PCR'] = 'base ' + base + ' × 300 + ext ' + ext + ' = ' + (base * 300 + ext) + ' (' + ((base * 300 + ext) / 27e6).toFixed(6) + ' s)';
+                    }
+                    if (afl > 1 && (b[5] & 0x40)) { fields['random_access'] = '1 (Sequence Header)'; }
+                    tsPackets.push({ index: i, pid: pid, type: noms[pid], pusi: !!(b[1] & 0x40), cc: b[3] & 15, bytes: b,
+                        payloadSize: (afc & 1) ? 184 - afl : 0, adaptationFieldLength: afl, fields: fields });
+                }
+                created = true;
+                displayOutputTS();
+                document.getElementById('btnExportJSON').disabled = false;
+                document.getElementById('btnExportBin').disabled = false;
+                const ok = function (c) { return c ? '<span style="color:#5cd65c">✔</span>' : '<span style="color:#ff5c5c">✘</span>'; };
+                const B = multiBilan, gs = document.getElementById('globalStats');
+                gs.style.display = 'block';
+                gs.innerHTML = '<strong>Transport Stream à débit constant :</strong><br>' +
+                    '• ' + K.toLocaleString() + ' paquets, ' + duree.toFixed(3) + ' s à ' + (Rts / 1e6).toFixed(3) + ' Mbit/s<br>' +
+                    '• Vidéo ' + cpt.video + ' (dont ' + cpt.pcr + ' PCR, ' + cpt.pcrSeul + ' sans charge utile), PAT ' + cpt.pat + ', PMT ' + cpt.pmt + ', nuls ' + cpt.nul + '<br>' +
+                    '• Remplissage vidéo : ' + (100 * B.remplissage).toFixed(1) + ' %<br>' +
+                    ok(B.pcrMax_ms <= 40) + ' Intervalle PCR max : ' + B.pcrMax_ms.toFixed(1) + ' ms (≤ 40)<br>' +
+                    ok(B.patMax_ms <= 100 && B.pmtMax_ms <= 100) + ' Intervalle PAT / PMT max : ' + B.patMax_ms.toFixed(1) + ' / ' + B.pmtMax_ms.toFixed(1) + ' ms (≤ 100)<br>' +
+                    ok(B.imagesEnRetard === 0) + ' Images arrivées après leur PTS : ' + B.imagesEnRetard + ' (marge min ' + B.margeMin_ms.toFixed(1) + ' ms)<br>' +
+                    ok(B.ebMax_bits <= EB_MAX) + ' Tampon EB max : ' + Math.round(B.ebMax_bits).toLocaleString() + ' bits (≤ ' + EB_MAX.toLocaleString() + ')';
+                MULTI_UI.montrer('<b>' + N + ' images</b> multiplexées. Export : <code>transport_stream.j2d</code> ou <code>video.ts</code> (VLC, ffplay). Vue détaillée : 396 premiers paquets.');
+            });
+        };
+
+        const _exportJSON1 = exportJSON;
+        exportJSON = function () {
+            if (!multi || !multiTS) { _exportJSON1(); return; }
+            J2D.telecharger(J2D.ecrire(Object.assign({}, multi.meta, {
+                format: 'J2D_TS_V2', source: multi.meta.format, date: new Date().toISOString(),
+                description: 'Transport Stream MPEG-2 à débit constant (paquets de 188 octets)',
+                ts: Object.assign({ packetSize: 188, pids: { PAT: PID_PAT, PMT: PID_PMT, Video: PID_VIDEO, Null: PID_NULL }, pcrPid: PID_VIDEO,
+                    psiPeriode: PSI_PERIODE, pcrPeriode: PCR_PERIODE }, multiBilan)
+            }), { ts: multiTS }), 'transport_stream.j2d');
+        };
+
+        const _exportBinary1 = exportBinary;
+        exportBinary = function () {
+            if (!multi || !multiTS) { _exportBinary1(); return; }
+            J2D.telecharger(new Blob([multiTS], { type: 'video/mp2t' }), 'video.ts');
+        };
+    </script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page07-pes.html">◀ 07 · PES</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 08 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream" class="ici" aria-current="page"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page09-prbs.html">09 · PRBS ▶</a></nav>
+
+<script>
+/* ===== Passage automatique des données d'une étape à la suivante (1.3) =====
+   « suivante ▶ » : la sortie de l'étape est produite sans téléchargement, gardée
+   dans le navigateur (IndexedDB, session courante) puis chargée d'office par
+   l'étape suivante via son propre « Charger ». Le traitement reste au clic.
+   Les boutons Exporter / Charger restent disponibles. */
+(function () {
+  var N = 8, NEXT = 'page09-prbs.html';
+  var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
+  function base(fn) {
+    try {
+      var r = indexedDB.open('jpeg2dvb', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('etapes'); };
+      r.onsuccess = function () { fn(r.result); };
+      r.onerror = function () { fn(null); };
+    } catch (e) { fn(null); }
+  }
+  function ranger(rec, fin) { base(function (db) { if (!db) { fin(); return; } var t = db.transaction('etapes', 'readwrite'); if (rec) { t.objectStore('etapes').put(rec, N); } else { t.objectStore('etapes').delete(N); } t.oncomplete = fin; t.onerror = fin; }); }
+  /* sortie de l'étape, capturée au lieu d'être téléchargée */
+  function produire(fin) {
+    if (N === 0) {
+      var cv = document.getElementById('canvasRGB');
+      if (typeof yCbCrData === 'undefined' || !yCbCrData || !cv) { fin(null); return; }
+      cv.toBlob(function (b) { fin(b ? { name: 'camera_capture.png', blob: b } : null); }, 'image/png'); return;
+    }
+    var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    try {
+      var bs = document.querySelectorAll('button');
+      for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
+    } catch (e) {}
+    URL.createObjectURL = creer; HTMLAnchorElement.prototype.click = cliquer;
+    fin(pris);
+  }
+  /* départ : « suivante ▶ » */
+  if (NEXT) {
+    document.querySelectorAll('.j2d-nav > a:last-child').forEach(function (a) {
+      if (a.getAttribute('href') !== NEXT) { return; }
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        produire(function (s) {
+          ranger(s ? { sid: SID, name: s.name, type: s.blob.type || 'application/json', data: s.blob } : null, function () { location.href = NEXT; });
+        });
+      });
+    });
+  }
+  /* arrivée : chargement d'office de la sortie de l'étape précédente */
+  if (N > 0) {
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        base(function (db) {
+          if (!db) { return; }
+          var q = db.transaction('etapes', 'readonly').objectStore('etapes').get(N - 1);
+          q.onsuccess = function () {
+            var r = q.result, inp = document.getElementById('fileInput');
+            if (!r || r.sid !== SID || !inp || typeof DataTransfer === 'undefined') { return; }
+            var dt = new DataTransfer();
+            dt.items.add(new File([r.data], r.name, { type: r.type }));
+            inp.files = dt.files;
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+            var nav = document.querySelector('.j2d-nav'), m = document.createElement('div');
+            m.className = 'j2d-auto';
+            m.innerHTML = '↪ Sortie de l\'étape ' + (N - 1 < 10 ? '0' : '') + (N - 1) + ' chargée automatiquement : <b>' + r.name + '</b> — lancez le traitement ⚙️ (ou chargez un autre fichier).';
+            if (nav) { nav.parentNode.insertBefore(m, nav.nextSibling); }
+          };
+        });
+      }, 300);
+    });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
+  }
+})();
+</script>
+</body>
+</html>

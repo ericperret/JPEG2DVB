@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page13-qpsk.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 13 - Mapping QPSK
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Version    : 2.3
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
+                     suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
+               1.3  2026-10-18  passage automatique des données : « suivante ▶ »
+                     garde la sortie et l'étape suivante la charge d'office
+               2.0  2026-10-19  flux entier traité par blocs, symboles I/Q en entiers 8 bits (.j2d)
+               2.1  2026-10-19  numéro de version affiché dans la barre de navigation
+               2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
+               2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 13 - Mapping QPSK</title>
+    <style>
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        h1 { color: #5cc8d6; text-align: center; }
+        .description { background: #18222a; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #5cc8d6; }
+        .pipeline { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; font-family: monospace; font-size: 14px; flex-wrap: wrap; }
+        .pipeline-step { background: #26343e; padding: 8px 15px; border-radius: 5px; }
+        .pipeline-step.active { background: #5cc8d6; color: #000; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-arrow { color: #5cc8d6; font-size: 20px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        .canvas-box h3 { margin-top: 0; color: #5cc8d6; }
+        canvas { border: 2px solid #26343e; }
+        .controls { margin-top: 10px; }
+        button { background: #26343e; color: #fff; border: none; padding: 10px 20px; margin: 5px; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #5cc8d6; color: #000; }
+        button:disabled { background: #333; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px; border-radius: 5px; margin-top: 15px; font-size: 12px; text-align: left; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .qpsk-diagram { font-family: monospace; font-size: 11px; background: #141c22; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        table.info-table { border-collapse: collapse; font-size: 11px; width: 100%; margin: 10px 0; }
+        table.info-table th, table.info-table td { border: 1px solid #333; padding: 5px 8px; text-align: center; }
+        table.info-table th { background: #26343e; }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-auto { max-width: 1100px; margin: -8px auto 18px; padding: 9px 14px; background: rgba(240,166,58,.10); border: 1px solid #f0a63a; border-radius: 8px; color: #dfe7ec; font-size: 13px; }
+        .j2d-auto b { color: #f0a63a; font-weight: 600; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
+    </style>
+    <style>
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
+        .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page12-convolutional_1.html">◀ 12 · Codeur convolutif</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 13 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK" class="ici" aria-current="page"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page14-srrc-v2.html">14 · Filtre SRRC ▶</a></nav>
+    <h1>📡 Page 13 - Mapping QPSK</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Modulation QPSK (Quadrature Phase Shift Keying) selon DVB-S EN 300 421.<br>
+        <strong>Principe :</strong> 2 bits → 1 symbole complexe (I, Q) sur la constellation.<br>
+        <strong>Mapping Gray :</strong> Symboles adjacents diffèrent d'1 seul bit → minimise erreurs.<br>
+        <strong>Entrée :</strong> Bits codés — <strong>Sortie :</strong> Symboles I/Q normalisés
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">RS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Convolutif</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">QPSK</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">SRRC</span>
+    </div>
+    
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Bits Codés</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json,.j2d" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Flux convolutif (sortie Page 12)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>2. CONSTELLATION QPSK</h3>
+            <canvas id="canvasConstellation" width="288" height="288"></canvas>
+            <div class="controls">
+                <button id="btnMap" onclick="mapQPSK()" disabled>⚙️ Mapper</button>
+                <button id="btnAnimate" onclick="animateMapping()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">4 symboles, mapping Gray</div>
+        </div>
+        
+        <div class="canvas-box">
+            <h3>3. SORTIE - Symboles I/Q</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .bin</button>
+            </div>
+            <div class="info">Signaux I et Q normalisés</div>
+        </div>
+    </div>
+    
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Mapping QPSK Gray (DVB-S)</h4>
+        <table class="info-table">
+            <tr>
+                <th>Dibits (b0 b1)</th>
+                <th>I</th>
+                <th>Q</th>
+                <th>Phase</th>
+                <th>Symbole</th>
+            </tr>
+            <tr style="background:#004400">
+                <td><strong>00</strong></td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+45° (π/4)</td>
+                <td>↗</td>
+            </tr>
+            <tr style="background:#440044">
+                <td><strong>01</strong></td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−45° (−π/4)</td>
+                <td>↘</td>
+            </tr>
+            <tr style="background:#444400">
+                <td><strong>10</strong></td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>+1/√2 ≈ +0.707</td>
+                <td>+135° (3π/4)</td>
+                <td>↖</td>
+            </tr>
+            <tr style="background:#004444">
+                <td><strong>11</strong></td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−1/√2 ≈ −0.707</td>
+                <td>−135° (5π/4)</td>
+                <td>↙</td>
+            </tr>
+        </table>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Constellation QPSK</h4>
+        <div class="qpsk-diagram">
+                              Q (Quadrature)
+                              │
+                    10        │        00
+                   (↖)       │       (↗)
+                  ●          │          ●
+               -0.707,+0.707 │  +0.707,+0.707
+                             │
+        ─────────────────────┼─────────────────────► I (In-phase)
+                             │
+               -0.707,-0.707 │  +0.707,-0.707
+                  ●          │          ●
+                   (↙)       │       (↘)
+                    11        │        01
+                              │
+
+        Mapping Gray: les symboles adjacents (horizontalement ou verticalement)
+        ne diffèrent que d'1 bit → une erreur de symbole = 1 bit erroné en moyenne
+
+        Normalisation: |I|² + |Q|² = 1 (puissance unitaire)
+        → I, Q = ±1/√2 ≈ ±0.7071067811865476
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Paramètres</h4>
+        <table class="info-table">
+            <tr><th>Paramètre</th><th>Valeur</th><th>Description</th></tr>
+            <tr><td>Modulation</td><td>QPSK</td><td>4-PSK, 4 états de phase</td></tr>
+            <tr><td>Bits/symbole</td><td>2</td><td>Efficacité spectrale 2 bps/Hz</td></tr>
+            <tr><td>Mapping</td><td>Gray</td><td>Adjacent = 1 bit différent</td></tr>
+            <tr><td>Amplitude</td><td>1/√2</td><td>Puissance normalisée = 1</td></tr>
+            <tr><td>Phases</td><td>±45°, ±135°</td><td>4 quadrants</td></tr>
+        </table>
+    </div>
+
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
+    <script>
+        const WIDTH = 352, HEIGHT = 288;
+        const CONST_SIZE = 288;
+        
+        // Mapping QPSK Gray DVB-S (normalisé)
+        const SQRT2_INV = 1 / Math.sqrt(2); // ≈ 0.7071
+        const QPSK_MAP = {
+            0b00: { I: +SQRT2_INV, Q: +SQRT2_INV, phase: 45 },   // ↗
+            0b01: { I: +SQRT2_INV, Q: -SQRT2_INV, phase: -45 },  // ↘
+            0b10: { I: -SQRT2_INV, Q: +SQRT2_INV, phase: 135 },  // ↖
+            0b11: { I: -SQRT2_INV, Q: -SQRT2_INV, phase: -135 }  // ↙
+        };
+        
+        const COLORS = {
+            0b00: '#00ff00',
+            0b01: '#ff00ff',
+            0b10: '#ffff00',
+            0b11: '#00ffff'
+        };
+        
+        let inputData = null, inputBits = [], symbols = [], mapped = false;
+        let animationId = null, animStep = 0;
+        let symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            drawConstellation(null);
+            clearCanvas('canvasOutput');
+        };
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    if (!inputData.format || inputData.format !== 'DVB_CONVOLUTIONAL_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 12.');
+                        return;
+                    }
+                    
+                    // Décoder les octets en bits
+                    const binaryString = atob(inputData.binary);
+                    const bytes = [];
+                    for (let i = 0; i < binaryString.length; i++) bytes.push(binaryString.charCodeAt(i));
+                    
+                    // Extraire les bits (on prend le nombre exact de bits codés)
+                    const totalBits = inputData.convolutional.outputBits;
+                    inputBits = [];
+                    for (let i = 0; i < totalBits; i++) {
+                        const byteIdx = Math.floor(i / 8);
+                        const bitIdx = 7 - (i % 8);
+                        inputBits.push((bytes[byteIdx] >> bitIdx) & 1);
+                    }
+                    
+                    symbols = [];
+                    mapped = false;
+                    symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+                    
+                    displayInputBits();
+                    drawConstellation(null);
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnMap').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    document.getElementById('statsInput').style.display = 'block';
+                    document.getElementById('statsInput').innerHTML = `
+                        <strong>Bits chargés:</strong><br>
+                        • Bits: ${inputBits.length.toLocaleString()}<br>
+                        • Symboles: ${Math.floor(inputBits.length / 2).toLocaleString()}
+                    `;
+                } catch (err) { alert('Erreur: ' + err.message); }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        function displayInputBits() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${inputBits.length.toLocaleString()} bits codés`, WIDTH/2, 20);
+            
+            // Visualiser par paires (dibits)
+            const pairsPerRow = Math.floor((WIDTH - 20) / 3);
+            const rowH = 4;
+            const startY = 35;
+            
+            for (let i = 0; i < inputBits.length - 1; i += 2) {
+                const pairIdx = i / 2;
+                const dibit = (inputBits[i] << 1) | inputBits[i + 1];
+                
+                const x = 10 + (pairIdx % pairsPerRow) * 3;
+                const y = startY + Math.floor(pairIdx / pairsPerRow) * rowH;
+                
+                if (y > HEIGHT - 20) break;
+                
+                ctx.fillStyle = COLORS[dibit];
+                ctx.fillRect(x, y, 2, rowH - 1);
+            }
+            
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Couleur = dibit (00/01/10/11)', 10, HEIGHT - 10);
+        }
+        
+        function drawConstellation(highlightDibit) {
+            const canvas = document.getElementById('canvasConstellation');
+            const ctx = canvas.getContext('2d');
+            const size = CONST_SIZE;
+            const center = size / 2;
+            const scale = size * 0.35;
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, size, size);
+            
+            // Grille
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(center, 10);
+            ctx.lineTo(center, size - 10);
+            ctx.moveTo(10, center);
+            ctx.lineTo(size - 10, center);
+            ctx.stroke();
+            
+            // Cercle unité
+            ctx.strokeStyle = '#444';
+            ctx.beginPath();
+            ctx.arc(center, center, scale, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Labels axes
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('I', size - 15, center - 5);
+            ctx.fillText('Q', center + 10, 15);
+            
+            // Points de la constellation
+            for (let dibit = 0; dibit < 4; dibit++) {
+                const sym = QPSK_MAP[dibit];
+                const x = center + sym.I * scale;
+                const y = center - sym.Q * scale; // Y inversé
+                
+                const isHighlight = highlightDibit === dibit;
+                const radius = isHighlight ? 15 : 10;
+                
+                ctx.fillStyle = isHighlight ? '#fff' : COLORS[dibit];
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Label dibit
+                ctx.fillStyle = isHighlight ? '#000' : '#fff';
+                ctx.font = isHighlight ? 'bold 12px monospace' : '10px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(dibit.toString(2).padStart(2, '0'), x, y + 4);
+            }
+            
+            // Compteurs si mappé
+            if (mapped) {
+                ctx.font = '10px Arial';
+                ctx.fillStyle = '#8fa1ad';
+                ctx.textAlign = 'left';
+                ctx.fillText(`00: ${symbolCounts[0]}`, 10, size - 40);
+                ctx.fillText(`01: ${symbolCounts[1]}`, 10, size - 28);
+                ctx.fillText(`10: ${symbolCounts[2]}`, 80, size - 40);
+                ctx.fillText(`11: ${symbolCounts[3]}`, 80, size - 28);
+            }
+        }
+        
+        function mapQPSK() {
+            if (!inputBits.length) return;
+            
+            symbols = [];
+            symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+            
+            // Mapper par paires de bits
+            for (let i = 0; i < inputBits.length - 1; i += 2) {
+                const dibit = (inputBits[i] << 1) | inputBits[i + 1];
+                const sym = QPSK_MAP[dibit];
+                symbols.push({
+                    dibit: dibit,
+                    I: sym.I,
+                    Q: sym.Q,
+                    phase: sym.phase
+                });
+                symbolCounts[dibit]++;
+            }
+            
+            mapped = true;
+            drawConstellation(null);
+            displayOutputSymbols();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            document.getElementById('globalStats').style.display = 'block';
+            document.getElementById('globalStats').innerHTML = `
+                <strong>Mapping terminé:</strong><br>
+                • Bits entrée: ${inputBits.length.toLocaleString()}<br>
+                • Symboles QPSK: ${symbols.length.toLocaleString()}<br>
+                • Distribution: 00=${symbolCounts[0]} (${(symbolCounts[0]/symbols.length*100).toFixed(1)}%), 
+                  01=${symbolCounts[1]} (${(symbolCounts[1]/symbols.length*100).toFixed(1)}%), 
+                  10=${symbolCounts[2]} (${(symbolCounts[2]/symbols.length*100).toFixed(1)}%), 
+                  11=${symbolCounts[3]} (${(symbolCounts[3]/symbols.length*100).toFixed(1)}%)<br>
+                • I/Q amplitude: ±${SQRT2_INV.toFixed(6)}
+            `;
+        }
+        
+        function animateMapping() {
+            if (animationId || !inputBits.length) return;
+            
+            symbols = [];
+            symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+            animStep = 0;
+            
+            const totalSymbols = Math.floor(inputBits.length / 2);
+            const symbolsPerFrame = Math.max(1, Math.floor(totalSymbols / 150));
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                let lastDibit = 0;
+                
+                for (let s = 0; s < symbolsPerFrame && animStep < totalSymbols; s++) {
+                    const i = animStep * 2;
+                    lastDibit = (inputBits[i] << 1) | inputBits[i + 1];
+                    const sym = QPSK_MAP[lastDibit];
+                    symbols.push({
+                        dibit: lastDibit,
+                        I: sym.I,
+                        Q: sym.Q,
+                        phase: sym.phase
+                    });
+                    symbolCounts[lastDibit]++;
+                    animStep++;
+                }
+                
+                // Mettre à jour la constellation avec le dernier symbole
+                drawConstellation(lastDibit);
+                
+                // Afficher progression
+                const canvas = document.getElementById('canvasConstellation');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#26343e';
+                ctx.fillRect(10, CONST_SIZE - 15, CONST_SIZE - 20, 10);
+                ctx.fillStyle = '#5cc8d6';
+                ctx.fillRect(10, CONST_SIZE - 15, (CONST_SIZE - 20) * (animStep / totalSymbols), 10);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${animStep.toLocaleString()} / ${totalSymbols.toLocaleString()}`, CONST_SIZE/2, 25);
+                
+                if (animStep < totalSymbols) {
+                    animationId = setTimeout(animate, 30);
+                } else {
+                    mapped = true;
+                    stopAnimation();
+                    displayOutputSymbols();
+                    document.getElementById('btnExportJSON').disabled = false;
+                    document.getElementById('btnExportBin').disabled = false;
+                    
+                    document.getElementById('globalStats').style.display = 'block';
+                    document.getElementById('globalStats').innerHTML = `
+                        <strong>Mapping terminé:</strong><br>
+                        • Symboles QPSK: ${symbols.length.toLocaleString()}<br>
+                        • Distribution: 00=${symbolCounts[0]}, 01=${symbolCounts[1]}, 10=${symbolCounts[2]}, 11=${symbolCounts[3]}
+                    `;
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        function displayOutputSymbols() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${symbols.length.toLocaleString()} symboles I/Q`, WIDTH/2, 20);
+            
+            // Tracer I et Q comme signaux
+            const startY_I = 80;
+            const startY_Q = 190;
+            const sigHeight = 50;
+            const samplesShow = Math.min(symbols.length, WIDTH - 20);
+            const step = symbols.length > WIDTH - 20 ? symbols.length / (WIDTH - 20) : 1;
+            
+            // Labels
+            ctx.fillStyle = '#f0a63a';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('I (In-phase)', 10, startY_I - sigHeight - 5);
+            ctx.fillStyle = '#00aaff';
+            ctx.fillText('Q (Quadrature)', 10, startY_Q - sigHeight - 5);
+            
+            // Axes
+            ctx.strokeStyle = '#444';
+            ctx.beginPath();
+            ctx.moveTo(10, startY_I);
+            ctx.lineTo(WIDTH - 10, startY_I);
+            ctx.moveTo(10, startY_Q);
+            ctx.lineTo(WIDTH - 10, startY_Q);
+            ctx.stroke();
+            
+            // Signaux
+            ctx.lineWidth = 1;
+            
+            // I
+            ctx.strokeStyle = '#f0a63a';
+            ctx.beginPath();
+            for (let i = 0; i < samplesShow; i++) {
+                const symIdx = Math.floor(i * step);
+                const x = 10 + i;
+                const y = startY_I - symbols[symIdx].I * sigHeight;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Q
+            ctx.strokeStyle = '#00aaff';
+            ctx.beginPath();
+            for (let i = 0; i < samplesShow; i++) {
+                const symIdx = Math.floor(i * step);
+                const x = 10 + i;
+                const y = startY_Q - symbols[symIdx].Q * sigHeight;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            
+            // Échelle
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('+0.71', 8, startY_I - sigHeight + 10);
+            ctx.fillText('-0.71', 8, startY_I + sigHeight - 5);
+            ctx.fillText('+0.71', 8, startY_Q - sigHeight + 10);
+            ctx.fillText('-0.71', 8, startY_Q + sigHeight - 5);
+        }
+        
+        function exportJSON() {
+            if (!mapped) return;
+            
+            // Exporter I et Q comme tableaux séparés
+            const I_values = symbols.map(s => s.I);
+            const Q_values = symbols.map(s => s.Q);
+            
+            const output = {
+                format: 'DVB_QPSK_V1',
+                description: 'DVB-S QPSK Mapped Symbols',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                qpsk: {
+                    mapping: 'Gray',
+                    symbolCount: symbols.length,
+                    amplitude: SQRT2_INV,
+                    distribution: symbolCounts
+                },
+                convolutional: inputData.convolutional,
+                // Stocker I/Q en Float32 base64
+                I: floatArrayToBase64(new Float32Array(I_values)),
+                Q: floatArrayToBase64(new Float32Array(Q_values))
+            };
+            
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'qpsk_symbols.json';
+            a.click();
+        }
+        
+        function exportBinary() {
+            if (!mapped) return;
+            
+            // Exporter I/Q entrelacés en Float32
+            const buffer = new Float32Array(symbols.length * 2);
+            for (let i = 0; i < symbols.length; i++) {
+                buffer[i * 2] = symbols[i].I;
+                buffer[i * 2 + 1] = symbols[i].Q;
+            }
+            
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'qpsk_iq.bin';
+            a.click();
+        }
+        
+        function floatArrayToBase64(floatArray) {
+            const bytes = new Uint8Array(floatArray.buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+        
+        function clearCanvas(id) {
+            const ctx = document.getElementById(id).getContext('2d');
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+
+        // ============================================================
+        // FLUX MULTI-IMAGES (2.0) : symboles QPSK du flux entier
+        // ============================================================
+        // Sortie entière, comme dans le FPGA : I et Q valent +1 (bit 0) ou −1
+        // (bit 1), un octet signé chacun, entrelacés I, Q. L'amplitude 1/√2 est un
+        // simple facteur d'échelle appliqué par la page 14.
+        let multi = null, multiOut = null;
+
+        const _loadJSON1 = loadJSON;
+        loadJSON = function (files) {
+            if (!J2D.estJ2D(files)) { multi = null; multiOut = null; MULTI_UI.cacher(); _loadJSON1(files); return; }
+            J2D.charger(files[0], ['J2D_CONV_V2'], function (lu) {
+                multi = lu; multiOut = null;
+                const b = lu.t.bits, nb = lu.meta.convolutional.outputBits;
+                inputData = { format: lu.meta.format, image: lu.meta.image, convolutional: lu.meta.convolutional };
+                inputBits = [];
+                for (let i = 0; i < Math.min(nb, 20000); i++) { inputBits.push((b[i >> 3] >> (7 - (i & 7))) & 1); }
+                symbols = []; mapped = false; symbolCounts = { 0: 0, 1: 0, 2: 0, 3: 0 };
+                displayInputBits(); drawConstellation(null); clearCanvas('canvasOutput');
+                document.getElementById('btnMap').disabled = false;
+                document.getElementById('btnAnimate').disabled = false;
+                document.getElementById('btnExportJSON').disabled = true;
+                document.getElementById('btnExportBin').disabled = true;
+                document.getElementById('globalStats').style.display = 'none';
+                const st = document.getElementById('statsInput');
+                st.style.display = 'block';
+                st.innerHTML = '<strong>Bits chargés :</strong><br>• Bits : ' + nb.toLocaleString() + '<br>• Symboles : ' + Math.floor(nb / 2).toLocaleString() + '<br>• Affichage : 20 000 premiers bits';
+                MULTI_UI.montrer('<b>' + nb.toLocaleString() + ' bits</b> chargés, soit ' + Math.floor(nb / 2).toLocaleString() + ' symboles. ⚙️ met en correspondance le flux entier.');
+            });
+        };
+
+        const _mapQPSK1 = mapQPSK;
+        mapQPSK = function () {
+            if (!multi) { _mapQPSK1(); return; }
+            _mapQPSK1();                                     // aperçu détaillé : 20 000 premiers bits
+            const b = multi.t.bits, ns = Math.floor(multi.meta.convolutional.outputBits / 2), out = new Int8Array(2 * ns);
+            const cpt = [0, 0, 0, 0], bloc = 1 << 20;
+            J2D.boucle(Math.ceil(ns / bloc), function (k) {
+                for (let s = k * bloc; s < Math.min(ns, (k + 1) * bloc); s++) {
+                    const i = 2 * s, bi = (b[i >> 3] >> (7 - (i & 7))) & 1, bq = (b[(i + 1) >> 3] >> (7 - ((i + 1) & 7))) & 1;
+                    out[i] = 1 - 2 * bi; out[i + 1] = 1 - 2 * bq;
+                    cpt[(bi << 1) | bq]++;
+                }
+            }, function (i, n) { MULTI_UI.progres(i, n, 'QPSK : bloc ' + i + ' / ' + n); }, function () {
+                multiOut = out;
+                const fs = (multi.meta.rate && multi.meta.rate.Rs) || 10e6;
+                const gs = document.getElementById('globalStats');
+                gs.innerHTML = '<strong>Mise en correspondance du flux entier :</strong><br>' +
+                    '• Symboles : ' + ns.toLocaleString() + ' (' + (ns / fs).toFixed(3) + ' s à ' + (fs / 1e6) + ' MS/s)<br>' +
+                    '• Répartition : 00 ' + (100 * cpt[0] / ns).toFixed(2) + ' %, 01 ' + (100 * cpt[1] / ns).toFixed(2) + ' %, 10 ' + (100 * cpt[2] / ns).toFixed(2) + ' %, 11 ' + (100 * cpt[3] / ns).toFixed(2) + ' %<br>' +
+                    '• Format : I, Q entiers ±1 (octet signé), amplitude ×1/√2 à la page 14<br>• Vue détaillée : 20 000 premiers bits';
+                MULTI_UI.montrer('<b>' + ns.toLocaleString() + ' symboles</b>. Export : <code>qpsk_symbols.j2d</code> ou <code>qpsk_iq_s8.bin</code>.');
+            });
+        };
+
+        const _exportJSON1 = exportJSON;
+        exportJSON = function () {
+            if (!multi || !multiOut) { _exportJSON1(); return; }
+            J2D.telecharger(J2D.ecrire(Object.assign({}, multi.meta, {
+                format: 'J2D_QPSK_V2', source: multi.meta.format, date: new Date().toISOString(),
+                description: 'Symboles QPSK entiers : I, Q = +1 (bit 0) ou −1 (bit 1), entrelacés',
+                qpsk: { mapping: 'EN 300 421 figure 6 (Gray)', symbolCount: multiOut.length / 2, echelle: '1/√2' }
+            }), { iq: multiOut }), 'qpsk_symbols.j2d');
+        };
+
+        const _exportBinary1 = exportBinary;
+        exportBinary = function () {
+            if (!multi || !multiOut) { _exportBinary1(); return; }
+            J2D.telecharger(new Blob([multiOut], { type: 'application/octet-stream' }), 'qpsk_iq_s8.bin');
+        };
+    </script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page12-convolutional_1.html">◀ 12 · Codeur convolutif</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 13 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK" class="ici" aria-current="page"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page14-srrc-v2.html">14 · Filtre SRRC ▶</a></nav>
+
+<script>
+/* ===== Passage automatique des données d'une étape à la suivante (1.3) =====
+   « suivante ▶ » : la sortie de l'étape est produite sans téléchargement, gardée
+   dans le navigateur (IndexedDB, session courante) puis chargée d'office par
+   l'étape suivante via son propre « Charger ». Le traitement reste au clic.
+   Les boutons Exporter / Charger restent disponibles. */
+(function () {
+  var N = 13, NEXT = 'page14-srrc-v2.html';
+  var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
+  function base(fn) {
+    try {
+      var r = indexedDB.open('jpeg2dvb', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('etapes'); };
+      r.onsuccess = function () { fn(r.result); };
+      r.onerror = function () { fn(null); };
+    } catch (e) { fn(null); }
+  }
+  function ranger(rec, fin) { base(function (db) { if (!db) { fin(); return; } var t = db.transaction('etapes', 'readwrite'); if (rec) { t.objectStore('etapes').put(rec, N); } else { t.objectStore('etapes').delete(N); } t.oncomplete = fin; t.onerror = fin; }); }
+  /* sortie de l'étape, capturée au lieu d'être téléchargée */
+  function produire(fin) {
+    if (N === 0) {
+      var cv = document.getElementById('canvasRGB');
+      if (typeof yCbCrData === 'undefined' || !yCbCrData || !cv) { fin(null); return; }
+      cv.toBlob(function (b) { fin(b ? { name: 'camera_capture.png', blob: b } : null); }, 'image/png'); return;
+    }
+    var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    try {
+      var bs = document.querySelectorAll('button');
+      for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
+    } catch (e) {}
+    URL.createObjectURL = creer; HTMLAnchorElement.prototype.click = cliquer;
+    fin(pris);
+  }
+  /* départ : « suivante ▶ » */
+  if (NEXT) {
+    document.querySelectorAll('.j2d-nav > a:last-child').forEach(function (a) {
+      if (a.getAttribute('href') !== NEXT) { return; }
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        produire(function (s) {
+          ranger(s ? { sid: SID, name: s.name, type: s.blob.type || 'application/json', data: s.blob } : null, function () { location.href = NEXT; });
+        });
+      });
+    });
+  }
+  /* arrivée : chargement d'office de la sortie de l'étape précédente */
+  if (N > 0) {
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        base(function (db) {
+          if (!db) { return; }
+          var q = db.transaction('etapes', 'readonly').objectStore('etapes').get(N - 1);
+          q.onsuccess = function () {
+            var r = q.result, inp = document.getElementById('fileInput');
+            if (!r || r.sid !== SID || !inp || typeof DataTransfer === 'undefined') { return; }
+            var dt = new DataTransfer();
+            dt.items.add(new File([r.data], r.name, { type: r.type }));
+            inp.files = dt.files;
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+            var nav = document.querySelector('.j2d-nav'), m = document.createElement('div');
+            m.className = 'j2d-auto';
+            m.innerHTML = '↪ Sortie de l\'étape ' + (N - 1 < 10 ? '0' : '') + (N - 1) + ' chargée automatiquement : <b>' + r.name + '</b> — lancez le traitement ⚙️ (ou chargez un autre fichier).';
+            if (nav) { nav.parentNode.insertBefore(m, nav.nextSibling); }
+          };
+        });
+      }, 300);
+    });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
+  }
+})();
+</script>
+</body>
+</html>

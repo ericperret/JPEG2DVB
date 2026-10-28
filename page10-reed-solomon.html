@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page10-reed-solomon.html
+  Projet     : JPEG2DVB, de l'image JPEG à la modulation DVB-S
+  Objet      : Page 10 - Reed-Solomon (204,188)
+  Auteur     : Eric PERRET
+  Date       : 2026-01-17
+  Version    : 2.3
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Historique : 1.1  2026-10-18  barre de navigation précédente / sommaire /
+                     suivante en haut et en bas de page
+               1.2  2026-10-18  charte graphique AZS (palette ardoise / ambre /
+                     cyan, marque AZS avec lien vers www.azs.fr, polices système)
+               1.3  2026-10-18  passage automatique des données : « suivante ▶ »
+                     garde la sortie et l'étape suivante la charge d'office
+               1.4  2026-10-18  export JSON des gros flux (conversion base64 par
+                     morceaux : dépassement de pile au-delà de ~100 000 octets)
+               2.0  2026-10-19  flux entier traité par blocs, entrée et sortie binaires .j2d
+                     correction : octets de parité émis du plus haut degré au plus bas
+                     (syndromes nuls pour λ⁰ à λ¹⁵)
+               2.1  2026-10-19  numéro de version affiché dans la barre de navigation
+               2.2  2026-10-19  étape 15 (Réception) ajoutée à la navigation
+               2.3  2026-10-19  bandeau « Source » : image d'origine du flux (nom, nombre d'images, date)
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 10 - Reed-Solomon (204,188)</title>
+    <style>
+        body {
+            font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+            margin: 20px;
+            background: #0e1418;
+            color: #dfe7ec;
+        }
+        h1 {
+            color: #5cc8d6;
+            text-align: center;
+        }
+        .description {
+            background: #18222a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #5cc8d6;
+        }
+        .pipeline {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            flex-wrap: wrap;
+        }
+        .pipeline-step {
+            background: #26343e;
+            padding: 8px 15px;
+            border-radius: 5px;
+        }
+        .pipeline-step.active {
+            background: #5cc8d6;
+            color: #000;
+        }
+        .pipeline-step.done {
+            background: #006644;
+        }
+        .pipeline-arrow {
+            color: #5cc8d6;
+            font-size: 20px;
+        }
+        .canvas-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .canvas-box {
+            background: #18222a;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .canvas-box h3 {
+            margin-top: 0;
+            color: #5cc8d6;
+        }
+        canvas {
+            border: 2px solid #26343e;
+            cursor: pointer;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            background: #26343e;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #5cc8d6;
+            color: #000;
+        }
+        button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #8fa1ad;
+        }
+        .stats {
+            background: #26343e;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .detail-section {
+            max-width: 1100px;
+            margin: 20px auto;
+        }
+        .hex-display {
+            font-family: monospace;
+            font-size: 11px;
+            background: #141c22;
+            padding: 10px;
+            border-radius: 5px;
+            max-height: 120px;
+            overflow-y: auto;
+            word-break: break-all;
+            text-align: left;
+        }
+        .hex-display .data { color: #5cc8d6; }
+        .hex-display .parity { color: #f0a63a; }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+        }
+        .legend-color {
+            width: 16px;
+            height: 12px;
+            border-radius: 2px;
+        }
+        .section-detail {
+            background: #26343e;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+        .section-detail h4 {
+            margin-top: 0;
+            color: #5cc8d6;
+        }
+        .field-list {
+            font-family: monospace;
+            font-size: 11px;
+            line-height: 1.6;
+        }
+        .field-list .field-name { color: #f0a63a; }
+        .field-list .field-value { color: #00ff88; }
+        .rs-diagram {
+            font-family: monospace;
+            font-size: 11px;
+            background: #141c22;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        table.info-table {
+            border-collapse: collapse;
+            font-size: 11px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        table.info-table th, table.info-table td {
+            border: 1px solid #333;
+            padding: 5px 8px;
+            text-align: left;
+        }
+        table.info-table th {
+            background: #26343e;
+        }
+        .poly-display {
+            font-family: monospace;
+            font-size: 10px;
+            background: #141c22;
+            padding: 10px;
+            border-radius: 5px;
+            word-break: break-all;
+        }
+    
+        /* ---------- charte AZS (www.azs.fr) ---------- */
+        :root { color-scheme: dark; }
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; }
+        h1 { color: #dfe7ec !important; text-shadow: none; letter-spacing: -.3px; }
+        h1 span { color: #f0a63a; }
+        h3 { color: #dfe7ec !important; }
+        .description { border-left-color: #5cc8d6 !important; }
+        .pipeline-step.active { background: #f0a63a !important; color: #111 !important; }
+        .pipeline-arrow { color: #f0a63a !important; }
+        button { background: #18222a !important; color: #dfe7ec !important; border: 1px solid #33434e !important; border-radius: 6px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { background: #18222a !important; border-color: #f0a63a !important; color: #f0a63a !important; }
+        button:disabled { color: #5a6b75 !important; border-color: #26343e !important; }
+        input, select, textarea { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; }
+        canvas { border-color: #26343e !important; }
+        pre, code, textarea, .hex, .mono { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav { background: #141c22 !important; border-color: #26343e !important; border-radius: 8px !important; font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif !important; }
+        .j2d-nav a { color: #dfe7ec !important; }
+        .j2d-nav a:hover { background: transparent !important; color: #f0a63a !important; }
+        .j2d-nav .j2d-etape { color: #f0a63a !important; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; }
+        .j2d-nav .j2d-points a { background: #26343e !important; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a !important; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6 !important; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace !important; letter-spacing: -1px; color: #f0a63a !important; padding: 0 12px 0 0 !important; border-right: 1px solid #26343e; border-radius: 0 !important; }
+        .j2d-auto { max-width: 1100px; margin: -8px auto 18px; padding: 9px 14px; background: rgba(240,166,58,.10); border: 1px solid #f0a63a; border-radius: 8px; color: #dfe7ec; font-size: 13px; }
+        .j2d-auto b { color: #f0a63a; font-weight: 600; }
+        .j2d-nav .azs:hover { color: #ffcf7a !important; }
+    </style>
+    <style>
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #18222a; border: 1px solid #26343e; border-radius: 8px; font: 14px Arial, sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #5cc8d6; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { background: #5cc8d6; color: #000; }
+        .j2d-nav .j2d-vide { visibility: hidden; padding: 6px 10px; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+    <style>
+        /* panneau « flux multi-images » (2.0) */
+        .multi { max-width: 1100px; margin: 0 auto 18px; padding: 12px 15px; background: #141c22; border: 1px solid #26343e; border-left: 3px solid #5cc8d6; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.6; color: #a9b7bf; }
+        .multi h4 { margin: 0 0 6px; color: #5cc8d6; font-size: 14px; }
+        .multi b { color: #dfe7ec; }
+        .multi code { font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #5cc8d6; }
+        .multi label { margin-right: 14px; white-space: nowrap; }
+        .multi input, .multi select, .multi-ctl input, .multi-ctl select { background: #0e1418; color: #dfe7ec; border: 1px solid #26343e; border-radius: 4px; padding: 2px 4px; font-size: 13px; }
+        .multi .barre { height: 6px; background: #26343e; border-radius: 3px; margin: 8px 0 4px; overflow: hidden; }
+        .multi .barre div { height: 100%; width: 0; background: #f0a63a; }
+        .multi-ctl { display: inline-flex; gap: 8px; align-items: center; margin: 6px 4px; font-size: 13px; color: #a9b7bf; white-space: nowrap; }
+    </style>
+    <style>
+        /* numéro de version de la page (lu dans le cartouche) */
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; white-space: nowrap; }
+        div.j2d-ver { text-align: center; margin: 18px auto; }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page09-prbs.html">◀ 09 · PRBS</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 10 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon" class="ici" aria-current="page"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page11-interleaving.html">11 · Entrelacement ▶</a></nav>
+    <h1>🛡️ Page 10 - Reed-Solomon (204,188)</h1>
+    
+    <div class="description">
+        <strong>Fonction :</strong> Encodage Reed-Solomon selon DVB-S EN 300 421.<br>
+        Code RS(204,188) raccourci de RS(255,239) — Correction jusqu'à <strong>8 octets erronés</strong> par bloc.<br>
+        <strong>GF(2⁸)</strong> avec polynôme primitif p(x) = x⁸ + x⁴ + x³ + x² + 1 (0x11D)<br>
+        <strong>Entrée :</strong> Paquets TS randomisés (188 octets) — <strong>Sortie :</strong> Blocs RS (204 octets)
+    </div>
+    
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">Reed-Solomon</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Entrelacement</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">Viterbi</span>
+        <span class="pipeline-arrow">→</span>
+        <span class="pipeline-step">QPSK</span>
+    </div>
+    
+    <div class="multi" id="multiPanel" style="display:none"><h4>🎞️ Flux multi-images</h4><div id="multiCtl"></div><div class="barre"><div id="multiBar"></div></div><div id="multiEtat" style="font-family:monospace"></div><div id="multiInfo"></div></div>
+    <div class="canvas-container">
+        <!-- CANVAS 1 : TS randomisé en entrée -->
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - TS Randomisé</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button onclick="document.getElementById('fileInput').click()">📁 Charger JSON</button>
+                <input type="file" id="fileInput" accept=".json,.j2d" onchange="loadJSON(this.files)">
+            </div>
+            <div class="info">Paquets 188 octets (sortie Page 09)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        
+        <!-- CANVAS 2 : Processus RS -->
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Encodage RS</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnEncode" onclick="encodeRS()" disabled>⚙️ Encoder RS</button>
+                <button id="btnAnimate" onclick="animateRS()" disabled>▶️ Animer</button>
+                <button id="btnStop" onclick="stopAnimation()" disabled>⏹️ Stop</button>
+            </div>
+            <div class="info">Division polynomiale dans GF(2⁸)</div>
+        </div>
+        
+        <!-- CANVAS 3 : Blocs RS -->
+        <div class="canvas-box">
+            <h3>3. SORTIE - Blocs RS (204 oct)</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportJSON" onclick="exportJSON()" disabled>💾 JSON</button>
+                <button id="btnExportBin" onclick="exportBinary()" disabled>💾 .rs</button>
+            </div>
+            <div class="info">Cliquez sur un bloc pour le détail</div>
+            <div class="legend">
+                <div class="legend-item"><div class="legend-color" style="background:#0099cc"></div> Données (188)</div>
+                <div class="legend-item"><div class="legend-color" style="background:#ff8800"></div> Parité (16)</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Détails -->
+    <div class="detail-section">
+        <div id="blockDetail" class="section-detail" style="display:none;">
+            <h4 id="detailTitle">Bloc RS</h4>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Données (188 octets) :</strong>
+                    <div id="detailData" class="hex-display"></div>
+                </div>
+                <div style="flex: 1; min-width: 280px;">
+                    <strong>Parité RS (16 octets) :</strong>
+                    <div id="detailParity" class="hex-display"></div>
+                </div>
+            </div>
+            <div id="detailStats" style="margin-top: 10px; font-size: 11px; color: #888;"></div>
+        </div>
+        
+        <div id="globalStats" class="stats" style="display:none; margin-top: 15px;"></div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Polynôme Générateur g(x)</h4>
+        <div class="poly-display">
+            g(x) = x¹⁶ + 0x3B·x¹⁵ + 0x0D·x¹⁴ + 0x68·x¹³ + 0xBD·x¹² + 0x44·x¹¹ + 0xD1·x¹⁰ + 0x1E·x⁹ + 0x08·x⁸ + 0xA3·x⁷ + 0x41·x⁶ + 0x29·x⁵ + 0xE5·x⁴ + 0x62·x³ + 0x32·x² + 0x24·x + 0x3B
+        </div>
+        <p style="font-size: 11px; color: #888;">g(x) = ∏(x - α^i) pour i = 0..15, où α est racine primitive de GF(2⁸)</p>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Structure RS(204,188)</h4>
+        <div class="rs-diagram">
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              Bloc RS : 204 octets                                   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│  Données (message)                                          │  Parité (redundancy)  │
+│  188 octets                                                 │  16 octets            │
+│  [D₀, D₁, D₂, ..., D₁₈₆, D₁₈₇]                             │  [P₀, P₁, ..., P₁₅]   │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│  = Paquet TS randomisé (sync 0xB8 ou 0x47 + 187 octets)    │  = Reste de m(x)·x¹⁶  │
+│                                                             │    mod g(x)           │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+Encodage systématique :
+  • m(x) = polynôme message (données)
+  • Calculer r(x) = m(x)·x¹⁶ mod g(x)
+  • Mot de code c(x) = m(x)·x¹⁶ + r(x)
+
+Capacité de correction : t = 8 octets erronés par bloc de 204
+        </div>
+        
+        <h4 style="color: #00d4ff; margin-top: 20px;">Paramètres DVB-S</h4>
+        <table class="info-table">
+            <tr>
+                <th>Paramètre</th>
+                <th>Valeur</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>Code</td>
+                <td>RS(204,188)</td>
+                <td>Raccourci de RS(255,239)</td>
+            </tr>
+            <tr>
+                <td>Symboles</td>
+                <td>GF(2⁸)</td>
+                <td>Octets (8 bits)</td>
+            </tr>
+            <tr>
+                <td>Polynôme primitif</td>
+                <td>p(x) = x⁸+x⁴+x³+x²+1</td>
+                <td>0x11D</td>
+            </tr>
+            <tr>
+                <td>Parité</td>
+                <td>16 octets</td>
+                <td>2t symboles</td>
+            </tr>
+            <tr>
+                <td>Correction</td>
+                <td>t = 8</td>
+                <td>Jusqu'à 8 octets erronés</td>
+            </tr>
+            <tr>
+                <td>Rendement</td>
+                <td>188/204 = 92.2%</td>
+                <td>Overhead 8.5%</td>
+            </tr>
+        </table>
+    </div>
+
+<script>
+/* ===== Flux multi-images (2.0) : outils communs à toutes les étapes =====
+   Conteneur binaire .j2d : 'J2D1' | uint32 LE taille de l'en-tête | en-tête
+   JSON UTF-8 | bourrage à 8 octets | tampons typés, chacun complété à 8 octets.
+   L'en-tête porte tampons = [{nom, type, n}] dans l'ordre d'écriture.
+   Les gros volumes restent en tableaux typés (jamais en JSON). */
+var J2D = (function () {
+    var TYPES = { u8: Uint8Array, i8: Int8Array, u16: Uint16Array, i16: Int16Array,
+                  u32: Uint32Array, i32: Int32Array, f32: Float32Array, f64: Float64Array };
+    function typeDe(a) {
+        for (var k in TYPES) { if (a instanceof TYPES[k]) { return k; } }
+        throw new Error('type de tampon non géré');
+    }
+    function pad8(n) { return Math.ceil(n / 8) * 8; }
+    /* ecrire — E : en-tête (objet), tampons {nom: tableau typé} → S : Blob .j2d */
+    function ecrire(meta, tampons) {
+        var noms = Object.keys(tampons);
+        var desc = noms.map(function (k) { return { nom: k, type: typeDe(tampons[k]), n: tampons[k].length }; });
+        var m = Object.assign({}, meta, { tampons: desc });
+        var json = new TextEncoder().encode(JSON.stringify(m));
+        var tete = new Uint8Array(pad8(8 + json.length));
+        tete.set([0x4A, 0x32, 0x44, 0x31], 0);
+        new DataView(tete.buffer).setUint32(4, json.length, true);
+        tete.set(json, 8);
+        var parts = [tete];
+        noms.forEach(function (k) {
+            var a = tampons[k], p = pad8(a.byteLength) - a.byteLength;
+            parts.push(new Uint8Array(a.buffer, a.byteOffset, a.byteLength));
+            if (p) { parts.push(new Uint8Array(p)); }
+        });
+        return new Blob(parts, { type: 'application/octet-stream' });
+    }
+    /* lire — E : ArrayBuffer d'un .j2d → S : {meta, t: {nom: tableau typé}} */
+    function lire(buf) {
+        var dv = new DataView(buf);
+        if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+        var L = dv.getUint32(4, true);
+        var meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+        var off = pad8(8 + L), t = {};
+        (meta.tampons || []).forEach(function (d) {
+            var T = TYPES[d.type];
+            t[d.nom] = new T(buf, off, d.n);
+            off += pad8(d.n * T.BYTES_PER_ELEMENT);
+        });
+        return { meta: meta, t: t };
+    }
+    /* charger — E : fichier .j2d, format attendu, rappel(lu) → T : lecture
+       binaire, contrôle du format → S : rappel ou alerte */
+    function charger(fichier, formats, rappel) {
+        var r = new FileReader();
+        r.onload = function (e) {
+            try {
+                var lu = lire(e.target.result);
+                if (formats.indexOf(lu.meta.format) < 0) { alert('Format ' + lu.meta.format + ' non reconnu ici (attendu : ' + formats.join(' ou ') + ').'); return; }
+                MULTI_UI.source(lu.meta.origine);
+                rappel(lu);
+            } catch (err) { alert('Erreur .j2d : ' + err.message); }
+        };
+        r.readAsArrayBuffer(fichier);
+    }
+    function estJ2D(files) { return !!(files && files[0] && /\.j2d$/i.test(files[0].name)); }
+    /* telecharger — E : Blob, nom de fichier → S : téléchargement */
+    function telecharger(blob, nom) {
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+    /* boucle — E : nombre de tours, fonction(i), progression(i, n), fin →
+       T : tours par tranches de 40 ms pour garder la page réactive → S : fin() */
+    function boucle(n, fn, prog, fin) {
+        var i = 0;
+        function tour() {
+            var t0 = performance.now();
+            try {
+                while (i < n && performance.now() - t0 < 40) { fn(i); i++; }
+            } catch (err) { alert('Erreur de traitement : ' + err.message); console.error(err); return; }
+            if (prog) { prog(i, n); }
+            if (i < n) { setTimeout(tour, 0); } else { fin(); }
+        }
+        tour();
+    }
+    return { ecrire: ecrire, lire: lire, charger: charger, estJ2D: estJ2D, telecharger: telecharger, boucle: boucle };
+})();
+
+/* Panneau « flux multi-images » : texte d'état et barre de progression */
+var MULTI_UI = {
+    montrer: function (html) {
+        var p = document.getElementById('multiPanel');
+        if (!p) { return; }
+        p.style.display = 'block';
+        document.getElementById('multiInfo').innerHTML = html;
+    },
+    progres: function (i, n, texte) {
+        var b = document.getElementById('multiBar'), t = document.getElementById('multiEtat');
+        if (b) { b.style.width = (n ? 100 * i / n : 0).toFixed(1) + '%'; }
+        if (t) { t.textContent = texte || (i + ' / ' + n); }
+    },
+    cacher: function () { var p = document.getElementById('multiPanel'); if (p) { p.style.display = 'none'; } },
+    /* source — E : meta.origine {nom, images, mobile, date} (page 01) → T : bandeau « Source » du panneau */
+    source: function (s) {
+        var p = document.getElementById('multiPanel');
+        if (!p || !s || typeof s !== 'object' || !s.nom) { return; }
+        var d = document.getElementById('multiSource');
+        if (!d) { d = document.createElement('div'); d.id = 'multiSource'; d.style.cssText = 'margin:0 0 6px;color:#f0a63a;font-weight:600'; p.insertBefore(d, p.children[1]); }
+        d.textContent = 'Source : ' + MULTI_UI.texteSource(s);
+    },
+    texteSource: function (s) {
+        return s.nom + ' — ' + s.images + ' image' + (s.images > 1 ? 's' : '') + (s.mobile ? ', carré mobile' : '') + ' — produite le ' + new Date(s.date).toLocaleString('fr-FR');
+    },
+    /* etiquette — E : nom de la source → S : forme courte pour un nom de fichier */
+    etiquette: function (n) { return String(n || '').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'source'; }
+};
+
+/* Macroblocs d'une image CIF en tableau typé : 396 macroblocs × 384 valeurs
+   (Y0, Y1, Y2, Y3, Cb, Cr ; 64 valeurs par bloc, ligne par ligne) */
+var MB384 = {
+    COLS: 22, ROWS: 18, N: 396, PAR_IMAGE: 396 * 384,
+    /* depaqueter — E : tampon, numéro d'image → S : macroblocs au format des pages V1 */
+    depaqueter: function (buf, f) {
+        var res = [], base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < MB384.N; m++) {
+            var o = base + m * 384, col = m % MB384.COLS, row = (m / MB384.COLS) | 0;
+            var bl = [];
+            for (var k = 0; k < 6; k++) { bl.push(Array.prototype.slice.call(buf, o + k * 64, o + k * 64 + 64)); }
+            res.push({ index: m, position: { x: col * 16, y: row * 16, col: col, row: row },
+                       Y: [bl[0], bl[1], bl[2], bl[3]], Cb: bl[4], Cr: bl[5] });
+        }
+        return res;
+    },
+    /* paqueter — E : macroblocs (format V1), tampon, numéro d'image → T : recopie */
+    paqueter: function (mbs, buf, f) {
+        var base = f * MB384.PAR_IMAGE;
+        for (var m = 0; m < mbs.length; m++) {
+            var mb = mbs[m], o = base + m * 384;
+            for (var k = 0; k < 4; k++) { buf.set(mb.Y[k], o + k * 64); }
+            buf.set(mb.Cb, o + 256); buf.set(mb.Cr, o + 320);
+        }
+    }
+};
+
+/* Écriture de bits dans un tampon d'octets extensible (poids fort en tête) */
+function BitTampon(capacite) {
+    this.buf = new Uint8Array(capacite || 1 << 16);
+    this.nbits = 0;
+}
+BitTampon.prototype.assurer = function (bits) {
+    var besoin = ((this.nbits + bits) >> 3) + 1;
+    if (besoin > this.buf.length) {
+        var n = new Uint8Array(Math.max(besoin, this.buf.length * 2));
+        n.set(this.buf); this.buf = n;
+    }
+};
+BitTampon.prototype.ecrire = function (valeur, n) {
+    this.assurer(n);
+    for (var i = n - 1; i >= 0; i--) {
+        if (Math.floor(valeur / Math.pow(2, i)) % 2) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.ecrireChaine = function (s) {
+    this.assurer(s.length);
+    for (var i = 0; i < s.length; i++) {
+        if (s.charCodeAt(i) === 49) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+/* copier — E : tampon source, bit de départ, nombre de bits → T : recopie bit à bit */
+BitTampon.prototype.copier = function (src, debut, n) {
+    this.assurer(n);
+    for (var i = 0; i < n; i++) {
+        var b = debut + i;
+        if (src[b >> 3] & (0x80 >> (b & 7))) { this.buf[this.nbits >> 3] |= 0x80 >> (this.nbits & 7); }
+        this.nbits++;
+    }
+};
+BitTampon.prototype.aligner = function () { this.nbits = Math.ceil(this.nbits / 8) * 8; this.assurer(0); };
+BitTampon.prototype.octets = function () { return this.buf.slice(0, Math.ceil(this.nbits / 8)); };
+
+/* Paramètres du canal DVB-S : débit TS utile = Rs × 2 × FEC × 188/204 */
+var CANAL = {
+    FEC: { '1/2': 1 / 2, '2/3': 2 / 3, '3/4': 3 / 4, '5/6': 5 / 6, '7/8': 7 / 8 },
+    debitTS: function (rs, fec) { return rs * 2 * CANAL.FEC[fec] * 188 / 204; }
+};
+</script>
+    <script>
+        // ============================================================
+        // CONSTANTES
+        // ============================================================
+        
+        const WIDTH = 352;
+        const HEIGHT = 288;
+        
+        const TS_PACKET_SIZE = 188;
+        const RS_BLOCK_SIZE = 204;
+        const RS_PARITY_SIZE = 16;  // 2t = 16
+        const RS_T = 8;             // Capacité de correction
+        
+        // ============================================================
+        // TABLES GF(2^8) - Polynôme primitif 0x11D
+        // ============================================================
+        
+        const LOG_TABLE = [
+            -1, 0, 1, 25, 2, 50, 26, 198, 3, 223, 51, 238, 27, 104, 199, 75,
+            4, 100, 224, 14, 52, 141, 239, 129, 28, 193, 105, 248, 200, 8, 76, 113,
+            5, 138, 101, 47, 225, 36, 15, 33, 53, 147, 142, 218, 240, 18, 130, 69,
+            29, 181, 194, 125, 106, 39, 249, 185, 201, 154, 9, 120, 77, 228, 114, 166,
+            6, 191, 139, 98, 102, 221, 48, 253, 226, 152, 37, 179, 16, 145, 34, 136,
+            54, 208, 148, 206, 143, 150, 219, 189, 241, 210, 19, 92, 131, 56, 70, 64,
+            30, 66, 182, 163, 195, 72, 126, 110, 107, 58, 40, 84, 250, 133, 186, 61,
+            202, 94, 155, 159, 10, 21, 121, 43, 78, 212, 229, 172, 115, 243, 167, 87,
+            7, 112, 192, 247, 140, 128, 99, 13, 103, 74, 222, 237, 49, 197, 254, 24,
+            227, 165, 153, 119, 38, 184, 180, 124, 17, 68, 146, 217, 35, 32, 137, 46,
+            55, 63, 209, 91, 149, 188, 207, 205, 144, 135, 151, 178, 220, 252, 190, 97,
+            242, 86, 211, 171, 20, 42, 93, 158, 132, 60, 57, 83, 71, 109, 65, 162,
+            31, 45, 67, 216, 183, 123, 164, 118, 196, 23, 73, 236, 127, 12, 111, 246,
+            108, 161, 59, 82, 41, 157, 85, 170, 251, 96, 134, 177, 187, 204, 62, 90,
+            203, 89, 95, 176, 156, 169, 160, 81, 11, 245, 22, 235, 122, 117, 44, 215,
+            79, 174, 213, 233, 230, 231, 173, 232, 116, 214, 244, 234, 168, 80, 88, 175
+        ];
+        
+        const ANTILOG_TABLE = [
+            0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1D, 0x3A, 0x74, 0xE8, 0xCD, 0x87, 0x13, 0x26,
+            0x4C, 0x98, 0x2D, 0x5A, 0xB4, 0x75, 0xEA, 0xC9, 0x8F, 0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0,
+            0x9D, 0x27, 0x4E, 0x9C, 0x25, 0x4A, 0x94, 0x35, 0x6A, 0xD4, 0xB5, 0x77, 0xEE, 0xC1, 0x9F, 0x23,
+            0x46, 0x8C, 0x05, 0x0A, 0x14, 0x28, 0x50, 0xA0, 0x5D, 0xBA, 0x69, 0xD2, 0xB9, 0x6F, 0xDE, 0xA1,
+            0x5F, 0xBE, 0x61, 0xC2, 0x99, 0x2F, 0x5E, 0xBC, 0x65, 0xCA, 0x89, 0x0F, 0x1E, 0x3C, 0x78, 0xF0,
+            0xFD, 0xE7, 0xD3, 0xBB, 0x6B, 0xD6, 0xB1, 0x7F, 0xFE, 0xE1, 0xDF, 0xA3, 0x5B, 0xB6, 0x71, 0xE2,
+            0xD9, 0xAF, 0x43, 0x86, 0x11, 0x22, 0x44, 0x88, 0x0D, 0x1A, 0x34, 0x68, 0xD0, 0xBD, 0x67, 0xCE,
+            0x81, 0x1F, 0x3E, 0x7C, 0xF8, 0xED, 0xC7, 0x93, 0x3B, 0x76, 0xEC, 0xC5, 0x97, 0x33, 0x66, 0xCC,
+            0x85, 0x17, 0x2E, 0x5C, 0xB8, 0x6D, 0xDA, 0xA9, 0x4F, 0x9E, 0x21, 0x42, 0x84, 0x15, 0x2A, 0x54,
+            0xA8, 0x4D, 0x9A, 0x29, 0x52, 0xA4, 0x55, 0xAA, 0x49, 0x92, 0x39, 0x72, 0xE4, 0xD5, 0xB7, 0x73,
+            0xE6, 0xD1, 0xBF, 0x63, 0xC6, 0x91, 0x3F, 0x7E, 0xFC, 0xE5, 0xD7, 0xB3, 0x7B, 0xF6, 0xF1, 0xFF,
+            0xE3, 0xDB, 0xAB, 0x4B, 0x96, 0x31, 0x62, 0xC4, 0x95, 0x37, 0x6E, 0xDC, 0xA5, 0x57, 0xAE, 0x41,
+            0x82, 0x19, 0x32, 0x64, 0xC8, 0x8D, 0x07, 0x0E, 0x1C, 0x38, 0x70, 0xE0, 0xDD, 0xA7, 0x53, 0xA6,
+            0x51, 0xA2, 0x59, 0xB2, 0x79, 0xF2, 0xF9, 0xEF, 0xC3, 0x9B, 0x2B, 0x56, 0xAC, 0x45, 0x8A, 0x09,
+            0x12, 0x24, 0x48, 0x90, 0x3D, 0x7A, 0xF4, 0xF5, 0xF7, 0xF3, 0xFB, 0xEB, 0xCB, 0x8B, 0x0B, 0x16,
+            0x2C, 0x58, 0xB0, 0x7D, 0xFA, 0xE9, 0xCF, 0x83, 0x1B, 0x36, 0x6C, 0xD8, 0xAD, 0x47, 0x8E, 0x01,
+            // Étendue pour éviter modulo (indices 256-511 = copie de 0-255)
+            0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1D, 0x3A, 0x74, 0xE8, 0xCD, 0x87, 0x13, 0x26, 0x4C,
+            0x98, 0x2D, 0x5A, 0xB4, 0x75, 0xEA, 0xC9, 0x8F, 0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0x9D,
+            0x27, 0x4E, 0x9C, 0x25, 0x4A, 0x94, 0x35, 0x6A, 0xD4, 0xB5, 0x77, 0xEE, 0xC1, 0x9F, 0x23, 0x46,
+            0x8C, 0x05, 0x0A, 0x14, 0x28, 0x50, 0xA0, 0x5D, 0xBA, 0x69, 0xD2, 0xB9, 0x6F, 0xDE, 0xA1, 0x5F,
+            0xBE, 0x61, 0xC2, 0x99, 0x2F, 0x5E, 0xBC, 0x65, 0xCA, 0x89, 0x0F, 0x1E, 0x3C, 0x78, 0xF0, 0xFD,
+            0xE7, 0xD3, 0xBB, 0x6B, 0xD6, 0xB1, 0x7F, 0xFE, 0xE1, 0xDF, 0xA3, 0x5B, 0xB6, 0x71, 0xE2, 0xD9,
+            0xAF, 0x43, 0x86, 0x11, 0x22, 0x44, 0x88, 0x0D, 0x1A, 0x34, 0x68, 0xD0, 0xBD, 0x67, 0xCE, 0x81,
+            0x1F, 0x3E, 0x7C, 0xF8, 0xED, 0xC7, 0x93, 0x3B, 0x76, 0xEC, 0xC5, 0x97, 0x33, 0x66, 0xCC, 0x85,
+            0x17, 0x2E, 0x5C, 0xB8, 0x6D, 0xDA, 0xA9, 0x4F, 0x9E, 0x21, 0x42, 0x84, 0x15, 0x2A, 0x54, 0xA8,
+            0x4D, 0x9A, 0x29, 0x52, 0xA4, 0x55, 0xAA, 0x49, 0x92, 0x39, 0x72, 0xE4, 0xD5, 0xB7, 0x73, 0xE6,
+            0xD1, 0xBF, 0x63, 0xC6, 0x91, 0x3F, 0x7E, 0xFC, 0xE5, 0xD7, 0xB3, 0x7B, 0xF6, 0xF1, 0xFF, 0xE3,
+            0xDB, 0xAB, 0x4B, 0x96, 0x31, 0x62, 0xC4, 0x95, 0x37, 0x6E, 0xDC, 0xA5, 0x57, 0xAE, 0x41, 0x82,
+            0x19, 0x32, 0x64, 0xC8, 0x8D, 0x07, 0x0E, 0x1C, 0x38, 0x70, 0xE0, 0xDD, 0xA7, 0x53, 0xA6, 0x51,
+            0xA2, 0x59, 0xB2, 0x79, 0xF2, 0xF9, 0xEF, 0xC3, 0x9B, 0x2B, 0x56, 0xAC, 0x45, 0x8A, 0x09, 0x12,
+            0x24, 0x48, 0x90, 0x3D, 0x7A, 0xF4, 0xF5, 0xF7, 0xF3, 0xFB, 0xEB, 0xCB, 0x8B, 0x0B, 0x16, 0x2C,
+            0x58, 0xB0, 0x7D, 0xFA, 0xE9, 0xCF, 0x83, 0x1B, 0x36, 0x6C, 0xD8, 0xAD, 0x47, 0x8E, 0x01, 0x02
+        ];
+        
+        // Polynôme générateur g(x) pour t=8 (16 symboles de parité)
+        // g(x) = (x-α⁰)(x-α¹)...(x-α¹⁵)
+        // Coefficients du plus haut degré au plus bas
+        const GENERATOR_POLY = [
+            1, 0x3B, 0x0D, 0x68, 0xBD, 0x44, 0xD1, 0x1E,
+            0x08, 0xA3, 0x41, 0x29, 0xE5, 0x62, 0x32, 0x24, 0x3B
+        ];
+        
+        // ============================================================
+        // ARITHMÉTIQUE GF(2^8)
+        // ============================================================
+        
+        function gf_add(a, b) {
+            return a ^ b;
+        }
+        
+        function gf_mult(a, b) {
+            if (a === 0 || b === 0) return 0;
+            return ANTILOG_TABLE[LOG_TABLE[a] + LOG_TABLE[b]];
+        }
+        
+        function gf_div(a, b) {
+            if (b === 0) throw "Division par zéro dans GF(2^8)";
+            if (a === 0) return 0;
+            return ANTILOG_TABLE[(LOG_TABLE[a] - LOG_TABLE[b] + 255) % 255];
+        }
+        
+        function gf_pow(a, power) {
+            if (a === 0) return 0;
+            return ANTILOG_TABLE[(LOG_TABLE[a] * power) % 255];
+        }
+        
+        // ============================================================
+        // VARIABLES GLOBALES
+        // ============================================================
+        
+        let inputData = null;
+        let tsPackets = [];
+        let rsBlocks = [];
+        let encoded = false;
+        let selectedBlock = null;
+        let animationId = null;
+        
+        // ============================================================
+        // INITIALISATION
+        // ============================================================
+        
+        window.onload = function() {
+            clearCanvas('canvasInput');
+            displayProcessInit();
+            clearCanvas('canvasOutput');
+        };
+        
+        // ============================================================
+        // CHARGEMENT JSON
+        // ============================================================
+        
+        function loadJSON(files) {
+            if (!files || files.length === 0) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    inputData = JSON.parse(e.target.result);
+                    
+                    if (!inputData.format || inputData.format !== 'DVB_RANDOMIZED_V1') {
+                        alert('Format non reconnu. Utilisez la sortie de Page 09.');
+                        return;
+                    }
+                    
+                    // Décoder le binaire base64
+                    const binaryString = atob(inputData.binary);
+                    const tsBinary = [];
+                    for (let i = 0; i < binaryString.length; i++) {
+                        tsBinary.push(binaryString.charCodeAt(i));
+                    }
+                    
+                    // Reconstruire les paquets
+                    tsPackets = [];
+                    for (let i = 0; i < tsBinary.length; i += TS_PACKET_SIZE) {
+                        tsPackets.push({
+                            index: tsPackets.length,
+                            bytes: tsBinary.slice(i, i + TS_PACKET_SIZE)
+                        });
+                    }
+                    
+                    rsBlocks = [];
+                    encoded = false;
+                    selectedBlock = null;
+                    
+                    displayInputTS();
+                    displayProcessInit();
+                    clearCanvas('canvasOutput');
+                    
+                    document.getElementById('btnEncode').disabled = false;
+                    document.getElementById('btnAnimate').disabled = false;
+                    document.getElementById('btnExportJSON').disabled = true;
+                    document.getElementById('btnExportBin').disabled = true;
+                    document.getElementById('blockDetail').style.display = 'none';
+                    document.getElementById('globalStats').style.display = 'none';
+                    
+                    const stats = document.getElementById('statsInput');
+                    stats.style.display = 'block';
+                    stats.innerHTML = `
+                        <strong>TS Randomisé chargé :</strong><br>
+                        • Paquets : ${tsPackets.length}<br>
+                        • Taille : ${tsBinary.length.toLocaleString()} octets<br>
+                        • → Blocs RS : ${tsPackets.length} × 204 = ${tsPackets.length * RS_BLOCK_SIZE} octets
+                    `;
+                    
+                } catch (err) {
+                    alert('Erreur JSON : ' + err.message);
+                }
+            };
+            reader.readAsText(files[0]);
+        }
+        
+        // ============================================================
+        // AFFICHAGE TS ENTRÉE
+        // ============================================================
+        
+        function displayInputTS() {
+            const canvas = document.getElementById('canvasInput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${tsPackets.length} paquets TS (188 oct)`, WIDTH / 2, 20);
+            
+            // Afficher les paquets
+            const packetsPerRow = 11;
+            const packetWidth = 30;
+            const packetHeight = 20;
+            const startY = 35;
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const row = Math.floor(i / packetsPerRow);
+                const col = i % packetsPerRow;
+                
+                const x = 10 + col * (packetWidth + 2);
+                const y = startY + row * (packetHeight + 5);
+                
+                if (y + packetHeight > HEIGHT - 20) break;
+                
+                // Paquet TS
+                ctx.fillStyle = '#0099cc';
+                ctx.fillRect(x, y, packetWidth, packetHeight);
+                
+                // Numéro
+                ctx.fillStyle = '#fff';
+                ctx.font = '9px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(i.toString(), x + packetWidth / 2, y + packetHeight / 2 + 3);
+            }
+            
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Chaque paquet → 1 bloc RS', 10, HEIGHT - 10);
+        }
+        
+        // ============================================================
+        // AFFICHAGE PROCESS
+        // ============================================================
+        
+        function displayProcessInit() {
+            const canvas = document.getElementById('canvasProcess');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 14px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText('Encodage Reed-Solomon', WIDTH / 2, 25);
+            
+            // Schéma
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#fff';
+            
+            let y = 50;
+            ctx.fillText('1. Message m(x) = 188 octets données', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   m(x) = m₁₈₇·x¹⁸⁷ + ... + m₁·x + m₀', 20, y + 15);
+            
+            y += 40;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('2. Décaler de 16 positions : m(x)·x¹⁶', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   Faire place pour les 16 octets de parité', 20, y + 15);
+            
+            y += 40;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('3. Division polynomiale dans GF(2⁸)', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   r(x) = m(x)·x¹⁶ mod g(x)', 20, y + 15);
+            ctx.fillText('   r(x) = reste = 16 octets de parité', 20, y + 30);
+            
+            y += 50;
+            ctx.fillStyle = '#fff';
+            ctx.fillText('4. Mot de code = données + parité', 20, y);
+            ctx.fillStyle = '#8fa1ad';
+            ctx.fillText('   c(x) = m(x)·x¹⁶ + r(x)', 20, y + 15);
+            
+            // Visualisation
+            y += 45;
+            ctx.fillStyle = '#0099cc';
+            ctx.fillRect(20, y, 200, 20);
+            ctx.fillStyle = '#f0a63a';
+            ctx.fillRect(220, y, 50, 20);
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('188 octets données', 120, y + 14);
+            ctx.fillText('16 parité', 245, y + 14);
+            
+            ctx.fillStyle = '#8fa1ad';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('= 204 octets total', 280, y + 14);
+        }
+        
+        // ============================================================
+        // ENCODAGE RS
+        // ============================================================
+        
+        function encodeRS() {
+            if (!tsPackets.length) return;
+            
+            rsBlocks = [];
+            
+            for (let i = 0; i < tsPackets.length; i++) {
+                const packet = tsPackets[i];
+                const rsBlock = encodeRSBlock(packet.bytes);
+                rsBlocks.push({
+                    index: i,
+                    data: packet.bytes,
+                    parity: rsBlock.parity,
+                    bytes: rsBlock.codeword
+                });
+            }
+            
+            encoded = true;
+            displayOutputRS();
+            
+            document.getElementById('btnExportJSON').disabled = false;
+            document.getElementById('btnExportBin').disabled = false;
+            
+            // Stats
+            const totalInput = tsPackets.length * TS_PACKET_SIZE;
+            const totalOutput = rsBlocks.length * RS_BLOCK_SIZE;
+            const overhead = totalOutput - totalInput;
+            
+            const globalStats = document.getElementById('globalStats');
+            globalStats.style.display = 'block';
+            globalStats.innerHTML = `
+                <strong>Encodage RS terminé :</strong><br>
+                • Blocs RS créés : ${rsBlocks.length}<br>
+                • Taille entrée : ${totalInput.toLocaleString()} octets<br>
+                • Taille sortie : ${totalOutput.toLocaleString()} octets<br>
+                • Parité ajoutée : ${overhead} octets (${(overhead / totalInput * 100).toFixed(1)}%)<br>
+                • Capacité correction : ${RS_T} octets/bloc
+            `;
+        }
+        
+        function encodeRSBlock(data) {
+            // Encodage systématique RS(204,188)
+            // 1. Le message est déjà les 188 octets de données
+            // 2. On calcule r(x) = m(x)·x^16 mod g(x)
+            
+            // Registre de feedback (16 octets pour la parité)
+            const feedback = new Array(RS_PARITY_SIZE).fill(0);
+            
+            // Division polynomiale
+            for (let i = 0; i < data.length; i++) {
+                const inputByte = data[i];
+                const feedback0 = gf_add(inputByte, feedback[0]);
+                
+                // Décaler le registre et ajouter les termes de feedback
+                for (let j = 0; j < RS_PARITY_SIZE - 1; j++) {
+                    feedback[j] = gf_add(feedback[j + 1], gf_mult(feedback0, GENERATOR_POLY[j + 1]));
+                }
+                feedback[RS_PARITY_SIZE - 1] = gf_mult(feedback0, GENERATOR_POLY[RS_PARITY_SIZE]);
+            }
+            
+            // Le registre contient le reste r(x), du plus haut degré au plus bas
+            const parity = feedback.slice();   // feedback[0] = coefficient de plus haut degré, émis en premier
+            
+            // Mot de code = données + parité
+            const codeword = [...data, ...parity];
+            
+            return { parity, codeword };
+        }
+        
+        // ============================================================
+        // ANIMATION RS
+        // ============================================================
+        
+        function animateRS() {
+            if (animationId || !tsPackets.length) return;
+            
+            const data = tsPackets[0].bytes;
+            const feedback = new Array(RS_PARITY_SIZE).fill(0);
+            let step = 0;
+            
+            document.getElementById('btnAnimate').disabled = true;
+            document.getElementById('btnStop').disabled = false;
+            
+            function animate() {
+                const canvas = document.getElementById('canvasProcess');
+                const ctx = canvas.getContext('2d');
+                
+                ctx.fillStyle = '#0e1418';
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+                
+                ctx.font = 'bold 14px Arial';
+                ctx.fillStyle = '#5cc8d6';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Encodage bloc 0 - Octet ${step}/${data.length}`, WIDTH / 2, 25);
+                
+                // Afficher l'octet courant
+                if (step < data.length) {
+                    ctx.font = '12px monospace';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(`Entrée: 0x${data[step].toString(16).toUpperCase().padStart(2, '0')}`, 20, 50);
+                    
+                    // Calcul
+                    const inputByte = data[step];
+                    const feedback0 = gf_add(inputByte, feedback[0]);
+                    ctx.fillText(`Feedback: 0x${feedback0.toString(16).toUpperCase().padStart(2, '0')}`, 150, 50);
+                    
+                    // Mettre à jour
+                    for (let j = 0; j < RS_PARITY_SIZE - 1; j++) {
+                        feedback[j] = gf_add(feedback[j + 1], gf_mult(feedback0, GENERATOR_POLY[j + 1]));
+                    }
+                    feedback[RS_PARITY_SIZE - 1] = gf_mult(feedback0, GENERATOR_POLY[RS_PARITY_SIZE]);
+                }
+                
+                // Afficher le registre
+                const regY = 80;
+                ctx.fillStyle = '#666';
+                ctx.fillRect(10, regY, WIDTH - 20, 30);
+                
+                const cellWidth = (WIDTH - 20) / RS_PARITY_SIZE;
+                for (let i = 0; i < RS_PARITY_SIZE; i++) {
+                    ctx.fillStyle = feedback[i] === 0 ? '#333' : '#f0a63a';
+                    ctx.fillRect(10 + i * cellWidth + 1, regY + 1, cellWidth - 2, 28);
+                    
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '9px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(feedback[i].toString(16).toUpperCase().padStart(2, '0'), 
+                                 10 + i * cellWidth + cellWidth / 2, regY + 18);
+                }
+                
+                // Barre de progression
+                ctx.fillStyle = '#26343e';
+                ctx.fillRect(10, 130, WIDTH - 20, 15);
+                ctx.fillStyle = '#5cc8d6';
+                ctx.fillRect(10, 130, (WIDTH - 20) * (step / data.length), 15);
+                
+                ctx.fillStyle = '#fff';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${Math.round(step / data.length * 100)}%`, WIDTH / 2, 142);
+                
+                step++;
+                
+                if (step <= data.length) {
+                    animationId = setTimeout(animate, 10);
+                } else {
+                    // Afficher la parité finale
+                    ctx.fillStyle = '#00ff88';
+                    ctx.font = '12px monospace';
+                    ctx.textAlign = 'left';
+                    ctx.fillText('Parité calculée:', 20, 170);
+                    
+                    const parity = feedback.slice();   // feedback[0] = coefficient de plus haut degré, émis en premier
+                    let parityStr = '';
+                    for (let i = 0; i < parity.length; i++) {
+                        parityStr += parity[i].toString(16).toUpperCase().padStart(2, '0') + ' ';
+                    }
+                    ctx.fillText(parityStr, 20, 190);
+                    
+                    stopAnimation();
+                    encodeRS();
+                }
+            }
+            
+            animate();
+        }
+        
+        function stopAnimation() {
+            if (animationId) {
+                clearTimeout(animationId);
+                animationId = null;
+            }
+            document.getElementById('btnAnimate').disabled = false;
+            document.getElementById('btnStop').disabled = true;
+        }
+        
+        // ============================================================
+        // AFFICHAGE BLOCS RS
+        // ============================================================
+        
+        function displayOutputRS() {
+            const canvas = document.getElementById('canvasOutput');
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+            
+            ctx.font = 'bold 12px Arial';
+            ctx.fillStyle = '#5cc8d6';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${rsBlocks.length} blocs RS (204 oct)`, WIDTH / 2, 20);
+            
+            // Afficher les blocs
+            const blocksPerRow = 8;
+            const blockWidth = 40;
+            const blockHeight = 25;
+            const startY = 35;
+            
+            for (let i = 0; i < rsBlocks.length; i++) {
+                const row = Math.floor(i / blocksPerRow);
+                const col = i % blocksPerRow;
+                
+                const x = 10 + col * (blockWidth + 3);
+                const y = startY + row * (blockHeight + 8);
+                
+                if (y + blockHeight > HEIGHT - 20) break;
+                
+                // Données (188)
+                const dataWidth = blockWidth * (188 / 204);
+                ctx.fillStyle = '#0099cc';
+                ctx.fillRect(x, y, dataWidth, blockHeight);
+                
+                // Parité (16)
+                ctx.fillStyle = '#f0a63a';
+                ctx.fillRect(x + dataWidth, y, blockWidth - dataWidth, blockHeight);
+                
+                // Sélection
+                if (selectedBlock === i) {
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, blockWidth, blockHeight);
+                }
+                
+                // Numéro
+                ctx.fillStyle = '#fff';
+                ctx.font = '9px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(i.toString(), x + blockWidth / 2, y + blockHeight / 2 + 3);
+                
+                // Stocker pour clic
+                rsBlocks[i].displayX = x;
+                rsBlocks[i].displayY = y;
+                rsBlocks[i].displayWidth = blockWidth;
+                rsBlocks[i].displayHeight = blockHeight;
+            }
+        }
+        
+        // ============================================================
+        // CLIC SUR BLOC
+        // ============================================================
+        
+        document.getElementById('canvasOutput').addEventListener('click', function(e) {
+            if (!encoded) return;
+            
+            const rect = this.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (let i = 0; i < rsBlocks.length; i++) {
+                const block = rsBlocks[i];
+                if (x >= block.displayX && x < block.displayX + block.displayWidth &&
+                    y >= block.displayY && y < block.displayY + block.displayHeight) {
+                    selectedBlock = i;
+                    displayOutputRS();
+                    displayBlockDetail(block);
+                    return;
+                }
+            }
+        });
+        
+        function displayBlockDetail(block) {
+            const detailDiv = document.getElementById('blockDetail');
+            detailDiv.style.display = 'block';
+            
+            document.getElementById('detailTitle').textContent = 
+                `Bloc RS #${block.index} — 204 octets (188 data + 16 parité)`;
+            
+            // Données
+            const dataDiv = document.getElementById('detailData');
+            let dataHtml = '';
+            for (let i = 0; i < block.data.length; i++) {
+                const hex = block.data[i].toString(16).toUpperCase().padStart(2, '0');
+                dataHtml += `<span class="data">${hex}</span> `;
+                if ((i + 1) % 16 === 0) dataHtml += '\n';
+            }
+            dataDiv.innerHTML = dataHtml;
+            
+            // Parité
+            const parityDiv = document.getElementById('detailParity');
+            let parityHtml = '';
+            for (let i = 0; i < block.parity.length; i++) {
+                const hex = block.parity[i].toString(16).toUpperCase().padStart(2, '0');
+                parityHtml += `<span class="parity">${hex}</span> `;
+            }
+            parityDiv.innerHTML = parityHtml;
+            
+            // Stats
+            document.getElementById('detailStats').innerHTML = 
+                `Sync: 0x${block.data[0].toString(16).toUpperCase()} | ` +
+                `Données: ${block.data.length} oct | Parité: ${block.parity.length} oct | ` +
+                `Total: ${block.bytes.length} oct`;
+        }
+        
+        // ============================================================
+        // EXPORT
+        // ============================================================
+        
+        function exportJSON() {
+            if (!encoded) return;
+            
+            let rsBinary = [];
+            for (const block of rsBlocks) {
+                rsBinary.push(...block.bytes);
+            }
+            
+            const output = {
+                format: 'DVB_RS_V1',
+                description: 'DVB-S Reed-Solomon RS(204,188)',
+                date: new Date().toISOString(),
+                source: inputData.format,
+                image: inputData.image,
+                rs: {
+                    code: 'RS(204,188)',
+                    primitivePolynomial: '0x11D',
+                    t: RS_T,
+                    parityBytes: RS_PARITY_SIZE,
+                    blockCount: rsBlocks.length,
+                    totalBytes: rsBinary.length,
+                    generatorPoly: GENERATOR_POLY.map(c => '0x' + c.toString(16).toUpperCase())
+                },
+                randomization: inputData.randomization,
+                ts: inputData.ts,
+                binary: (function (b) { let s = ''; for (let i = 0; i < b.length; i += 8192) { s += String.fromCharCode.apply(null, Array.prototype.slice.call(b, i, i + 8192)); } return btoa(s); })(rsBinary)
+            };
+            
+            const json = JSON.stringify(output, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'rs_encoded.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function exportBinary() {
+            if (!encoded) return;
+            
+            let rsBinary = [];
+            for (const block of rsBlocks) {
+                rsBinary.push(...block.bytes);
+            }
+            
+            const blob = new Blob([new Uint8Array(rsBinary)], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'encoded.rs';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // ============================================================
+        // UTILITAIRES
+        // ============================================================
+        
+        function clearCanvas(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#0e1418';
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+
+        // ============================================================
+        // FLUX MULTI-IMAGES (2.0) : RS(204,188) sur le flux entier
+        // ============================================================
+        let multi = null, multiOut = null;
+
+        const _loadJSON1 = loadJSON;
+        loadJSON = function (files) {
+            if (!J2D.estJ2D(files)) { multi = null; multiOut = null; MULTI_UI.cacher(); _loadJSON1(files); return; }
+            J2D.charger(files[0], ['J2D_RAND_V2'], function (lu) {
+                multi = lu; multiOut = null;
+                const ts = lu.t.ts, np = ts.length / 188;
+                inputData = { format: lu.meta.format, image: lu.meta.image, ts: lu.meta.ts, randomization: lu.meta.randomization };
+                tsPackets = [];
+                for (let i = 0; i < Math.min(np, 200); i++) { tsPackets.push({ index: i, bytes: Array.from(ts.subarray(i * 188, i * 188 + 188)) }); }
+                rsBlocks = []; encoded = false; selectedBlock = null;
+                displayInputTS(); displayProcessInit(); clearCanvas('canvasOutput');
+                document.getElementById('btnEncode').disabled = false;
+                document.getElementById('btnAnimate').disabled = false;
+                document.getElementById('btnExportJSON').disabled = true;
+                document.getElementById('btnExportBin').disabled = true;
+                document.getElementById('blockDetail').style.display = 'none';
+                document.getElementById('globalStats').style.display = 'none';
+                const st = document.getElementById('statsInput');
+                st.style.display = 'block';
+                st.innerHTML = '<strong>TS randomisé chargé :</strong><br>• Paquets : ' + np.toLocaleString() + '<br>• → ' + (np * 204).toLocaleString() + ' octets codés<br>• Affichage : 200 premiers paquets';
+                MULTI_UI.montrer('<b>' + np.toLocaleString() + ' paquets</b> chargés. ⚙️ code le flux entier en RS(204,188).');
+            });
+        };
+
+        const _encodeRS1 = encodeRS;
+        encodeRS = function () {
+            if (!multi) { _encodeRS1(); return; }
+            _encodeRS1();                                    // aperçu détaillé : 200 premiers paquets
+            const ts = multi.t.ts, np = ts.length / 188, out = new Uint8Array(np * 204);
+            // produits f·g[j+1] tabulés : 256 × 16 octets
+            const T = new Uint8Array(256 * 16);
+            for (let f = 0; f < 256; f++) { for (let j = 0; j < 16; j++) { T[f * 16 + j] = gf_mult(f, GENERATOR_POLY[j + 1]); } }
+            const par = new Uint8Array(16), bloc = 4096;
+            J2D.boucle(Math.ceil(np / bloc), function (b) {
+                for (let p = b * bloc; p < Math.min(np, (b + 1) * bloc); p++) {
+                    par.fill(0);
+                    const i0 = p * 188;
+                    for (let i = 0; i < 188; i++) {
+                        const f = (ts[i0 + i] ^ par[0]) * 16;
+                        for (let j = 0; j < 15; j++) { par[j] = par[j + 1] ^ T[f + j]; }
+                        par[15] = T[f + 15];
+                    }
+                    out.set(ts.subarray(i0, i0 + 188), p * 204);
+                    out.set(par, p * 204 + 188);
+                }
+            }, function (i, n) { MULTI_UI.progres(i, n, 'RS : bloc ' + i + ' / ' + n); }, function () {
+                multiOut = out;
+                const gs = document.getElementById('globalStats');
+                gs.innerHTML = '<strong>Codage RS(204,188) du flux entier :</strong><br>' +
+                    '• Paquets : ' + np.toLocaleString() + ' → ' + out.length.toLocaleString() + ' octets<br>' +
+                    '• Parité : 16 octets par paquet, émis du plus haut degré au plus bas<br>' +
+                    '• Capacité de correction : ' + RS_T + ' octets par paquet<br>• Vue détaillée : 200 premiers paquets';
+                MULTI_UI.montrer('<b>' + np.toLocaleString() + ' paquets</b> codés. Export : <code>rs_encoded.j2d</code> ou <code>encoded.rs</code>.');
+            });
+        };
+
+        const _exportJSON1 = exportJSON;
+        exportJSON = function () {
+            if (!multi || !multiOut) { _exportJSON1(); return; }
+            J2D.telecharger(J2D.ecrire(Object.assign({}, multi.meta, {
+                format: 'J2D_RS_V2', source: multi.meta.format, date: new Date().toISOString(),
+                description: 'Paquets RS(204,188) : 188 octets randomisés + 16 octets de parité',
+                rs: { code: 'RS(204,188)', primitivePolynomial: '0x11D', t: RS_T, generatorPoly: GENERATOR_POLY.map(c => '0x' + c.toString(16).toUpperCase()) }
+            }), { rs: multiOut }), 'rs_encoded.j2d');
+        };
+
+        const _exportBinary1 = exportBinary;
+        exportBinary = function () {
+            if (!multi || !multiOut) { _exportBinary1(); return; }
+            J2D.telecharger(new Blob([multiOut], { type: 'application/octet-stream' }), 'encoded.rs');
+        };
+    </script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page09-prbs.html">◀ 09 · PRBS</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 10 / 15</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon" class="ici" aria-current="page"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception"></a></span></span><a href="page11-interleaving.html">11 · Entrelacement ▶</a></nav>
+
+<script>
+/* ===== Passage automatique des données d'une étape à la suivante (1.3) =====
+   « suivante ▶ » : la sortie de l'étape est produite sans téléchargement, gardée
+   dans le navigateur (IndexedDB, session courante) puis chargée d'office par
+   l'étape suivante via son propre « Charger ». Le traitement reste au clic.
+   Les boutons Exporter / Charger restent disponibles. */
+(function () {
+  var N = 10, NEXT = 'page11-interleaving.html';
+  var SID = (function () { try { var s = sessionStorage.getItem('j2d-sid'); if (!s) { s = String(Date.now()) + Math.random(); sessionStorage.setItem('j2d-sid', s); } return s; } catch (e) { return 'x'; } })();
+  function base(fn) {
+    try {
+      var r = indexedDB.open('jpeg2dvb', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('etapes'); };
+      r.onsuccess = function () { fn(r.result); };
+      r.onerror = function () { fn(null); };
+    } catch (e) { fn(null); }
+  }
+  function ranger(rec, fin) { base(function (db) { if (!db) { fin(); return; } var t = db.transaction('etapes', 'readwrite'); if (rec) { t.objectStore('etapes').put(rec, N); } else { t.objectStore('etapes').delete(N); } t.oncomplete = fin; t.onerror = fin; }); }
+  /* sortie de l'étape, capturée au lieu d'être téléchargée */
+  function produire(fin) {
+    if (N === 0) {
+      var cv = document.getElementById('canvasRGB');
+      if (typeof yCbCrData === 'undefined' || !yCbCrData || !cv) { fin(null); return; }
+      cv.toBlob(function (b) { fin(b ? { name: 'camera_capture.png', blob: b } : null); }, 'image/png'); return;
+    }
+    var blobs = {}, pris = null, creer = URL.createObjectURL, cliquer = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = function (o) { var u = creer.call(URL, o); blobs[u] = o; return u; };
+    HTMLAnchorElement.prototype.click = function () { if (this.download && blobs[this.href] && /\.(json|j2d)$/i.test(this.download) && !pris) { pris = { name: this.download, blob: blobs[this.href] }; } };
+    try {
+      var bs = document.querySelectorAll('button');
+      for (var i = 0; i < bs.length && !pris; i++) { if (!bs[i].disabled && bs[i].textContent.indexOf('💾') >= 0) { bs[i].click(); } }
+    } catch (e) {}
+    URL.createObjectURL = creer; HTMLAnchorElement.prototype.click = cliquer;
+    fin(pris);
+  }
+  /* départ : « suivante ▶ » */
+  if (NEXT) {
+    document.querySelectorAll('.j2d-nav > a:last-child').forEach(function (a) {
+      if (a.getAttribute('href') !== NEXT) { return; }
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        produire(function (s) {
+          ranger(s ? { sid: SID, name: s.name, type: s.blob.type || 'application/json', data: s.blob } : null, function () { location.href = NEXT; });
+        });
+      });
+    });
+  }
+  /* arrivée : chargement d'office de la sortie de l'étape précédente */
+  if (N > 0) {
+    window.addEventListener('load', function () {
+      setTimeout(function () {
+        base(function (db) {
+          if (!db) { return; }
+          var q = db.transaction('etapes', 'readonly').objectStore('etapes').get(N - 1);
+          q.onsuccess = function () {
+            var r = q.result, inp = document.getElementById('fileInput');
+            if (!r || r.sid !== SID || !inp || typeof DataTransfer === 'undefined') { return; }
+            var dt = new DataTransfer();
+            dt.items.add(new File([r.data], r.name, { type: r.type }));
+            inp.files = dt.files;
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+            var nav = document.querySelector('.j2d-nav'), m = document.createElement('div');
+            m.className = 'j2d-auto';
+            m.innerHTML = '↪ Sortie de l\'étape ' + (N - 1 < 10 ? '0' : '') + (N - 1) + ' chargée automatiquement : <b>' + r.name + '</b> — lancez le traitement ⚙️ (ou chargez un autre fichier).';
+            if (nav) { nav.parentNode.insertBefore(m, nav.nextSibling); }
+          };
+        });
+      }, 300);
+    });
+  }
+})();
+</script>
+<script>
+/* Numéro de version : lu dans le cartouche (commentaire de tête), affiché
+   dans la barre de navigation, ou en pied de page à défaut */
+(function () {
+  var v = '';
+  for (var n = document.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 8) { var m = /Version\s*:\s*([0-9.]+)/.exec(n.data); if (m) { v = m[1]; break; } }
+  }
+  if (!v) { return; }
+  var e = document.querySelectorAll('.j2d-nav .j2d-etape');
+  if (e.length) {
+    e.forEach(function (s) { var t = document.createElement('span'); t.className = 'j2d-ver'; t.textContent = 'v' + v; t.title = 'version de la page'; s.parentNode.insertBefore(t, s.nextSibling); });
+  } else {
+    var d = document.createElement('div'); d.className = 'j2d-ver'; d.textContent = 'JPEG2DVB · v' + v; document.body.appendChild(d);
+  }
+})();
+</script>
+</body>
+</html>
