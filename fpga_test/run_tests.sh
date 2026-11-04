@@ -6,8 +6,8 @@
 #               GHDL ; chaque banc compare la sortie de son module, au bit près,
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
-#  Date       : 2026-10-19
-#  Version    : 1.4
+#  Date       : 2026-11-04
+#  Version    : 1.5
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -20,6 +20,8 @@
 #                                contrôle de synthèse
 #               1.4  2026-10-19  sortie sigma-delta par tables : sd_entree au contrôle de
 #                                synthèse (cic8 retiré)
+#               1.5  2026-11-04  entrée vidéo PAL : bancs bt656, tvp, tvp_abs, tvp_bloc ;
+#                                bt656_rx, tvp_ctrl au contrôle de synthèse
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -57,7 +59,11 @@ ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=115224 -gG_N_OUT=
 mire|tb_mire|
 video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
 emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000
-sdm|tb_sdm|"
+sdm|tb_sdm|
+bt656|tb_bt656|
+tvp|tb_tvp|
+tvp_abs|tb_tvp|-gG_ABS=1
+tvp_bloc|tb_tvp|-gG_ABS=2"
 
 OK=0; KO=0
 echo "$BANCS" | while IFS='|' read -r nom ent gen; do
@@ -71,7 +77,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx tvp_ctrl; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else
