@@ -1,15 +1,16 @@
 --==============================================================================
 --  Nom        : jpeg2dvb_fpga.vhd
 --  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
---  Objet      : modules synthétisables de l'émetteur DVB-S, de la mire animée
---               aux échantillons I/Q ; chaque module reproduit au bit près une
---               étape de JPEG2DVB
+--  Objet      : modules synthétisables de l'émetteur DVB-S, de l'entrée vidéo PAL
+--               (décodeur TVP5150AM1) et de la mire animée aux échantillons I/Q ;
+--               chaque module de la chaîne reproduit au bit près une étape de
+--               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 2.2
+--  Date       : 2026-11-04
+--  Version    : 2.3
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 26 unités, dans l'ordre d'analyse :
+--  Contenu    : 29 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
@@ -36,6 +37,10 @@
 --               sd_entree     apport des symboles à la boucle (SRRC par tables)
 --               sdm3          sigma-delta 1 bit d'ordre 3, 8 bits par cycle, anticipation
 --               sigma_delta   sortie sigma-delta I/Q depuis les symboles QPSK
+--               bt656_rx      récepteur BT.656 du décodeur TVP5150AM1 (SCLK 27 MHz)
+--               i2c_maitre    maître I²C minimal (étirement, libération du bus)
+--               tvp_ctrl      pilotage du TVP5150AM1 : démarrage, PAL forcé, choix
+--                             automatique de l'entrée AIP1A / AIP1B
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (context
 --               jpeg2dvb_ctx) ; fonctions et process commentés
 --               « E : entrées → T : traitement → S : sorties » ; les paquetages
@@ -59,6 +64,9 @@
 --                                (sd_entree, sdm_coef_pkg), états sur 16 bits,
 --                                8 décisions par anticipation (sdm3) ; cic8 retiré ;
 --                                dvbs_pkg 1.3 : SD_W, sd_grp_t
+--               2.3  2026-11-04  entrée vidéo PAL (chantier 3a) : décodeur
+--                                TVP5150AM1 piloté par I²C (i2c_maitre,
+--                                tvp_ctrl), récepteur BT.656 (bt656_rx)
 --==============================================================================
 
 -- clauses communes à toutes les unités (une ligne « context » par unité)
@@ -3442,6 +3450,493 @@ begin
                 if produit = '1' then b_ok <= '1'; elsif prend_b = '1' then b_ok <= '0'; end if;
                 if charge = '1' then l_ok <= '1'; end if;
                 if pas = '1' then o_ok <= '1'; elsif m_ready = '1' then o_ok <= '0'; end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- bt656_rx : récepteur ITU-R BT.656 du décodeur vidéo TVP5150AM1 (PAL 625
+--   lignes, 8 bits, synchros intégrées) ; domaine de l'horloge SCLK du
+--   décodeur (27 MHz) ; référence octet à octet : fpga_test/bt656_ref.bin
+--   (fpga_test/bt656.js)
+--   Interface : d : un octet par cycle, sans contrôle de flux (le flux
+--               BT.656 est continu) ; sortie : un couple de pixels (Cb, Y0,
+--               Cr, Y1) par impulsion o_valid ; o_trame : bit F (0 = trame
+--               1) ; o_ligne : 0 à 287 dans la trame ; o_x : couple 0 à
+--               359 ; o_dt : premier couple de la trame ; o_sync : un début
+--               de trame a été vu, les couples sont émis
+--   Principe : FF 00 00 XY est un code de synchronisation, XY = 1 F V H P3 P2
+--              P1 P0 (bits de protection non contrôlés : source propre) ;
+--              un SAV (H = 0) de ligne active (V = 0) est suivi de 1 440
+--              octets Cb Y Cr Y ; la ligne repart de 0 au premier SAV actif
+--              qui suit un SAV de suppression (V = 1) ; rien n'est émis
+--              avant ce premier début de trame
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+
+entity bt656_rx is
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        d       : in  std_logic_vector(7 downto 0);
+        o_valid : out std_logic;
+        o_cb    : out std_logic_vector(7 downto 0);
+        o_y0    : out std_logic_vector(7 downto 0);
+        o_cr    : out std_logic_vector(7 downto 0);
+        o_y1    : out std_logic_vector(7 downto 0);
+        o_trame : out std_logic;
+        o_ligne : out unsigned(8 downto 0);
+        o_x     : out unsigned(8 downto 0);
+        o_dt    : out std_logic;
+        o_sync  : out std_logic
+    );
+end entity bt656_rx;
+
+architecture rtl of bt656_rx is
+    signal r1, r2, r3 : std_logic_vector(7 downto 0) := (others => '0');   -- 3 octets précédents, r3 le plus ancien
+    signal actif      : std_logic := '0';                                  -- octets actifs en cours
+    signal ph         : unsigned(1 downto 0) := "00";                      -- 0 Cb, 1 Y0, 2 Cr, 3 Y1
+    signal cb, y0, cr : std_logic_vector(7 downto 0) := (others => '0');
+    signal x          : unsigned(8 downto 0) := (others => '0');
+    signal ligne      : unsigned(8 downto 0) := (others => '0');
+    signal trame      : std_logic := '0';
+    signal v_prec     : std_logic := '0';                                  -- V du SAV précédent
+    signal sync       : std_logic := '0';
+    signal prem       : std_logic := '0';                                  -- ligne en cours = première de la trame
+begin
+    o_sync <= sync;
+
+    -- E : octets BT.656 → T : codes de synchronisation, trame, ligne, couples
+    --   → S : couples de pixels et leur position
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            o_valid <= '0';
+            o_dt    <= '0';
+            if rst = '1' then
+                r1 <= (others => '0'); r2 <= (others => '0'); r3 <= (others => '0');
+                actif <= '0'; ph <= "00"; x <= (others => '0'); ligne <= (others => '0');
+                trame <= '0'; v_prec <= '0'; sync <= '0'; prem <= '0';
+            else
+                r3 <= r2; r2 <= r1; r1 <= d;
+                if r3 = x"FF" and r2 = x"00" and r1 = x"00" then
+                    -- d = XY : fin de la zone active, SAV éventuel
+                    actif <= '0';
+                    if d(4) = '0' then
+                        v_prec <= d(5);
+                        if d(5) = '0' then
+                            ph <= "00";
+                            x  <= (others => '0');
+                            if v_prec = '1' then
+                                ligne <= (others => '0');
+                                trame <= d(6);
+                                prem  <= '1';
+                                sync  <= '1';
+                                actif <= '1';
+                            else
+                                ligne <= ligne + 1;
+                                prem  <= '0';
+                                actif <= sync;
+                            end if;
+                        end if;
+                    end if;
+                elsif actif = '1' then
+                    case ph is
+                        when "00" => cb <= d;
+                        when "01" => y0 <= d;
+                        when "10" => cr <= d;
+                        when others =>
+                            o_cb <= cb; o_y0 <= y0; o_cr <= cr; o_y1 <= d;
+                            o_trame <= trame; o_ligne <= ligne; o_x <= x;
+                            o_valid <= '1';
+                            if x = 0 and prem = '1' then o_dt <= '1'; end if;
+                            if x = 359 then actif <= '0'; end if;
+                            x <= x + 1;
+                    end case;
+                    ph <= ph + 1;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- i2c_maitre : maître I²C minimal (un seul esclave, sans arbitrage), pour le
+--   décodeur TVP5150AM1 (adresse B8h, I2CSEL à 0) ; l'esclave peut étirer SCL
+--   Interface : go, si occupe = 0, lance une transaction : lire = 0 : S,
+--               B8h, reg, val, P (écriture d'un registre) ; lire = 1 : S,
+--               B8h, reg, P, S, B9h, lecture, NACK, P (lecture d'un
+--               registre) ; fini : impulsion de fin ; ack_ok : tous les
+--               octets émis ont été acquittés ; lu : octet lu ; scl_oe,
+--               sda_oe : '1' tire la ligne à 0 (drain ouvert, rappels de
+--               4,7 kΩ sur la carte)
+--   Principe : programme de symboles (début, octet émis, octet lu, fin) ;
+--              chaque bit dure 4 quarts de période : SDA posé SCL bas, SCL
+--              relâché, SCL haut (SDA lu en fin de quart), SCL bas ; début et
+--              fin tenus 2 quarts (mode standard : 4 µs) ; un quart où SCL
+--              est relâché ne s'écoule que si SCL est lu à 1 (étirement par
+--              l'esclave) ; libération : si SDA est tenu à 0 au moment d'un
+--              début (esclave interrompu au milieu d'un octet), jusqu'à 9
+--              impulsions SCL avant le début
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+
+entity i2c_maitre is
+    generic (
+        G_QUART : positive := 200            -- cycles par quart de période SCL (80 MHz, 100 kHz)
+    );
+    port (
+        clk    : in  std_logic;
+        rst    : in  std_logic;
+        go     : in  std_logic;
+        lire   : in  std_logic;
+        reg    : in  std_logic_vector(7 downto 0);
+        val    : in  std_logic_vector(7 downto 0);
+        occupe : out std_logic;
+        fini   : out std_logic;
+        ack_ok : out std_logic;
+        lu     : out std_logic_vector(7 downto 0);
+        scl_oe : out std_logic;
+        sda_oe : out std_logic;
+        scl_i  : in  std_logic;
+        sda_i  : in  std_logic
+    );
+end entity i2c_maitre;
+
+architecture rtl of i2c_maitre is
+    type sym_t is (S_DEB, S_ECR, S_LEC, S_FIN);
+    type prog_t is array (0 to 7) of sym_t;
+    constant P_ECR : prog_t := (S_DEB, S_ECR, S_ECR, S_ECR, S_FIN, S_FIN, S_FIN, S_FIN);   -- 5 symboles utiles
+    constant P_LEC : prog_t := (S_DEB, S_ECR, S_ECR, S_FIN, S_DEB, S_ECR, S_LEC, S_FIN);
+    signal l_lire       : std_logic := '0';
+    signal l_reg, l_val : std_logic_vector(7 downto 0) := (others => '0');
+    signal oc           : std_logic := '0';
+    signal idx          : natural range 0 to 7 := 0;
+    signal q            : natural range 0 to 3 := 0;
+    signal k            : natural range 0 to 8 := 0;
+    signal cnt          : natural range 0 to G_QUART - 1 := 0;
+    signal scl_s, sda_s : std_logic_vector(1 downto 0) := "11";             -- synchroniseurs
+    signal sh           : std_logic_vector(7 downto 0) := (others => '0');
+    signal oe_scl, oe_sda : std_logic := '0';
+    signal lib          : std_logic := '0';                                  -- libération du bus en cours
+    signal nlib         : natural range 0 to 9 := 0;
+
+    -- sym_de : E : sens, rang → S : symbole du programme
+    function sym_de(lr : std_logic; i : natural) return sym_t is
+    begin
+        if lr = '1' then return P_LEC(i); else return P_ECR(i); end if;
+    end function;
+    -- octet_de : E : sens, rang, registre, valeur → S : octet émis à ce rang
+    function octet_de(lr : std_logic; i : natural; r, v : std_logic_vector) return std_logic_vector is
+    begin
+        if i = 1 then return x"B8";
+        elsif i = 2 then return r;
+        elsif i = 5 then return x"B9";
+        elsif lr = '0' and i = 3 then return v;
+        else return x"FF";
+        end if;
+    end function;
+begin
+    occupe <= oc;
+    scl_oe <= oe_scl;
+    sda_oe <= oe_sda;
+
+    -- E : commande, lignes lues → T : symboles, bits, quarts de période,
+    --   étirement → S : lignes tirées, fin, acquittement, octet lu
+    process (clk)
+        variable s, ns    : sym_t;
+        variable nq       : natural range 0 to 3;
+        variable nk       : natural range 0 to 8;
+        variable nidx     : natural range 0 to 8;
+        variable b        : std_logic;
+        variable o        : std_logic_vector(7 downto 0);
+        variable long     : natural range 5 to 8;
+    begin
+        if rising_edge(clk) then
+            scl_s <= scl_s(0) & scl_i;
+            sda_s <= sda_s(0) & sda_i;
+            fini  <= '0';
+            if rst = '1' then
+                oc <= '0'; oe_scl <= '0'; oe_sda <= '0'; ack_ok <= '1'; lu <= (others => '0');
+                idx <= 0; q <= 0; k <= 0; cnt <= 0; lib <= '0'; nlib <= 0;
+            elsif oc = '0' then
+                if go = '1' then
+                    l_lire <= lire; l_reg <= reg; l_val <= val;
+                    oc <= '1'; idx <= 0; q <= 0; k <= 0; cnt <= G_QUART - 1; ack_ok <= '1'; nlib <= 0;
+                    oe_scl <= '0'; oe_sda <= '0';                  -- début, quart 0 : lignes relâchées
+                end if;
+            elsif oe_scl = '0' and scl_s(1) = '0' then
+                null;                                              -- SCL relâché mais lu à 0 : étirement
+            elsif cnt /= 0 then
+                cnt <= cnt - 1;
+            elsif lib = '1' then
+                -- libération du bus : impulsions SCL (2 quarts bas, 2 quarts
+                --   relâché) tant que SDA est tenu à 0 par l'esclave, 9 au plus,
+                --   puis reprise du début (lignes relâchées)
+                cnt <= G_QUART - 1;
+                if q < 3 then
+                    q <= q + 1;
+                    if q = 1 then oe_scl <= '0'; end if;
+                elsif sda_s(1) = '1' or nlib = 9 then
+                    lib <= '0'; q <= 0;
+                else
+                    nlib <= nlib + 1; q <= 0; oe_scl <= '1';
+                end if;
+            elsif sym_de(l_lire, idx) = S_DEB and q = 0 and sda_s(1) = '0' and nlib = 0 then
+                -- début demandé mais SDA tenu à 0 (esclave interrompu au milieu
+                --   d'un octet) : libération du bus
+                cnt <= G_QUART - 1;
+                lib <= '1'; nlib <= 1; q <= 0; oe_scl <= '1';
+            else
+                cnt <= G_QUART - 1;
+                s := sym_de(l_lire, idx);
+                -- lecture de SDA en fin de quart 2 : acquittement, bits lus
+                if q = 2 then
+                    if s = S_ECR and k = 8 and sda_s(1) /= '0' then ack_ok <= '0'; end if;
+                    if s = S_LEC and k < 8 then sh <= sh(6 downto 0) & sda_s(1); end if;
+                end if;
+                -- quart suivant
+                nidx := idx; nk := k;
+                if q < 3 then
+                    nq := q + 1;
+                else
+                    nq := 0;
+                    if (s = S_ECR or s = S_LEC) and k < 8 then nk := k + 1; else nk := 0; nidx := idx + 1; end if;
+                end if;
+                if l_lire = '1' then long := 8; else long := 5; end if;
+                if nidx = long then
+                    oc <= '0'; fini <= '1'; lu <= sh;
+                    oe_scl <= '0'; oe_sda <= '0';
+                else
+                    idx <= nidx; q <= nq; k <= nk;
+                    ns := sym_de(l_lire, nidx);
+                    o  := octet_de(l_lire, nidx, l_reg, l_val);
+                    -- niveaux des lignes pendant le nouveau quart
+                    case ns is
+                        when S_DEB =>
+                            if nq = 0 then oe_scl <= '0'; oe_sda <= '0';
+                            elsif nq < 3 then oe_scl <= '0'; oe_sda <= '1';   -- SDA descend, SCL haut : début (tenu 2 quarts)
+                            else oe_scl <= '1'; oe_sda <= '1';
+                            end if;
+                        when S_ECR | S_LEC =>
+                            if ns = S_ECR and nk < 8 then b := o(7 - nk); else b := '1'; end if;
+                            oe_sda <= not b;
+                            if nq = 0 or nq = 3 then oe_scl <= '1'; else oe_scl <= '0'; end if;
+                        when S_FIN =>
+                            if nq = 0 then oe_scl <= '1'; oe_sda <= '1';
+                            elsif nq < 3 then oe_scl <= '0'; oe_sda <= '1';   -- SCL haut, SDA bas (2 quarts)
+                            else oe_scl <= '0'; oe_sda <= '0';                -- SDA monte, SCL haut : fin
+                            end if;
+                    end case;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- tvp_ctrl : pilotage du décodeur vidéo TVP5150AM1 par I²C, sans
+--   microcontrôleur ; banc : tb_tvp (modèle I²C du décodeur)
+--   Interface : tvp_resetb, tvp_pdn : broches RESETB et PDN du décodeur ;
+--               scl_oe, sda_oe, scl_i, sda_i : bus I²C (voir i2c_maitre) ;
+--               present : décodeur identifié (80h = 51h, 81h = 50h) ;
+--               video_ok : décodeur verrouillé (lignes et trames) sur
+--               l'entrée choisie, flux BT.656 exploitable ; entree : 0 =
+--               AIP1A, 1 = AIP1B ; tenir rst à 1 tant que l'horloge
+--               14,31818 MHz du décodeur (XTAL1) n'est pas stable
+--   Principe : démarrage : RESETB à 0 pendant 20 ms (alimentations), 1 ms
+--              d'attente (200 µs minimum), lecture de l'identifiant ; absent :
+--              nouvel essai chaque seconde ; configuration : CFh ← 00h et
+--              D0h…FCh ← FFh (VBI coupé), 28h ← 04h (PAL B/G/H/I forcé),
+--              00h ← 00h (AIP1A), 03h ← 09h (sorties YOUT et SCLK actives) ;
+--              100 µs entre deux transactions (64 µs exigées après une
+--              écriture des registres 00h à 8Fh) ; surveillance : lecture de
+--              88h toutes les 20 ms, verrouillé si bits 1 et 2 à 1
+--              (sous-porteuse ignorée : source noir et blanc admise) ;
+--              acquisition : 10 lectures de stabilisation, verrouillé après
+--              5 lectures verrouillées, entrée suivante après 25 lectures
+--              sans succès ; perte : video_ok tombe à la première lecture
+--              non verrouillée, retour sur AIP1A après 50 lectures (1 s)
+--              sans 5 lectures verrouillées consécutives ; garde : une
+--              transaction de plus de 10 ms remet le maître à zéro, le
+--              décodeur est réputé absent, puis identifié et reconfiguré
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+
+entity tvp_ctrl is
+    generic (
+        G_HZ     : positive := 80_000_000;   -- horloge
+        G_I2C_HZ : positive := 100_000       -- fréquence SCL
+    );
+    port (
+        clk        : in  std_logic;
+        rst        : in  std_logic;
+        tvp_resetb : out std_logic;
+        tvp_pdn    : out std_logic;
+        scl_oe     : out std_logic;
+        sda_oe     : out std_logic;
+        scl_i      : in  std_logic;
+        sda_i      : in  std_logic;
+        present    : out std_logic;
+        video_ok   : out std_logic;
+        entree     : out std_logic
+    );
+end entity tvp_ctrl;
+
+architecture rtl of tvp_ctrl is
+    constant C_MS     : positive := G_HZ / 1000;
+    constant T_ALIM   : positive := 20 * C_MS;            -- RESETB à 0 après la mise sous tension
+    constant T_REVEIL : positive := C_MS;                 -- après RESETB, avant le premier accès
+    constant T_ECART  : positive := C_MS / 10;            -- entre deux transactions (100 µs)
+    constant T_SCRUT  : positive := 20 * C_MS;            -- période de surveillance
+    constant T_ABS    : positive := 1000 * C_MS;          -- nouvel essai si décodeur absent
+    constant T_GARDE  : positive := 10 * C_MS;            -- transaction bloquée (SCL tenu à 0)
+    constant K_STAB   : natural := 10;
+    constant K_OK     : natural := 5;
+    constant K_ACQ    : natural := 25;
+    constant K_PERTE  : natural := 50;
+
+    -- configuration : registre & valeur, dans l'ordre d'écriture
+    constant N_CFG : natural := 49;
+    type cfg_t is array (0 to N_CFG - 1) of std_logic_vector(15 downto 0);
+    -- table : E : — → S : CFh ← 00h, D0h…FCh ← FFh, 28h ← 04h, 00h ← 00h, 03h ← 09h
+    function table return cfg_t is
+        variable t : cfg_t;
+    begin
+        t(0) := x"CF00";
+        for i in 0 to 44 loop t(1 + i) := std_logic_vector(to_unsigned(16#D0# + i, 8)) & x"FF"; end loop;
+        t(46) := x"2804";
+        t(47) := x"0000";
+        t(48) := x"0309";
+        return t;
+    end function;
+    constant CFG : cfg_t := table;
+
+    type etat_t is (E_ALIM, E_REVEIL, E_TX, E_PAUSE, E_ID0, E_ID1, E_CFG, E_ABS, E_SURV, E_LU88, E_SEL);
+    type mode_t is (M_ACQ, M_VERR, M_PERTE);
+    signal etat, apres : etat_t := E_ALIM;
+    signal mode        : mode_t := M_ACQ;
+    signal tempo       : natural range 0 to T_ABS := T_ALIM;
+    signal scrut       : natural range 0 to T_SCRUT := 0;
+    signal icfg        : natural range 0 to N_CFG - 1 := 0;
+    signal n_stab      : natural range 0 to K_STAB := 0;
+    signal n_ok        : natural range 0 to K_OK := 0;
+    signal n_cpt       : natural range 0 to K_PERTE := 0;
+    signal lance       : std_logic := '0';
+    signal go, t_lire  : std_logic := '0';
+    signal t_reg, t_val : std_logic_vector(7 downto 0) := (others => '0');
+    signal i_occ, i_fini, i_ack : std_logic;
+    signal i_lu        : std_logic_vector(7 downto 0);
+    signal ent, vok, pres, resetb : std_logic := '0';
+    signal i_raz, i_rst : std_logic := '0';
+begin
+    tvp_pdn    <= '1';
+    tvp_resetb <= resetb;
+    present    <= pres;
+    video_ok   <= vok;
+    entree     <= ent;
+    i_rst      <= rst or i_raz;
+
+    u_i2c : entity work.i2c_maitre generic map (G_QUART => G_HZ / (4 * G_I2C_HZ))
+        port map (clk, i_rst, go, t_lire, t_reg, t_val, i_occ, i_fini, i_ack, i_lu, scl_oe, sda_oe, scl_i, sda_i);
+
+    -- E : temps, résultats des transactions → T : démarrage, identification,
+    --   configuration, surveillance du verrouillage, choix de l'entrée
+    --   → S : RESETB, transactions, present, video_ok, entree
+    process (clk)
+        -- transaction : E : sens, registre, valeur, état de reprise
+        --   → S : transaction lancée par E_TX, résultat lu en état « suite »
+        procedure transaction(lr : std_logic; r, v : std_logic_vector(7 downto 0); suite : etat_t) is
+        begin
+            t_lire <= lr; t_reg <= r; t_val <= v; apres <= suite; lance <= '0'; etat <= E_TX;
+        end procedure;
+        -- choisir : E : entrée (0 = AIP1A) → S : écriture de 00h, puis acquisition
+        procedure choisir(e : std_logic) is
+        begin
+            ent <= e;
+            transaction('0', x"00", "000000" & e & '0', E_SEL);
+        end procedure;
+        variable verrou : boolean;
+    begin
+        if rising_edge(clk) then
+            go    <= '0';
+            i_raz <= '0';
+            if scrut /= 0 then scrut <= scrut - 1; end if;
+            if rst = '1' then
+                etat <= E_ALIM; tempo <= T_ALIM; resetb <= '0'; pres <= '0'; vok <= '0'; ent <= '0';
+                mode <= M_ACQ; scrut <= 0; lance <= '0'; icfg <= 0;
+                n_stab <= 0; n_ok <= 0; n_cpt <= 0;
+            else
+                case etat is
+                    when E_ALIM =>
+                        if tempo = 0 then resetb <= '1'; tempo <= T_REVEIL; etat <= E_REVEIL; else tempo <= tempo - 1; end if;
+                    when E_REVEIL =>
+                        if tempo = 0 then transaction('1', x"80", x"00", E_ID0); else tempo <= tempo - 1; end if;
+                    when E_TX =>
+                        -- garde : transaction bloquée → maître remis à zéro, décodeur
+                        --   réputé absent, nouvelle identification puis configuration
+                        if lance = '0' then
+                            if i_occ = '0' then go <= '1'; lance <= '1'; tempo <= T_GARDE; end if;
+                        elsif i_fini = '1' then
+                            tempo <= T_ECART; etat <= E_PAUSE;
+                        elsif tempo = 0 then
+                            i_raz <= '1'; tempo <= T_ABS; etat <= E_ABS;
+                        else
+                            tempo <= tempo - 1;
+                        end if;
+                    when E_PAUSE =>
+                        if tempo = 0 then etat <= apres; else tempo <= tempo - 1; end if;
+                    when E_ID0 =>
+                        if i_ack = '1' and i_lu = x"51" then transaction('1', x"81", x"00", E_ID1);
+                        else tempo <= T_ABS; etat <= E_ABS;
+                        end if;
+                    when E_ID1 =>
+                        if i_ack = '1' and i_lu = x"50" then
+                            pres <= '1'; icfg <= 0;
+                            transaction('0', CFG(0)(15 downto 8), CFG(0)(7 downto 0), E_CFG);
+                        else
+                            tempo <= T_ABS; etat <= E_ABS;
+                        end if;
+                    when E_CFG =>
+                        if icfg = N_CFG - 1 then
+                            ent <= '0'; mode <= M_ACQ; n_stab <= 0; n_ok <= 0; n_cpt <= 0;
+                            scrut <= T_SCRUT; etat <= E_SURV;
+                        else
+                            icfg <= icfg + 1;
+                            transaction('0', CFG(icfg + 1)(15 downto 8), CFG(icfg + 1)(7 downto 0), E_CFG);
+                        end if;
+                    when E_ABS =>
+                        pres <= '0'; vok <= '0';
+                        if tempo = 0 then transaction('1', x"80", x"00", E_ID0); else tempo <= tempo - 1; end if;
+                    when E_SURV =>
+                        if scrut = 0 then scrut <= T_SCRUT; transaction('1', x"88", x"00", E_LU88); end if;
+                    when E_LU88 =>
+                        verrou := i_ack = '1' and i_lu(2 downto 1) = "11";
+                        etat <= E_SURV;
+                        case mode is
+                            when M_ACQ =>
+                                if n_stab < K_STAB then
+                                    n_stab <= n_stab + 1;
+                                elsif verrou and n_ok = K_OK - 1 then
+                                    mode <= M_VERR; vok <= '1';
+                                else
+                                    if verrou then n_ok <= n_ok + 1; else n_ok <= 0; end if;
+                                    if n_cpt = K_ACQ - 1 then choisir(not ent); else n_cpt <= n_cpt + 1; end if;
+                                end if;
+                            when M_VERR =>
+                                if not verrou then vok <= '0'; mode <= M_PERTE; n_cpt <= 1; n_ok <= 0; end if;
+                            when M_PERTE =>
+                                if verrou and n_ok = K_OK - 1 then
+                                    mode <= M_VERR; vok <= '1';
+                                else
+                                    if verrou then n_ok <= n_ok + 1; else n_ok <= 0; end if;
+                                    if n_cpt = K_PERTE - 1 then choisir('0'); else n_cpt <= n_cpt + 1; end if;
+                                end if;
+                        end case;
+                    when E_SEL =>
+                        mode <= M_ACQ; n_stab <= 0; n_ok <= 0; n_cpt <= 0; etat <= E_SURV;
+                end case;
             end if;
         end if;
     end process;

@@ -4,11 +4,11 @@
 --  Objet      : bancs de test GHDL : chaque banc lit les références de
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
---  Date       : 2026-10-19
---  Version    : 2.3
+--  Date       : 2026-11-04
+--  Version    : 2.4
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 13 unités, dans l'ordre d'analyse :
+--  Contenu    : 16 unités, dans l'ordre d'analyse :
 --               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
 --               tb_octets     modules à flux d'octets (09, 10, 11, TS)
 --               tb_conv       codeur convolutif, 5 taux
@@ -22,8 +22,12 @@
 --               tb_mire       mire animée
 --               tb_dvbs       tête de chaîne et émetteur complet
 --               tb_sdm        sortie sigma-delta
+--               tb_bt656      récepteur BT.656
+--               tb_tvp5150    modèle I²C du décodeur TVP5150AM1
+--               tb_tvp        pilotage du TVP5150AM1 (3 scénarios)
 --  Conventions: context jpeg2dvb_ctx (déclaré dans jpeg2dvb_fpga.vhd) ;
---               trous aléatoires en entrée et en sortie de chaque module ;
+--               trous aléatoires en entrée et en sortie de chaque module à
+--               contrôle de flux ;
 --               process commentés « E : entrées → T : traitement → S : sorties »
 --  Lancement  : fpga_test/run_tests.sh
 --  Historique : 1.0  2026-10-19  bancs créés
@@ -36,6 +40,9 @@
 --                                entrée code ; nouveau banc tb_rc
 --               2.2  2026-10-19  nouveau banc tb_sdm (sortie sigma-delta)
 --               2.3  2026-10-19  tb_sdm : entrée par les symboles QPSK (qpsk.bin)
+--               2.4  2026-11-04  entrée vidéo PAL : tb_bt656 (bt656.bin),
+--                                tb_tvp5150, tb_tvp (fonctionnement, décodeur
+--                                absent, blocage du bus)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1511,5 +1518,487 @@ begin
                 finish;
             end if;
         end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_bt656 : banc du récepteur BT.656 : flux fpga_test/bt656.bin (un octet
+--   par cycle de 27 MHz, entrée au milieu d'une ligne de suppression de
+--   trame), couples comparés octet à octet à fpga_test/bt656_ref.bin ;
+--   trame, ligne, position et début de trame vérifiés pour chaque couple ;
+--   aucun couple ne doit sortir avant le premier début de trame ni après
+--   la dernière ligne active
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_bt656 is
+    generic (
+        G_N : natural := 414720              -- couples attendus : 4 trames × 288 lignes × 360
+    );
+end entity tb_bt656;
+
+architecture sim of tb_bt656 is
+    constant N_TRAME : natural := 288 * 360;
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal d       : std_logic_vector(7 downto 0) := x"10";
+    signal fin_e   : boolean := false;
+    signal o_valid, o_trame, o_dt, o_sync : std_logic;
+    signal o_cb, o_y0, o_cr, o_y1 : std_logic_vector(7 downto 0);
+    signal o_ligne, o_x : unsigned(8 downto 0);
+begin
+    clk <= not clk after 18.5 ns;
+    dut : entity work.bt656_rx port map (clk, rst, d, o_valid, o_cb, o_y0, o_cr, o_y1, o_trame, o_ligne, o_x, o_dt, o_sync);
+
+    -- entrée : E : bt656.bin → T : un octet par cycle après la remise à zéro
+    --   → S : d, fin_e à la fin du fichier
+    entree : process
+        file f     : octets_f open read_mode is REF & "bt656.bin";
+        variable c : character;
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        while not endfile(f) loop
+            read(f, c);
+            d <= octet(c);
+            wait until rising_edge(clk);
+        end loop;
+        d <= x"10";
+        fin_e <= true;
+        wait;
+    end process;
+
+    -- contrôle : E : couples, bt656_ref.bin → T : comparaison des 4 octets,
+    --   trame, ligne, position attendues ; 10 cycles après la fin de l'entrée
+    --   → S : verdict OK / ECHEC
+    controle : process (clk)
+        file f           : octets_f open read_mode is REF & "bt656_ref.bin";
+        variable c       : character;
+        variable n, err  : natural := 0;
+        variable att     : std_logic_vector(31 downto 0);
+        variable fin_cpt : natural := 0;
+        variable p       : natural;
+    begin
+        if rising_edge(clk) then
+            if o_valid = '1' then
+                if n >= G_N then
+                    if err < 10 then report "couple en trop apres la reference" severity warning; end if;
+                    err := err + 1;
+                else
+                    for i in 0 to 3 loop read(f, c); att(31 - 8 * i downto 24 - 8 * i) := octet(c); end loop;
+                    p := n mod N_TRAME;
+                    if (o_cb & o_y0 & o_cr & o_y1) /= att or o_x /= p mod 360 or o_ligne /= p / 360
+                       or (o_trame = '1') /= ((n / N_TRAME) mod 2 = 1) or (o_dt = '1') /= (p = 0) then
+                        if err < 10 then
+                            report "ecart au couple " & integer'image(n) & " (trame " & integer'image(n / N_TRAME) & ", ligne " & integer'image(p / 360) &
+                                   ", couple " & integer'image(p mod 360) & ") : ligne lue " & integer'image(to_integer(o_ligne)) & ", couple lu " & integer'image(to_integer(o_x)) severity warning;
+                        end if;
+                        err := err + 1;
+                    end if;
+                end if;
+                n := n + 1;
+            end if;
+            if fin_e then
+                fin_cpt := fin_cpt + 1;
+                if fin_cpt = 10 then
+                    if err = 0 and n = G_N and o_sync = '1' then
+                        report "OK bt656_ref.bin : " & integer'image(n) & " couples identiques (4 trames, couleur et noir et blanc), trame, ligne et position conformes";
+                    else
+                        report "ECHEC bt656_ref.bin : " & integer'image(err) & " ecarts, " & integer'image(n) & " couples sur " & integer'image(G_N) severity error;
+                    end if;
+                    finish;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_tvp5150 : modèle du décodeur TVP5150AM1 vu du bus I²C (adresse B8h) :
+--   registres, identifiant 51h 50h, état 88h (bits 1, 2 : verrouillage
+--   lignes et trames, bit 3 : sous-porteuse) calculé d'après les sources
+--   src_a, src_b (0 : aucune, 1 : couleur, 2 : noir et blanc) et le
+--   registre 00h, verrouillage 60 ms après la présence de la source et le
+--   choix de l'entrée ; étire SCL de 10 µs après chaque acquittement ;
+--   contrôle : RESETB relâché après 20 ms, aucun accès moins de 200 µs
+--   après, PDN à 1, 64 µs entre la fin d'une écriture des registres 00h à
+--   8Fh et le début suivant, écritures conformes à la configuration
+--   attendue (reprise complète admise) puis seulement 00h ← 00h ou 02h ;
+--   un début ou une fin interrompt l'octet en cours d'émission
+--   Paramètres : G_ABS = 1 : décodeur absent (aucun acquittement) ;
+--                G_ABS = 2 : blocage : SCL tenu à 0 pendant 20 ms après
+--                l'adresse de lecture B9h de la première lecture passé 1,3 s,
+--                puis octet repris là où il était (SDA tenu à 0)
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+
+entity tb_tvp5150 is
+    generic (
+        G_ABS : natural := 0
+    );
+    port (
+        resetb  : in    std_logic;
+        pdn     : in    std_logic;
+        scl     : inout std_logic;
+        sda     : inout std_logic;
+        src_a   : in    natural;
+        src_b   : in    natural;
+        n_err   : out   natural;
+        n_sel   : out   natural;
+        n_debut : out   natural
+    );
+end entity tb_tvp5150;
+
+architecture sim of tb_tvp5150 is
+    signal scl_x, sda_x : std_logic;
+    signal t_rst        : time := time'high;
+    signal e_bus, e_chr : natural := 0;
+begin
+    scl_x <= to_x01(scl);
+    sda_x <= to_x01(sda);
+    n_err <= e_bus + e_chr;
+
+    -- chronologie I²C (mode standard, 100 kHz) : E : SCL, SDA → T : SCL haut
+    --   ≥ 4 µs, SCL bas ≥ 4,7 µs, début : tenue ≥ 4 µs, préparation ≥ 4,7 µs,
+    --   bus libre ≥ 4,7 µs après une fin ; fin : préparation ≥ 4 µs
+    --   → S : erreurs e_chr
+    chrono : process
+        variable t_haut, t_bas, t_deb, t_fin : time := 0 ns;
+        variable deb : boolean := false;
+        variable n   : natural := 0;
+        procedure erreur(m : string) is
+        begin
+            if n < 10 then report "modele TVP5150 : " & m & " a " & time'image(now) severity warning; end if;
+            n := n + 1; e_chr <= n;
+        end procedure;
+    begin
+        wait on scl_x, sda_x;
+        if now = 0 ns then
+            null;                                          -- résolution initiale des lignes
+        elsif scl_x'event then
+            if scl_x = '1' then
+                if now - t_bas < 4.7 us then erreur("SCL bas moins de 4,7 us"); end if;
+                t_haut := now;
+            else
+                if now - t_haut < 4 us then erreur("SCL haut moins de 4 us"); end if;
+                if deb and now - t_deb < 4 us then erreur("tenue du debut moins de 4 us"); end if;
+                deb := false;
+                t_bas := now;
+            end if;
+        elsif scl_x = '1' then
+            if sda_x = '0' then
+                if now - t_haut < 4.7 us then erreur("preparation du debut moins de 4,7 us"); end if;
+                if now - t_fin < 4.7 us then erreur("bus libre moins de 4,7 us"); end if;
+                deb := true; t_deb := now;
+            else
+                if now - t_haut < 4 us then erreur("preparation de la fin moins de 4 us"); end if;
+                t_fin := now;
+            end if;
+        end if;
+    end process;
+
+    -- RESETB : E : broche → T : contrôle des 20 ms → S : instant du relâchement
+    reset : process
+    begin
+        wait until resetb = '1';
+        t_rst <= now;
+        if now < 20 ms then report "modele TVP5150 : RESETB relache avant 20 ms" severity warning; end if;
+        wait;
+    end process;
+
+    -- bus : E : SCL, SDA, sources → T : esclave I²C, registres, contrôles de
+    --   chronologie et de configuration → S : SDA, SCL tirés, compteurs
+    bus_i2c : process
+        type regs_t is array (0 to 255) of std_logic_vector(7 downto 0);
+        type init_t is array (0 to 48) of std_logic_vector(15 downto 0);
+        -- attendu : E : — → S : écritures de la configuration dans l'ordre
+        function attendu return init_t is
+            variable t : init_t;
+        begin
+            t(0) := x"CF00";
+            for i in 0 to 44 loop t(1 + i) := std_logic_vector(to_unsigned(16#D0# + i, 8)) & x"FF"; end loop;
+            t(46) := x"2804"; t(47) := x"0000"; t(48) := x"0309";
+            return t;
+        end function;
+        constant INIT     : init_t := attendu;
+        variable regs     : regs_t := (16#03# => x"01", 16#0D# => x"47", 16#80# => x"51", 16#81# => x"50", others => x"00");
+        variable ptr      : natural range 0 to 255 := 0;
+        variable o        : std_logic_vector(7 downto 0);
+        variable e, nb    : natural;
+        variable v        : std_logic;
+        variable nack     : boolean;
+        variable err, nsel, ndeb, necr : natural := 0;
+        variable t_sel    : time := 0 ns;
+        variable t_stop   : time := 0 ns;
+        variable ecr_bas  : boolean := false;     -- la transaction a écrit un registre 00h à 8Fh
+        variable bloque_fait : boolean := false;
+
+        procedure erreur(m : string) is
+        begin
+            if err < 10 then report "modele TVP5150 : " & m severity warning; end if;
+            err := err + 1; e_bus <= err;
+        end procedure;
+        -- etat88 : E : registre 00h, sources, instants → S : registre d'état 1
+        impure function etat88 return std_logic_vector is
+            variable s : natural;
+            variable r : std_logic_vector(7 downto 0) := x"00";
+            variable t : time;
+        begin
+            if regs(0)(1 downto 0) = "10" then s := src_b; t := src_b'last_event; else s := src_a; t := src_a'last_event; end if;
+            if s /= 0 and t >= 60 ms and now - t_sel >= 60 ms then
+                r(2 downto 1) := "11";
+                if s = 1 then r(3) := '1'; end if;
+            end if;
+            return r;
+        end function;
+        -- debut : E : — → T : contrôles à chaque condition de début
+        procedure debut is
+        begin
+            ndeb := ndeb + 1; n_debut <= ndeb;
+            if t_rst = time'high or now < t_rst + 200 us then erreur("acces I2C avant RESETB + 200 us"); end if;
+            if pdn /= '1' then erreur("PDN a 0"); end if;
+            if ecr_bas and now - t_stop < 64 us then erreur("moins de 64 us apres une ecriture"); end if;
+            ecr_bas := false;
+        end procedure;
+        -- lit_bit : E : SCL, SDA → S : bit lu, e : 0 bit, 1 début, 2 fin
+        procedure lit_bit(b : out std_logic; ev : out natural) is
+        begin
+            wait until scl_x = '1';
+            b := sda_x;
+            wait on scl_x, sda_x;
+            if scl_x = '1' then
+                if sda_x = '1' then ev := 2; else ev := 1; end if;
+            else
+                ev := 0;
+            end if;
+        end procedure;
+        -- lit_octet : E : bus → S : octet, ev (début ou fin rencontré)
+        procedure lit_octet(r : out std_logic_vector(7 downto 0); ev : out natural) is
+            variable b  : std_logic;
+            variable ee : natural;
+        begin
+            for i in 7 downto 0 loop
+                lit_bit(b, ee);
+                if ee /= 0 then ev := ee; return; end if;
+                r(i) := b;
+            end loop;
+            ev := 0;
+        end procedure;
+        -- acquitte : E : premier bit à émettre ensuite ('1' : aucun ou bit à 1),
+        --   blocage demandé → T : SDA à 0 pendant le 9e coup d'horloge, puis
+        --   SCL tenu à 0 pendant 10 µs (étirement) ou 20 ms (blocage), le bit
+        --   suivant posé avant de relâcher SCL
+        procedure acquitte(suivant : std_logic; bloque : boolean) is
+        begin
+            sda <= '0';
+            wait until scl_x = '1';
+            wait until scl_x = '0';
+            sda <= 'Z';
+            scl <= '0';
+            if bloque then wait for 20 ms; else wait for 10 us; end if;
+            if suivant = '0' then sda <= '0'; end if;
+            wait for 1 us;
+            scl <= 'Z';
+        end procedure;
+        -- envoie : E : octet → T : 8 bits, poids fort en tête, puis lecture de
+        --   l'acquittement du maître → S : nack ; ev : 1 ou 2 si un début ou une
+        --   fin interrompt l'octet (SDA relâché)
+        procedure envoie(r : std_logic_vector(7 downto 0); na : out boolean; ev : out natural) is
+        begin
+            ev := 0; na := true;
+            for i in 7 downto 0 loop
+                if r(i) = '0' then sda <= '0'; else sda <= 'Z'; end if;
+                wait until scl_x = '1';
+                wait on scl_x, sda_x;
+                if scl_x = '1' then
+                    sda <= 'Z';
+                    if sda_x = '1' then ev := 2; else ev := 1; end if;
+                    return;
+                end if;
+            end loop;
+            sda <= 'Z';
+            wait until scl_x = '1';
+            na := sda_x = '1';
+            wait until scl_x = '0';
+        end procedure;
+        -- ecrit : E : registre, valeur → T : rangement, contrôle de l'ordre
+        procedure ecrit(r : natural; val : std_logic_vector(7 downto 0)) is
+        begin
+            regs(r) := val;
+            if r <= 16#8F# then ecr_bas := true; end if;
+            if necr > 48 and r = 16#CF# and val = x"00" then
+                necr := 0;                                 -- reprise de la configuration (après blocage)
+            end if;
+            if necr <= 48 then
+                if std_logic_vector(to_unsigned(r, 8)) & val /= INIT(necr) then
+                    erreur("ecriture " & integer'image(necr) & " inattendue : registre " & integer'image(r) & " <- " & integer'image(to_integer(unsigned(val))));
+                end if;
+            elsif r /= 0 or (val /= x"00" and val /= x"02") then
+                erreur("ecriture hors choix d'entree apres la configuration");
+            end if;
+            if r = 0 then nsel := nsel + 1; n_sel <= nsel; t_sel := now; end if;
+            necr := necr + 1;
+        end procedure;
+    begin
+        scl <= 'Z'; sda <= 'Z';
+        e_bus <= 0; n_sel <= 0; n_debut <= 0;
+        loop
+            wait on sda_x until sda_x = '0' and scl_x = '1';
+            debut;
+            trans : loop
+                lit_octet(o, e);
+                if e = 1 then debut; next trans; elsif e = 2 then exit trans; end if;
+                exit trans when G_ABS = 1 or o(7 downto 1) /= "1011100";
+                if o(0) = '0' then
+                    -- écriture : registre puis données
+                    acquitte('1', false);
+                    lit_octet(o, e);
+                    if e = 1 then debut; next trans; elsif e = 2 then exit trans; end if;
+                    ptr := to_integer(unsigned(o));
+                    acquitte('1', false);
+                    nb := 0;
+                    loop
+                        lit_octet(o, e);
+                        if e = 2 then t_stop := now; exit trans; end if;
+                        if e = 1 then t_stop := now; debut; next trans; end if;
+                        ecrit(ptr, o);
+                        acquitte('1', false);
+                        ptr := (ptr + 1) mod 256;
+                        nb := nb + 1;
+                    end loop;
+                else
+                    -- lecture : octets jusqu'au NACK, puis fin ; blocage éventuel
+                    if ptr = 16#88# then o := etat88; else o := regs(ptr); end if;
+                    if G_ABS = 2 and not bloque_fait and now >= 1300 ms then
+                        bloque_fait := true;
+                        acquitte(o(7), true);
+                    else
+                        acquitte(o(7), false);
+                    end if;
+                    loop
+                        envoie(o, nack, e);
+                        if e = 1 then debut; next trans; elsif e = 2 then exit trans; end if;
+                        ptr := (ptr + 1) mod 256;
+                        exit when nack;
+                        if ptr = 16#88# then o := etat88; else o := regs(ptr); end if;
+                    end loop;
+                    wait on sda_x until sda_x = '1' and scl_x = '1';
+                    exit trans;
+                end if;
+            end loop;
+        end loop;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_tvp : banc de tvp_ctrl avec le modèle tb_tvp5150 ; horloge 2 MHz (les
+--   délais de tvp_ctrl sont tirés de G_HZ : chronologie réelle), I²C 100 kHz
+--   Scénario G_ABS = 0 : AIP1A sans signal, AIP1B en couleur → verrouillage
+--   sur B ; à 1,5 s, B disparaît, A en noir et blanc → video_ok tombe,
+--   retour sur A après 1 s, verrouillage ; de 3,2 à 3,5 s, coupure de A →
+--   video_ok tombe puis revient sans changement d'entrée
+--   Scénario G_ABS = 1 : décodeur absent → present et video_ok restent à 0,
+--   l'identifiant est relu chaque seconde
+--   Scénario G_ABS = 2 : verrouillé sur B, transaction bloquée à 1,3 s (SCL
+--   tenu 20 ms, puis SDA tenu à 0) → garde, décodeur réputé absent, bus
+--   libéré, nouvelle configuration, verrouillage sur B
+--------------------------------------------------------------------------------
+context work.jpeg2dvb_ctx;
+use std.env.all;
+
+entity tb_tvp is
+    generic (
+        G_ABS : natural := 0
+    );
+end entity tb_tvp;
+
+architecture sim of tb_tvp is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal scl, sda : std_logic;
+    signal scl_oe, sda_oe, scl_x, sda_x : std_logic;
+    signal resetb, pdn, present, video_ok, entree : std_logic;
+    signal src_a, src_b : natural := 0;
+    signal n_err, n_sel, n_debut : natural;
+begin
+    clk <= not clk after 250 ns;
+    -- bus : rappels, maître à drain ouvert
+    scl <= 'H';
+    sda <= 'H';
+    scl <= '0' when scl_oe = '1' else 'Z';
+    sda <= '0' when sda_oe = '1' else 'Z';
+    scl_x <= to_x01(scl);
+    sda_x <= to_x01(sda);
+
+    dut : entity work.tvp_ctrl generic map (G_HZ => 2_000_000, G_I2C_HZ => 100_000)
+        port map (clk, rst, resetb, pdn, scl_oe, sda_oe, scl_x, sda_x, present, video_ok, entree);
+    modele : entity work.tb_tvp5150 generic map (G_ABS => G_ABS)
+        port map (resetb, pdn, scl, sda, src_a, src_b, n_err, n_sel, n_debut);
+
+    -- scénario et contrôle : E : sorties de tvp_ctrl, compteurs du modèle
+    --   → T : sources changées aux instants du scénario, états attendus
+    --   vérifiés à des instants éloignés des transitions → S : verdict
+    process
+        variable err : natural := 0;
+        -- voir : E : instant, present, video_ok, entree attendus → T : attente,
+        --   comparaison → S : err
+        procedure voir(t : time; pr, ok, ent : std_logic; m : string) is
+        begin
+            wait for t - now;
+            if present /= pr or video_ok /= ok or entree /= ent then
+                report m & " : present = " & std_logic'image(present) & ", video_ok = " & std_logic'image(video_ok) &
+                       ", entree = " & std_logic'image(entree) severity warning;
+                err := err + 1;
+            end if;
+        end procedure;
+        -- verdict : E : nom, choix d'entrée attendus, texte → S : ligne OK / ECHEC
+        procedure verdict(nom : string; nsel : natural; m : string) is
+        begin
+            if n_sel /= nsel then
+                report "choix d'entree : " & integer'image(n_sel) & " ecritures de 00h au lieu de " & integer'image(nsel) severity warning;
+                err := err + 1;
+            end if;
+            if err = 0 and n_err = 0 then
+                report "OK " & nom & " : " & m & " (" & integer'image(n_debut) & " debuts I2C)";
+            else
+                report "ECHEC " & nom & " : " & integer'image(err) & " etats faux, " & integer'image(n_err) & " erreurs du modele" severity error;
+            end if;
+        end procedure;
+    begin
+        wait for 1 us;
+        rst <= '0';
+        if G_ABS = 0 then
+            src_b <= 1;
+            voir(600 ms, '1', '0', '0', "600 ms (acquisition sur A)");
+            voir(1200 ms, '1', '1', '1', "1,2 s (verrouille sur B)");
+            wait for 1500 ms - now;
+            src_b <= 0; src_a <= 2;
+            voir(1550 ms, '1', '0', '1', "1,55 s (perte de B)");
+            voir(2400 ms, '1', '0', '1', "2,4 s (attente avant retour sur A)");
+            voir(3000 ms, '1', '1', '0', "3 s (verrouille sur A, noir et blanc)");
+            wait for 3200 ms - now;
+            src_a <= 0;
+            voir(3250 ms, '1', '0', '0', "3,25 s (coupure de A)");
+            wait for 3500 ms - now;
+            src_a <= 2;
+            voir(3800 ms, '1', '1', '0', "3,8 s (A revenu, meme entree)");
+            verdict("tvp", 3, "configuration conforme (49 ecritures), verrouillage sur B, perte, retour sur A en noir et blanc, coupure breve sans changement d'entree");
+        elsif G_ABS = 1 then
+            src_a <= 1;
+            voir(2500 ms, '0', '0', '0', "2,5 s (decodeur absent)");
+            if n_debut /= 6 then report integer'image(n_debut) & " debuts au lieu de 6 (3 essais de lecture)" severity warning; err := err + 1; end if;
+            verdict("tvp_abs", 0, "decodeur absent, present et video_ok a 0, identifiant relu chaque seconde");
+        else
+            src_b <= 1;
+            voir(1200 ms, '1', '1', '1', "1,2 s (verrouille sur B)");
+            voir(1350 ms, '0', '0', '1', "1,35 s (transaction bloquee, decodeur repute absent)");
+            voir(2600 ms, '1', '0', '0', "2,6 s (bus libere, decodeur reconfigure, acquisition sur A)");
+            voir(3600 ms, '1', '1', '1', "3,6 s (verrouille sur B)");
+            verdict("tvp_bloc", 4, "SCL bloque 20 ms : garde, liberation du bus (SDA tenu a 0), nouvelle configuration, verrouillage sur B");
+        end if;
+        finish;
     end process;
 end architecture sim;

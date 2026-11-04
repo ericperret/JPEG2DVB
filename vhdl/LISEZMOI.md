@@ -2,7 +2,7 @@
   Nom      : LISEZMOI.md
   Objet    : portage FPGA de JPEG2DVB (émetteur DVB-S 23 cm), VHDL-2008
   Auteur   : Eric PERRET
-  Date     : 2026-10-19
+  Date     : 2026-11-04
   Licence  : CC BY-NC 4.0
 -->
 
@@ -35,8 +35,22 @@ VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid`
 | `mire_gen` + `mire_pkg` | Mire animée 16 couleurs, carré mobile et compteur, macroblocs 4:2:0 | 01 (`fpga_test/mire.png`, option mobile) | `tb_mire` | ✔ 2 images |
 | `video_enc` | Tête de chaîne : mire → DCT → régulation TM5 → quantification → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 paquets TS |
 | `dvbs_tx` | Émetteur complet : mire → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160 000 échantillons |
+| `bt656_rx` | Récepteur BT.656 du décodeur TVP5150AM1 : codes SAV / EAV, trame, ligne, couples Cb Y Cr Y, horloge SCLK 27 MHz | entrée PAL | `tb_bt656` | ✔ 414 720 couples (4 trames, couleur et noir et blanc) |
+| `i2c_maitre` + `tvp_ctrl` | Pilotage du TVP5150AM1 sans microcontrôleur : démarrage, identification, PAL forcé, VBI coupé, choix automatique AIP1A / AIP1B, garde et libération du bus I²C | entrée PAL | `tb_tvp` (modèle `tb_tvp5150`) | ✔ 3 scénarios |
 
 Tous les modules passent `ghdl --synth` sans verrou (contrôle de synthétisabilité ; la synthèse réelle se fait dans Libero SoC).
+
+## Entrée vidéo PAL (TVP5150AM1)
+
+Câblage imposé par `tvp_ctrl` :
+
+- RESETB et PDN pilotées par le FPGA (`tvp_resetb`, `tvp_pdn`), pas de réseau RC : le reset doit suivre l'horloge XTAL1, produite par la PLL du FPGA (14,31818 MHz) ;
+- SCL et SDA vers deux broches du FPGA (drain ouvert : `scl_oe`, `sda_oe`), rappels de 4,7 kΩ au 3,3 V ;
+- YOUT7/I2CSEL : rappel de 10 kΩ à la masse (adresse B8h) ; INTREQ/GPCL/VBLK : 10 kΩ à la masse ;
+- SCLK (27 MHz) : horloge de `bt656_rx` ; YOUT[7:0] : son entrée `d` ;
+- AIP1A et AIP1B : deux entrées composites PAL (couleur ou noir et blanc), la première verrouillée est retenue.
+
+`video_ok` signale un décodeur verrouillé en lignes et en trames ; sinon la mire est émise.
 
 ## Lancer les tests
 
@@ -66,9 +80,11 @@ Le dossier `fpga_test/` contient les outils de test (`run_tests.sh`, scripts Nod
 ## Reste à faire
 
 1. ✔ Fait (2026-10-19) : régulation de débit TM5 en arithmétique entière, dans la page 03 de JPEG2DVB (point P7 du cahier des charges), puis en VHDL (`rate_ctrl`), au bit près.
-2. Modulateur sigma-delta 1 bit d'ordre 3, interpolation × 8, sérialiseurs LVDS (point P3).
+2. Sortie sigma-delta (point P3) : ✔ modulateur 1 bit d'ordre 3 et interpolation (`sd_entree`, `sdm3`, `sigma_delta`, banc `sdm`) ; reste les sérialiseurs LVDS.
 3. Mise en mémoire LSRAM : lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) ; découpage en étages des chemins longs (quantification, VLC) après la première synthèse Libero.
-4. Mode 720 × 576 (doublement de la mire, 45 macroblocs par slice).
+4. Entrée vidéo PAL 720 × 576 : ✔ 3a, pilotage du TVP5150AM1 et réception BT.656 (2026-11-04) ; 3b, passage vers l'horloge 80 MHz, réunion des deux trames, mise en macroblocs 4:2:0 ; mode 720 × 576 de la chaîne (45 macroblocs par slice) à 10 MS/s.
+5. DVB-S2 QPSK 1/4, trames longues, pilotes, CCM, à côté de DVB-S, choix par interrupteur DIP.
+6. Entité de tête de la carte : PLL (80 MHz, 14,31818 MHz pour XTAL1), broches, interrupteurs.
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -81,6 +97,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-10-19 | Régulation TM5 (`rate_ctrl`, références régénérées ; bancs à adapter). Sources fusionnées en `jpeg2dvb_fpga.vhd` et `jpeg2dvb_fpga_tb.vhd` ; références, scripts et `run_tests.sh` déplacés dans `fpga_test/` |
 | 2026-10-19 | Fusion propre (2.0) : un cartouche par fichier, context VHDL-2008 commun `jpeg2dvb_ctx`, chaque fonction et process commenté ; `fpga_test/README.md` donne le rôle de chaque fichier de test |
 | 2026-10-19 | Régulation TM5 au bit près en VHDL : bancs adaptés (codes par rangée, codes par slice, `slice_ok`), nouveau banc `tb_rc`, `run_tests.sh` 1.2 ; 23 bancs OK, 11 modules synthétisables sans verrou |
+| 2026-11-04 | Entrée vidéo PAL, chantier 3a : `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 sans microcontrôleur) ; `bt656.js`, bancs `tb_bt656` et `tb_tvp` (modèle I²C `tb_tvp5150`, chronologie du mode standard) ; `run_tests.sh` 1.5 ; 28 bancs OK, 16 modules synthétisables sans verrou |
 
 ## Licence
 
