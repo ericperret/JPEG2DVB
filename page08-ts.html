@@ -406,8 +406,8 @@
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │                              HEADER (4 octets)                                        │
 ├───────────┬───────────┬───────────────────────────────────────────────────────────────┤
-│ sync_byte │ TEI│PUSI│TP│         PID (13 bits)        │ TSC │ AFC │    CC (4 bits)   │
-│   0x47    │ 1  │ 1  │1 │  0x0000=PAT, 0x0100=PMT...   │  2  │  2  │ continuity cnt   │
+│ sync_byte │ TEI│PUSI │TP│         PID (13 bits)        │ TSC │ AFC │    CC (4 bits)   │
+│   0x47    │ 1  │ 1   │1 │  0x0000=PAT, 0x0100=PMT...   │  2  │  2  │ continuity cnt   │
 ├───────────┴───────────┴───────────────────────────────────────────────────────────────┤
 │                    ADAPTATION FIELD (optionnel, si AFC=10 ou 11)                      │
 │  adaptation_field_length │ flags │ [stuffing bytes 0xFF]                              │
