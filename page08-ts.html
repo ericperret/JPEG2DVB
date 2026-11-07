@@ -207,14 +207,22 @@
         }
         .field-list .field-name { color: #f0a63a; }
         .field-list .field-value { color: #00ff88; }
-        .ts-header-diagram {
-            font-family: monospace;
-            font-size: 10px;
-            background: #141c22;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
+.ts-header-diagram {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 10px 0;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 1.35;
+    background: #141c22;
+    border-radius: 5px;
+    white-space: pre;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
         .pid-bar {
             display: flex;
             gap: 5px;
