@@ -213,15 +213,22 @@
         .field-list .field-value {
             color: #00ff88;
         }
-        .pes-header-diagram {
-            font-family: monospace;
-            font-size: 10px;
-            background: #141c22;
-            padding: 10px;
-            border-radius: 5px;
-            overflow-x: auto;
-          white-space: pre;
-        }
+.pes-header-diagram {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 10px 0;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 10px;
+    line-height: 1.35;
+    background: #141c22;
+    border-radius: 5px;
+    white-space: pre;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
     
         .note-norme { background: #141c22; border: 1px solid #26343e; border-left: 3px solid #f0a63a; border-radius: 0 8px 8px 0; padding: 12px 15px; margin: -8px 0 20px; font-size: 13px; line-height: 1.55; color: #a9b7bf; }
         .note-norme strong { color: #f0a63a; }
