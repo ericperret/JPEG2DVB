@@ -60,13 +60,55 @@ Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz f
 
 Microcontroller registers (separate I²C bus, FPGA slave at address 2Ah, `regs_i2c`):
 
-| Address | Name | Access | Content | Default |
+| Address | Name | Access | Default | Role |
 |---|---|---|---|---|
-| 00h | ID | read | 4Ah | 4Ah |
-| 01h | VERSION | read | 01h | 01h |
-| 02h | MODE | read / write | bit 0: DVB-S2; bits 3..1: FEC (0 = 1/2 … 4 = 7/8); bit 4: 2.5 MS/s (else 10 MS/s) | 00h (DVB-S, 1/2, 10 MS/s) |
-| 03h | INPUT | read / write | 0: automatic; 1: AIP1A; 2: AIP1B; 3: test pattern | 00h |
-| 04h | STATUS | read | bit 0: PLLs locked; bit 1: decoder present; bit 2: video locked; bit 3: current input (0: A, 1: B) | — |
+| 00h | ID | read | 4Ah | FPGA identifier |
+| 01h | VERSION | read | 01h | register-map version |
+| 02h | MODE | read / write | 00h | standard, FEC, symbol rate |
+| 03h | INPUT | read / write | 00h | video source |
+| 04h | STATUS | read | — | board status |
+| 05h to FFh | — | — | 00h | read as 00h, writes ignored |
+
+MODE (02h):
+
+| Bits | Field | Values |
+|---|---|---|
+| 7..5 | — | ignored on write, read as 0 |
+| 4 | RATE | 0: 10 MS/s; 1: 2.5 MS/s |
+| 3..1 | FEC | DVB-S: 000 = 1/2, 001 = 2/3, 010 = 3/4, 011 = 5/6, 100 = 7/8, 101 to 111 reserved; DVB-S2: ignored (QPSK 1/4) |
+| 0 | STANDARD | 0: DVB-S; 1: DVB-S2 (QPSK 1/4, normal frames, pilots, CCM) |
+
+| MODE | Standard | FEC | Symbol rate |
+|---|---|---|---|
+| 00h | DVB-S | 1/2 | 10 MS/s |
+| 02h | DVB-S | 2/3 | 10 MS/s |
+| 04h | DVB-S | 3/4 | 10 MS/s |
+| 06h | DVB-S | 5/6 | 10 MS/s |
+| 08h | DVB-S | 7/8 | 10 MS/s |
+| 10h | DVB-S | 1/2 | 2.5 MS/s |
+| 12h | DVB-S | 2/3 | 2.5 MS/s |
+| 14h | DVB-S | 3/4 | 2.5 MS/s |
+| 16h | DVB-S | 5/6 | 2.5 MS/s |
+| 18h | DVB-S | 7/8 | 2.5 MS/s |
+| 01h | DVB-S2 | 1/4 | 10 MS/s |
+| 11h | DVB-S2 | 1/4 | 2.5 MS/s |
+
+INPUT (03h):
+
+| Bits | Field | Values |
+|---|---|---|
+| 7..2 | — | ignored on write, read as 0 |
+| 1..0 | SOURCE | 00: automatic (AIP1A, then AIP1B if A is not locked); 01: AIP1A forced; 10: AIP1B forced; 11: test pattern |
+
+STATUS (04h, read only):
+
+| Bit | Field | Values |
+|---|---|---|
+| 7..4 | — | 0 |
+| 3 | INPUT | current decoder input: 0 = AIP1A, 1 = AIP1B |
+| 2 | VIDEO | 1: decoder locked on lines and fields |
+| 1 | DECODER | 1: TVP5150AM1 identified |
+| 0 | PLL | 1: both PLLs locked |
 
 Write: start, 54h, register, data…, stop. Read: start, 54h, register, repeated start, 55h, data… (NACK on the last byte), stop. The pointer advances after each byte. Without a microcontroller the defaults apply. MODE is stored; it will be wired to the chain by the FEC, symbol-rate and DVB-S2 work items. INPUT 3 (test pattern) is for work item 3b; the source is currently the test pattern.
 

@@ -60,13 +60,55 @@ Horloges : oscillateur MEMS 50 MHz (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 M
 
 Registres du microcontrôleur (bus I²C séparé, FPGA esclave à l'adresse 2Ah, `regs_i2c`) :
 
-| Adresse | Nom | Accès | Contenu | Défaut |
+| Adresse | Nom | Accès | Défaut | Rôle |
 |---|---|---|---|---|
-| 00h | ID | lecture | 4Ah | 4Ah |
-| 01h | VERSION | lecture | 01h | 01h |
-| 02h | MODE | lecture / écriture | bit 0 : DVB-S2 ; bits 3..1 : FEC (0 = 1/2 … 4 = 7/8) ; bit 4 : 2,5 MS/s (sinon 10 MS/s) | 00h (DVB-S, 1/2, 10 MS/s) |
-| 03h | ENTREE | lecture / écriture | 0 : automatique ; 1 : AIP1A ; 2 : AIP1B ; 3 : mire | 00h |
-| 04h | ETAT | lecture | bit 0 : PLL verrouillés ; bit 1 : décodeur présent ; bit 2 : vidéo verrouillée ; bit 3 : entrée en cours (0 : A, 1 : B) | — |
+| 00h | ID | lecture | 4Ah | identifiant du FPGA |
+| 01h | VERSION | lecture | 01h | version des registres |
+| 02h | MODE | lecture / écriture | 00h | norme, FEC, débit symbole |
+| 03h | ENTREE | lecture / écriture | 00h | source vidéo |
+| 04h | ETAT | lecture | — | état de la carte |
+| 05h à FFh | — | — | 00h | lus 00h, écritures ignorées |
+
+MODE (02h) :
+
+| Bits | Champ | Valeurs |
+|---|---|---|
+| 7..5 | — | ignorés à l'écriture, lus 0 |
+| 4 | DEBIT | 0 : 10 MS/s ; 1 : 2,5 MS/s |
+| 3..1 | FEC | DVB-S : 000 = 1/2, 001 = 2/3, 010 = 3/4, 011 = 5/6, 100 = 7/8, 101 à 111 réservés ; DVB-S2 : ignorés (QPSK 1/4) |
+| 0 | NORME | 0 : DVB-S ; 1 : DVB-S2 (QPSK 1/4, trames longues, pilotes, CCM) |
+
+| MODE | Norme | FEC | Débit symbole |
+|---|---|---|---|
+| 00h | DVB-S | 1/2 | 10 MS/s |
+| 02h | DVB-S | 2/3 | 10 MS/s |
+| 04h | DVB-S | 3/4 | 10 MS/s |
+| 06h | DVB-S | 5/6 | 10 MS/s |
+| 08h | DVB-S | 7/8 | 10 MS/s |
+| 10h | DVB-S | 1/2 | 2,5 MS/s |
+| 12h | DVB-S | 2/3 | 2,5 MS/s |
+| 14h | DVB-S | 3/4 | 2,5 MS/s |
+| 16h | DVB-S | 5/6 | 2,5 MS/s |
+| 18h | DVB-S | 7/8 | 2,5 MS/s |
+| 01h | DVB-S2 | 1/4 | 10 MS/s |
+| 11h | DVB-S2 | 1/4 | 2,5 MS/s |
+
+ENTREE (03h) :
+
+| Bits | Champ | Valeurs |
+|---|---|---|
+| 7..2 | — | ignorés à l'écriture, lus 0 |
+| 1..0 | SOURCE | 00 : automatique (AIP1A, puis AIP1B si A n'est pas verrouillée) ; 01 : AIP1A imposée ; 10 : AIP1B imposée ; 11 : mire |
+
+ETAT (04h, lecture seule) :
+
+| Bit | Champ | Valeurs |
+|---|---|---|
+| 7..4 | — | 0 |
+| 3 | ENTREE | entrée du décodeur en cours : 0 = AIP1A, 1 = AIP1B |
+| 2 | VIDEO | 1 : décodeur verrouillé en lignes et en trames |
+| 1 | DECODEUR | 1 : TVP5150AM1 identifié |
+| 0 | PLL | 1 : les deux PLL verrouillés |
 
 Écriture : début, 54h, registre, données…, fin. Lecture : début, 54h, registre, début répété, 55h, données… (NACK sur la dernière), fin. Le pointeur avance après chaque octet. Sans microcontrôleur, les valeurs par défaut s'appliquent. MODE est rangé ; il sera branché à la chaîne par les chantiers FEC, débit et DVB-S2. ENTREE 3 (mire) servira au chantier 3b ; la source est aujourd'hui la mire.
 
