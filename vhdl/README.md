@@ -2,7 +2,7 @@
   Name     : README.md
   Purpose  : FPGA port of JPEG2DVB (23 cm DVB-S transmitter), VHDL-2008
   Author   : Eric PERRET
-  Date     : 2026-11-04
+  Date     : 2026-11-10
   License  : CC BY-NC 4.0
 -->
 
@@ -36,7 +36,9 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `video_enc` | Front end: test pattern → DCT → TM5 rate control → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 TS packets |
 | `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
 | `bt656_rx` | BT.656 receiver for the TVP5150AM1 decoder: SAV / EAV codes, field, line, Cb Y Cr Y pairs, 27 MHz SCLK clock | PAL input | `tb_bt656` | ✔ 414,720 pairs (4 fields, colour and black and white) |
-| `i2c_maitre` + `tvp_ctrl` | TVP5150AM1 control without a microcontroller: start-up, identification, forced PAL, VBI off, automatic AIP1A / AIP1B selection, I²C watchdog and bus recovery | PAL input | `tb_tvp` (`tb_tvp5150` model) | ✔ 3 scenarios |
+| `i2c_maitre` + `tvp_ctrl` | TVP5150AM1 control: start-up, identification, forced PAL, VBI off, automatic or forced AIP1A / AIP1B selection, I²C watchdog and bus recovery | PAL input | `tb_tvp` (`tb_tvp5150` model) | ✔ 4 scenarios |
+| `dvbs_sd` | Transmitter from the test pattern to the sigma-delta bits (`video_enc` → channel → `sigma_delta`) | 01 → 14 | blocks verified by `video`, `chaine`, `sdm` | ✔ composed |
+| `regs_i2c` + `jpeg2dvb_top` | Top level: PLLs, reset, LVDS, decoder, microcontroller registers, LEDs | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | ✔ registers, LEDs, 45,262 LVDS groups |
 
 Every module passes `ghdl --synth` without latches (synthesisability check; the real synthesis is done in Libero SoC).
 
@@ -51,6 +53,35 @@ Wiring required by `tvp_ctrl`:
 - AIP1A and AIP1B: two PAL composite inputs (colour or black and white), the first locked one is used.
 
 `video_ok` flags a decoder locked on lines and fields; otherwise the test pattern is sent.
+
+## Board top-level entity (`jpeg2dvb_top`)
+
+Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz for the serialisers) and PLL `PF_CCC_TVP` (exact 14.318182 MHz: VCO 1,575 MHz / 110) to the decoder XTAL1. Reset held until both PLLs are locked. I and Q LVDS outputs at 640 Mbit/s (8:1 serialisers). Active-high LEDs: PLLs locked, decoder present, video locked.
+
+Microcontroller registers (separate I²C bus, FPGA slave at address 2Ah, `regs_i2c`):
+
+| Address | Name | Access | Content | Default |
+|---|---|---|---|---|
+| 00h | ID | read | 4Ah | 4Ah |
+| 01h | VERSION | read | 01h | 01h |
+| 02h | MODE | read / write | bit 0: DVB-S2; bits 3..1: FEC (0 = 1/2 … 4 = 7/8); bit 4: 2.5 MS/s (else 10 MS/s) | 00h (DVB-S, 1/2, 10 MS/s) |
+| 03h | INPUT | read / write | 0: automatic; 1: AIP1A; 2: AIP1B; 3: test pattern | 00h |
+| 04h | STATUS | read | bit 0: PLLs locked; bit 1: decoder present; bit 2: video locked; bit 3: current input (0: A, 1: B) | — |
+
+Write: start, 54h, register, data…, stop. Read: start, 54h, register, repeated start, 55h, data… (NACK on the last byte), stop. The pointer advances after each byte. Without a microcontroller the defaults apply. MODE is stored; it will be wired to the chain by the FEC, symbol-rate and DVB-S2 work items. INPUT 3 (test pattern) is for work item 3b; the source is currently the test pattern.
+
+Files: `jpeg2dvb_ip_libero.vhd` (Libero blocks, synthesis) and `jpeg2dvb_ip_sim.vhd` (models, GHDL) declare the same `horloges` and `sortie_lvds` entities; `jpeg2dvb_top.sdc` (constraints).
+
+### In Libero
+
+1. Import `jpeg2dvb_fpga.vhd` and `jpeg2dvb_ip_libero.vhd` as HDL sources (not `jpeg2dvb_ip_sim.vhd` nor `jpeg2dvb_fpga_tb.vhd`).
+2. Catalog ▸ Clock & Management ▸ PF_CCC, name `PF_CCC_SYS`: one PLL, 50 MHz reference; output 0: 80 MHz to the global network; output 1: 320 MHz as HS_IO_CLK.
+3. PF_CCC, name `PF_CCC_TVP`: one PLL, 50 MHz reference; output 0: 14.318182 MHz.
+4. Catalog ▸ I/O ▸ PF_IOD_GENERIC_TX, name `PF_IOD_TX_SD`: TX_DDRX_B_G_FA interface (8 bits per cycle), 2 data lanes, no forwarded clock, LVDS standard.
+5. Compare the generated component ports (`component/work/<name>/<name>.vhd`) with those in `jpeg2dvb_ip_libero.vhd`; check the TX_DATA bit transmit order in the PF_IOD guide (the file assumes TX_DATA(0) first).
+6. Design Hierarchy ▸ `jpeg2dvb_top` ▸ Set As Root.
+7. Constraint Manager ▸ Timing: import `jpeg2dvb_top.sdc`, then Derive Constraints (PLL clocks).
+8. Pin assignment (I/O Editor) with the PCB: LVDS outputs in a GPIO bank (HSIO banks do not transmit LVDS); `osc_50` and `tvp_sclk` on clock inputs.
 
 ## Running the tests
 
@@ -80,11 +111,11 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 ## To do
 
 1. ✔ Done (2026-10-19): TM5 rate control in integer arithmetic, in JPEG2DVB page 03 (specification item P7), then in VHDL (`rate_ctrl`), bit for bit.
-2. Sigma-delta output (item P3): ✔ third-order 1-bit modulator and interpolation (`sd_entree`, `sdm3`, `sigma_delta`, `sdm` testbench); LVDS serialisers remain.
+2. Sigma-delta output (item P3): ✔ third-order 1-bit modulator and interpolation (`sd_entree`, `sdm3`, `sigma_delta`, `sdm` testbench); ✔ LVDS serialisers (PF_IOD, top level), to be validated in Libero.
 3. LSRAM mapping: synchronous read of the interleaver memory (1,122 bytes); pipelining of long paths (quantisation, VLC) after the first Libero synthesis.
 4. 720 × 576 PAL video input: ✔ 3a, TVP5150AM1 control and BT.656 reception (2026-11-04); 3b, crossing to the 80 MHz clock, merging both fields, 4:2:0 macroblock formatting; 720 × 576 mode of the chain (45 macroblocks per slice) at 10 MS/s.
 5. DVB-S2 QPSK 1/4, normal frames, pilots, CCM, alongside DVB-S, selected by a DIP switch.
-6. Board top-level entity: PLL (80 MHz, 14.31818 MHz for XTAL1), pins, switches.
+6. ✔ Board top-level entity (2026-11-10); remaining: pin assignment with the PCB, wiring of the MODE register (FEC, symbol rate, DVB-S2 at run time).
 
 Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
@@ -98,6 +129,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-10-19 | Clean merge (2.0): one header per file, common VHDL-2008 context `jpeg2dvb_ctx`, every function and process commented; `fpga_test/README.md` lists the role of each test file |
 | 2026-10-19 | TM5 rate control bit for bit in VHDL: testbenches adapted (per-row codes, per-slice codes, `slice_ok`), new `tb_rc` testbench, `run_tests.sh` 1.2; 23 testbenches OK, 11 modules synthesisable without latches |
 | 2026-11-04 | PAL video input, work item 3a: `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 without a microcontroller); `bt656.js`, `tb_bt656` and `tb_tvp` testbenches (`tb_tvp5150` I²C model, standard-mode timing); `run_tests.sh` 1.5; 28 testbenches OK, 16 modules synthesisable without latches |
+| 2026-11-10 | Libero: explicit `library` / `use` clauses instead of the VHDL-2008 `context`, interleaver pointers without initial value (Synplify MF682); first error-free synthesis of `dvbs_tx`. Top level (work item 6): `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (I²C slave 2Ah), forced input in `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc`; `tvp_force` and `top` testbenches; `run_tests.sh` 1.6 |
 
 ## License
 

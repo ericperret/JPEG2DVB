@@ -2,7 +2,7 @@
   Nom      : LISEZMOI.md
   Objet    : portage FPGA de JPEG2DVB (émetteur DVB-S 23 cm), VHDL-2008
   Auteur   : Eric PERRET
-  Date     : 2026-11-04
+  Date     : 2026-11-10
   Licence  : CC BY-NC 4.0
 -->
 
@@ -36,7 +36,9 @@ VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid`
 | `video_enc` | Tête de chaîne : mire → DCT → régulation TM5 → quantification → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 paquets TS |
 | `dvbs_tx` | Émetteur complet : mire → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160 000 échantillons |
 | `bt656_rx` | Récepteur BT.656 du décodeur TVP5150AM1 : codes SAV / EAV, trame, ligne, couples Cb Y Cr Y, horloge SCLK 27 MHz | entrée PAL | `tb_bt656` | ✔ 414 720 couples (4 trames, couleur et noir et blanc) |
-| `i2c_maitre` + `tvp_ctrl` | Pilotage du TVP5150AM1 sans microcontrôleur : démarrage, identification, PAL forcé, VBI coupé, choix automatique AIP1A / AIP1B, garde et libération du bus I²C | entrée PAL | `tb_tvp` (modèle `tb_tvp5150`) | ✔ 3 scénarios |
+| `i2c_maitre` + `tvp_ctrl` | Pilotage du TVP5150AM1 : démarrage, identification, PAL forcé, VBI coupé, choix automatique ou imposé AIP1A / AIP1B, garde et libération du bus I²C | entrée PAL | `tb_tvp` (modèle `tb_tvp5150`) | ✔ 4 scénarios |
+| `dvbs_sd` | Émetteur de la mire aux bits sigma-delta (`video_enc` → canal → `sigma_delta`) | 01 → 14 | blocs vérifiés par `video`, `chaine`, `sdm` | ✔ composé |
+| `regs_i2c` + `jpeg2dvb_top` | Entité de tête : PLL, remise à zéro, LVDS, décodeur, registres du microcontrôleur, LED | carte | `tb_top` (modèles `jpeg2dvb_ip_sim.vhd`) | ✔ registres, LED, 45 262 groupes LVDS |
 
 Tous les modules passent `ghdl --synth` sans verrou (contrôle de synthétisabilité ; la synthèse réelle se fait dans Libero SoC).
 
@@ -51,6 +53,35 @@ Câblage imposé par `tvp_ctrl` :
 - AIP1A et AIP1B : deux entrées composites PAL (couleur ou noir et blanc), la première verrouillée est retenue.
 
 `video_ok` signale un décodeur verrouillé en lignes et en trames ; sinon la mire est émise.
+
+## Entité de tête de la carte (`jpeg2dvb_top`)
+
+Horloges : oscillateur MEMS 50 MHz (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz des sérialiseurs) et PLL `PF_CCC_TVP` (14,318182 MHz exacts : VCO 1 575 MHz / 110) vers XTAL1 du décodeur. Remise à zéro tenue tant que les deux PLL ne sont pas verrouillés. Sorties LVDS I et Q à 640 Mbit/s (sérialiseurs 8:1). LED actives à 1 : PLL verrouillés, décodeur présent, vidéo verrouillée.
+
+Registres du microcontrôleur (bus I²C séparé, FPGA esclave à l'adresse 2Ah, `regs_i2c`) :
+
+| Adresse | Nom | Accès | Contenu | Défaut |
+|---|---|---|---|---|
+| 00h | ID | lecture | 4Ah | 4Ah |
+| 01h | VERSION | lecture | 01h | 01h |
+| 02h | MODE | lecture / écriture | bit 0 : DVB-S2 ; bits 3..1 : FEC (0 = 1/2 … 4 = 7/8) ; bit 4 : 2,5 MS/s (sinon 10 MS/s) | 00h (DVB-S, 1/2, 10 MS/s) |
+| 03h | ENTREE | lecture / écriture | 0 : automatique ; 1 : AIP1A ; 2 : AIP1B ; 3 : mire | 00h |
+| 04h | ETAT | lecture | bit 0 : PLL verrouillés ; bit 1 : décodeur présent ; bit 2 : vidéo verrouillée ; bit 3 : entrée en cours (0 : A, 1 : B) | — |
+
+Écriture : début, 54h, registre, données…, fin. Lecture : début, 54h, registre, début répété, 55h, données… (NACK sur la dernière), fin. Le pointeur avance après chaque octet. Sans microcontrôleur, les valeurs par défaut s'appliquent. MODE est rangé ; il sera branché à la chaîne par les chantiers FEC, débit et DVB-S2. ENTREE 3 (mire) servira au chantier 3b ; la source est aujourd'hui la mire.
+
+Fichiers : `jpeg2dvb_ip_libero.vhd` (blocs Libero, synthèse) et `jpeg2dvb_ip_sim.vhd` (modèles, GHDL) déclarent les mêmes entités `horloges` et `sortie_lvds` ; `jpeg2dvb_top.sdc` (contraintes).
+
+### Dans Libero
+
+1. Importer comme sources HDL `jpeg2dvb_fpga.vhd` et `jpeg2dvb_ip_libero.vhd` (pas `jpeg2dvb_ip_sim.vhd` ni `jpeg2dvb_fpga_tb.vhd`).
+2. Catalogue ▸ Clock & Management ▸ PF_CCC, nom `PF_CCC_SYS` : un PLL, référence 50 MHz ; sortie 0 : 80 MHz vers le réseau global ; sortie 1 : 320 MHz en HS_IO_CLK.
+3. PF_CCC, nom `PF_CCC_TVP` : un PLL, référence 50 MHz ; sortie 0 : 14,318182 MHz.
+4. Catalogue ▸ I/O ▸ PF_IOD_GENERIC_TX, nom `PF_IOD_TX_SD` : interface TX_DDRX_B_G_FA (8 bits par cycle), 2 voies de données, sans horloge transmise, norme LVDS.
+5. Comparer les ports des composants générés (`component/work/<nom>/<nom>.vhd`) à ceux de `jpeg2dvb_ip_libero.vhd` ; vérifier dans le guide PF_IOD l'ordre d'émission des bits de TX_DATA (le fichier suppose TX_DATA(0) en premier).
+6. Design Hierarchy ▸ `jpeg2dvb_top` ▸ Set As Root.
+7. Constraint Manager ▸ Timing : importer `jpeg2dvb_top.sdc`, puis Derive Constraints (horloges des PLL).
+8. Brochage (I/O Editor) avec le PCB : sorties LVDS en banque GPIO (les banques HSIO ne font pas d'émission LVDS) ; `osc_50` et `tvp_sclk` sur des entrées d'horloge.
 
 ## Lancer les tests
 
@@ -80,11 +111,11 @@ Le dossier `fpga_test/` contient les outils de test (`run_tests.sh`, scripts Nod
 ## Reste à faire
 
 1. ✔ Fait (2026-10-19) : régulation de débit TM5 en arithmétique entière, dans la page 03 de JPEG2DVB (point P7 du cahier des charges), puis en VHDL (`rate_ctrl`), au bit près.
-2. Sortie sigma-delta (point P3) : ✔ modulateur 1 bit d'ordre 3 et interpolation (`sd_entree`, `sdm3`, `sigma_delta`, banc `sdm`) ; reste les sérialiseurs LVDS.
+2. Sortie sigma-delta (point P3) : ✔ modulateur 1 bit d'ordre 3 et interpolation (`sd_entree`, `sdm3`, `sigma_delta`, banc `sdm`) ; ✔ sérialiseurs LVDS (PF_IOD, entité de tête), à valider dans Libero.
 3. Mise en mémoire LSRAM : lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) ; découpage en étages des chemins longs (quantification, VLC) après la première synthèse Libero.
 4. Entrée vidéo PAL 720 × 576 : ✔ 3a, pilotage du TVP5150AM1 et réception BT.656 (2026-11-04) ; 3b, passage vers l'horloge 80 MHz, réunion des deux trames, mise en macroblocs 4:2:0 ; mode 720 × 576 de la chaîne (45 macroblocs par slice) à 10 MS/s.
 5. DVB-S2 QPSK 1/4, trames longues, pilotes, CCM, à côté de DVB-S, choix par interrupteur DIP.
-6. Entité de tête de la carte : PLL (80 MHz, 14,31818 MHz pour XTAL1), broches, interrupteurs.
+6. ✔ Entité de tête de la carte (2026-11-10) ; reste : brochage avec le PCB, branchement du registre MODE (FEC, débit, DVB-S2 en marche).
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -98,6 +129,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-10-19 | Fusion propre (2.0) : un cartouche par fichier, context VHDL-2008 commun `jpeg2dvb_ctx`, chaque fonction et process commenté ; `fpga_test/README.md` donne le rôle de chaque fichier de test |
 | 2026-10-19 | Régulation TM5 au bit près en VHDL : bancs adaptés (codes par rangée, codes par slice, `slice_ok`), nouveau banc `tb_rc`, `run_tests.sh` 1.2 ; 23 bancs OK, 11 modules synthétisables sans verrou |
 | 2026-11-04 | Entrée vidéo PAL, chantier 3a : `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 sans microcontrôleur) ; `bt656.js`, bancs `tb_bt656` et `tb_tvp` (modèle I²C `tb_tvp5150`, chronologie du mode standard) ; `run_tests.sh` 1.5 ; 28 bancs OK, 16 modules synthétisables sans verrou |
+| 2026-11-10 | Libero : clauses `library` / `use` à la place du `context` VHDL-2008, pointeurs de l'entrelaceur sans valeur initiale (Synplify MF682) ; première synthèse de `dvbs_tx` sans erreur. Entité de tête (chantier 6) : `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (esclave I²C 2Ah), entrée imposée dans `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc` ; bancs `tvp_force` et `top` ; `run_tests.sh` 1.6 |
 
 ## Licence
 

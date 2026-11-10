@@ -6,11 +6,11 @@
 --               chaque module de la chaîne reproduit au bit près une étape de
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-04
---  Version    : 2.3
+--  Date       : 2026-11-10
+--  Version    : 2.5
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 29 unités, dans l'ordre d'analyse :
+--  Contenu    : 32 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
@@ -40,9 +40,14 @@
 --               bt656_rx      récepteur BT.656 du décodeur TVP5150AM1 (SCLK 27 MHz)
 --               i2c_maitre    maître I²C minimal (étirement, libération du bus)
 --               tvp_ctrl      pilotage du TVP5150AM1 : démarrage, PAL forcé, choix
---                             automatique de l'entrée AIP1A / AIP1B
---  Conventions: flux valid / ready ; bibliothèque ieee seule (context
---               jpeg2dvb_ctx) ; fonctions et process commentés
+--                             automatique ou imposée de l'entrée AIP1A / AIP1B
+--               dvbs_sd       émetteur de la mire aux bits sigma-delta (80 MHz)
+--               regs_i2c      esclave I²C 2Ah du microcontrôleur et registres
+--               jpeg2dvb_top  entité de tête de la carte (PLL, LVDS, décodeur,
+--                             microcontrôleur, LED) ; blocs Libero dans
+--                             jpeg2dvb_ip_libero.vhd (jpeg2dvb_ip_sim.vhd en simulation)
+--  Conventions: flux valid / ready ; bibliothèque ieee seule (clauses
+--               library / use par unité) ; fonctions et process commentés
 --               « E : entrées → T : traitement → S : sorties » ; les paquetages
 --               générés par fpga_test/ restent entre « -- >>> » et « -- <<< »
 --  Historique : 1.0  2026-10-19  modules créés (étapes 01 à 14 de JPEG2DVB)
@@ -67,21 +72,22 @@
 --               2.3  2026-11-04  entrée vidéo PAL (chantier 3a) : décodeur
 --                                TVP5150AM1 piloté par I²C (i2c_maitre,
 --                                tvp_ctrl), récepteur BT.656 (bt656_rx)
+--               2.4  2026-11-10  clauses library / use explicites à la place
+--                                du « context » VHDL-2008 (lecture par Libero) ;
+--                                interleaver : pointeurs de branche sans valeur
+--                                initiale, en registres (Synplify MF682)
+--               2.5  2026-11-10  entité de tête (chantier 6) : dvbs_sd, regs_i2c,
+--                                jpeg2dvb_top ; tvp_ctrl : entrée imposée (choix)
 --==============================================================================
-
--- clauses communes à toutes les unités (une ligne « context » par unité)
-context jpeg2dvb_ctx is
-    library ieee;
-    use ieee.std_logic_1164.all;
-    use ieee.numeric_std.all;
-end context jpeg2dvb_ctx;
 
 --------------------------------------------------------------------------------
 -- dvbs_pkg : types et fonctions communs de la chaîne DVB-S (EN 300 421) :
 --   dispersion d'énergie, corps de Galois GF(2⁸), Reed-Solomon,
 --   codeur convolutif, budget de la régulation de débit
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package dvbs_pkg is
 
@@ -221,7 +227,9 @@ end package body dvbs_pkg;
 --   Principe : échantillon n·8 + r = somme sur d de C(r)(d) · s(n − 6 + d),
 --              symboles s = ±1 ; la somme des |C(r)(d)| ne dépasse pas 0,95 × 32 767
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package srrc_coef_pkg is
     constant SRRC_SPS  : natural := 8;
@@ -250,7 +258,9 @@ end package srrc_coef_pkg;
 --   Principe : u(8q + r) = somme sur d de SDM_H(8q + r)(d) · sym(d), d = 12
 --              le symbole le plus récent, sym = ±1
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package sdm_coef_pkg is
     constant SDM_F   : natural := 10;
@@ -333,7 +343,9 @@ end package sdm_coef_pkg;
 --   2 × 2 est donc celle de la palette
 --   (fichier généré par fpga_test/mire.js ; même image : fpga_test/mire.png)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package mire_pkg is
     constant MIRE_L : natural := 352;
@@ -681,7 +693,9 @@ end package body mire_pkg;
 --   = 0, 111 paires run / niveau, sans le bit de signe)
 --   (fichier généré par fpga_test/gen_vlc.js depuis la page 05)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package vlc_tab_pkg is
     type dc_vlc_t is record
@@ -987,7 +1001,9 @@ end package body vlc_tab_pkg;
 --              générateur tourne 8 pas sans être appliqué ; octets 1 à 187 :
 --              ou exclusif avec 8 bits de sortie du générateur
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity prbs_disp is
@@ -1057,7 +1073,9 @@ end architecture rtl;
 --              parité émise du coefficient de plus haut degré au plus bas ;
 --              l'entrée est suspendue (s_ready = 0) pendant les 16 octets de parité
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity rs_enc is
@@ -1133,7 +1151,9 @@ end architecture rtl;
 --              branche 0 : s_sop remet la branche à 0. Après la remise à zéro,
 --              la mémoire est mise à 0 (1 122 cycles) comme dans JPEG2DVB.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity interleaver is
@@ -1170,7 +1190,9 @@ architecture rtl of interleaver is
     type ram_t is array (0 to TAILLE - 1) of octet_t;
     signal ram     : ram_t;
     type ptr_t is array (1 to I - 1) of natural range 0 to M * (I - 1) - 1;
-    signal ptr     : ptr_t := (others => 0);
+    signal ptr     : ptr_t;
+    attribute syn_ramstyle : string;
+    attribute syn_ramstyle of ptr : signal is "registers";
     signal branche : natural range 0 to I - 1 := 0;
     signal efface  : std_logic := '1';
     signal adr_eff : natural range 0 to TAILLE - 1 := 0;
@@ -1234,7 +1256,9 @@ end architecture rtl;
 --              (bit précédent) en bit 5, D5 en bit 0.
 --   Paramètre : G_FEC 0 = 1/2, 1 = 2/3, 2 = 3/4, 3 = 5/6, 4 = 7/8
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity conv_enc is
@@ -1344,7 +1368,9 @@ end architecture rtl;
 --               sortie : I et Q signés sur 2 bits (+1 = "01", −1 = "11") ;
 --               combinatoire, le contrôle de flux traverse le module
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity qpsk_map is
     port (
@@ -1381,7 +1407,9 @@ end architecture rtl;
 --              Débit : 8 cycles par symbole (le symbole suivant est accepté
 --              pendant le 8e échantillon), soit 80 MHz pour 10 MS/s.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.srrc_coef_pkg.all;
 
 entity srrc_poly is
@@ -1487,7 +1515,9 @@ end architecture rtl;
 --   Débit : horloge = 8 × débit symbole (80 MHz pour 10 MS/s) ; le SRRC
 --           impose le rythme, le contrôle de flux remonte jusqu'à l'entrée TS
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity tx_backend is
@@ -1546,7 +1576,9 @@ end architecture rtl;
 --              (décalages arithmétiques). Un résultat par cycle et par passe,
 --              8 multiplieurs par passe ; 192 cycles par bloc.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity dct8x8_int is
     port (
@@ -1661,7 +1693,9 @@ end architecture rtl;
 --              par l'inverse m = floor(2²⁴ / 2D) + 1 tiré d'une table (63 × 31),
 --              puis correction d'une unité.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity quant_intra is
     port (
@@ -1777,7 +1811,9 @@ end architecture rtl;
 --   Principe : deux mémoires de bloc en alternance : un bloc se charge
 --              pendant que le précédent sort, un coefficient par cycle
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity zigzag is
     port (
@@ -1873,7 +1909,9 @@ end architecture rtl;
 --              échappement 000001 + run (6 bits) + niveau (12 bits, complément
 --              à 2) ; le code de fin de bloc « 10 » est accolé au dernier mot
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.vlc_tab_pkg.all;
 
 entity vlc_enc is
@@ -2033,7 +2071,9 @@ end architecture rtl;
 --   Principe : accumulateur de 64 bits ; un mot accepté si au plus 24 bits
 --              attendent ; un octet sort par cycle dès que 8 bits sont prêts
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity bit_packer is
     port (
@@ -2119,7 +2159,9 @@ end architecture rtl;
 --              macrobloc « 1 » (adresse) « 1 » (intra) et ses bits VLC, alignement.
 --              Après G_IMAGES images (0 = sans fin) : sequence_end_code.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity es_mux is
     generic (
@@ -2308,7 +2350,9 @@ end architecture rtl;
 --              +4 406 par créneau, +1 tous les 470/188 créneaux.
 --              PES : 00 00 01 E0, longueur, 84 80 05, PTS = 3 600·(n+1) + 9 000.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity ts_mux is
     generic (
@@ -2651,7 +2695,9 @@ end architecture rtl;
 --              ⌊T·j / N⌋ = ⌊T·s / G_ROWS⌋ tenu en cumul (quotient, reste) ;
 --              division par 2T en 5 pas (quotient ≤ 31).
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity rate_ctrl is
     generic (
@@ -2849,7 +2895,9 @@ end architecture rtl;
 --              Toutes les frontières sont paires : la chrominance d'un bloc
 --              2 × 2 est celle de son pixel haut-gauche.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.mire_pkg.all;
 
 entity mire_gen is
@@ -2965,7 +3013,9 @@ end architecture rtl;
 --                G_T : budget en bits par image (350 196 : 10 MS/s, FEC 1/2,
 --                95 % de vidéo, 25 images/s)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity video_enc is
     generic (
@@ -3029,7 +3079,9 @@ end architecture rtl;
 --              jusqu'au multiplexeur TS, qui émet ainsi un paquet par créneau
 --              de 13 056 cycles, comme dans le modèle temporel de JPEG2DVB
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity dvbs_tx is
@@ -3070,7 +3122,9 @@ end architecture rtl;
 --              symboles) : chaque grandeur est une somme de 13 constantes
 --              signées par les bits de la fenêtre.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 use work.sdm_coef_pkg.all;
 
@@ -3166,7 +3220,9 @@ end architecture rtl;
 --              sont préparés, puis choisis. Garde : si |xi| > 2¹⁵ en début de
 --              cycle, les états repartent de zéro (P ← In').
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 use work.sdm_coef_pkg.all;
 
@@ -3384,7 +3440,9 @@ end architecture rtl;
 --              groupe g quand le groupe g + 1 est prêt (son In sert à l'état
 --              suivant). Avant le premier symbole, la fenêtre vaut +1.
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
 
 entity sigma_delta is
@@ -3473,7 +3531,9 @@ end architecture rtl;
 --              qui suit un SAV de suppression (V = 1) ; rien n'est émis
 --              avant ce premier début de trame
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity bt656_rx is
     port (
@@ -3580,7 +3640,9 @@ end architecture rtl;
 --              début (esclave interrompu au milieu d'un octet), jusqu'à 9
 --              impulsions SCL avant le début
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity i2c_maitre is
     generic (
@@ -3743,8 +3805,10 @@ end architecture rtl;
 --               present : décodeur identifié (80h = 51h, 81h = 50h) ;
 --               video_ok : décodeur verrouillé (lignes et trames) sur
 --               l'entrée choisie, flux BT.656 exploitable ; entree : 0 =
---               AIP1A, 1 = AIP1B ; tenir rst à 1 tant que l'horloge
---               14,31818 MHz du décodeur (XTAL1) n'est pas stable
+--               AIP1A, 1 = AIP1B ; choix (même horloge) : 00 ou 11 = choix
+--               automatique, 01 = AIP1A imposée, 10 = AIP1B imposée ; tenir
+--               rst à 1 tant que l'horloge 14,31818 MHz du décodeur (XTAL1)
+--               n'est pas stable
 --   Principe : démarrage : RESETB à 0 pendant 20 ms (alimentations), 1 ms
 --              d'attente (200 µs minimum), lecture de l'identifiant ; absent :
 --              nouvel essai chaque seconde ; configuration : CFh ← 00h et
@@ -3758,11 +3822,15 @@ end architecture rtl;
 --              5 lectures verrouillées, entrée suivante après 25 lectures
 --              sans succès ; perte : video_ok tombe à la première lecture
 --              non verrouillée, retour sur AIP1A après 50 lectures (1 s)
---              sans 5 lectures verrouillées consécutives ; garde : une
+--              sans 5 lectures verrouillées consécutives ; entrée imposée :
+--              choisie dès la surveillance, jamais changée par le choix
+--              automatique ; garde : une
 --              transaction de plus de 10 ms remet le maître à zéro, le
 --              décodeur est réputé absent, puis identifié et reconfiguré
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity tvp_ctrl is
     generic (
@@ -3780,7 +3848,8 @@ entity tvp_ctrl is
         sda_i      : in  std_logic;
         present    : out std_logic;
         video_ok   : out std_logic;
-        entree     : out std_logic
+        entree     : out std_logic;
+        choix      : in  std_logic_vector(1 downto 0) := "00"
     );
 end entity tvp_ctrl;
 
@@ -3855,13 +3924,16 @@ begin
         procedure choisir(e : std_logic) is
         begin
             ent <= e;
+            vok <= '0';
             transaction('0', x"00", "000000" & e & '0', E_SEL);
         end procedure;
         variable verrou : boolean;
+        variable impose : boolean;                          -- entrée imposée par choix (01 : A, 10 : B)
     begin
         if rising_edge(clk) then
             go    <= '0';
             i_raz <= '0';
+            impose := choix = "01" or choix = "10";
             if scrut /= 0 then scrut <= scrut - 1; end if;
             if rst = '1' then
                 etat <= E_ALIM; tempo <= T_ALIM; resetb <= '0'; pres <= '0'; vok <= '0'; ent <= '0';
@@ -3910,7 +3982,11 @@ begin
                         pres <= '0'; vok <= '0';
                         if tempo = 0 then transaction('1', x"80", x"00", E_ID0); else tempo <= tempo - 1; end if;
                     when E_SURV =>
-                        if scrut = 0 then scrut <= T_SCRUT; transaction('1', x"88", x"00", E_LU88); end if;
+                        if impose and ent /= choix(1) then
+                            choisir(choix(1));
+                        elsif scrut = 0 then
+                            scrut <= T_SCRUT; transaction('1', x"88", x"00", E_LU88);
+                        end if;
                     when E_LU88 =>
                         verrou := i_ack = '1' and i_lu(2 downto 1) = "11";
                         etat <= E_SURV;
@@ -3922,7 +3998,10 @@ begin
                                     mode <= M_VERR; vok <= '1';
                                 else
                                     if verrou then n_ok <= n_ok + 1; else n_ok <= 0; end if;
-                                    if n_cpt = K_ACQ - 1 then choisir(not ent); else n_cpt <= n_cpt + 1; end if;
+                                    if n_cpt /= K_ACQ - 1 then n_cpt <= n_cpt + 1;
+                                    elsif impose then n_cpt <= 0;
+                                    else choisir(not ent);
+                                    end if;
                                 end if;
                             when M_VERR =>
                                 if not verrou then vok <= '0'; mode <= M_PERTE; n_cpt <= 1; n_ok <= 0; end if;
@@ -3931,7 +4010,10 @@ begin
                                     mode <= M_VERR; vok <= '1';
                                 else
                                     if verrou then n_ok <= n_ok + 1; else n_ok <= 0; end if;
-                                    if n_cpt = K_PERTE - 1 then choisir('0'); else n_cpt <= n_cpt + 1; end if;
+                                    if n_cpt /= K_PERTE - 1 then n_cpt <= n_cpt + 1;
+                                    elsif impose then n_cpt <= 0;
+                                    else choisir('0');
+                                    end if;
                                 end if;
                         end case;
                     when E_SEL =>
@@ -3940,4 +4022,360 @@ begin
             end if;
         end if;
     end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- dvbs_sd : émetteur de la mire animée aux bits sigma-delta : video_enc
+--   (étapes 01 à 08) → dispersion → RS(204,188) → entrelaceur → codeur
+--   convolutif → sigma_delta ; chaque bloc est vérifié au bit près par son
+--   banc (video, chaine, sdm)
+--   Interface : horloge 80 MHz (10 MS/s) ; sortie : 8 bits sigma-delta par
+--               cycle et par voie (m_i, m_q, bit 7 émis en premier), vers les
+--               sérialiseurs LVDS (640 Mbit/s)
+--   Principe : la sortie sigma-delta impose le rythme (un symbole par 8
+--              cycles) ; le contrôle de flux remonte jusqu'au multiplexeur TS ;
+--              bit du codeur à 1 → symbole −1 (bit de signe de qpsk_map),
+--              convention de l'entrée de sigma_delta
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.dvbs_pkg.all;
+
+entity dvbs_sd is
+    generic (
+        G_IMAGES : natural := 0;
+        G_FEC    : natural range 0 to 4 := 0
+    );
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_i     : out std_logic_vector(7 downto 0);
+        m_q     : out std_logic_vector(7 downto 0)
+    );
+end entity dvbs_sd;
+
+architecture rtl of dvbs_sd is
+    signal t_valid, t_ready, t_sop : std_logic;
+    signal t_data                  : octet_t;
+    signal p_valid, p_ready, p_sop : std_logic;
+    signal p_data                  : octet_t;
+    signal r_valid, r_ready, r_sop : std_logic;
+    signal r_data                  : octet_t;
+    signal e_valid, e_ready, e_sop : std_logic;
+    signal e_data                  : octet_t;
+    signal c_valid, c_ready        : std_logic;
+    signal c_data                  : std_logic_vector(1 downto 0);
+begin
+    u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(10_000_000, G_FEC, 95, 25))
+        port map (clk, rst, t_valid, t_ready, t_data, t_sop);
+    u_prbs : entity work.prbs_disp
+        port map (clk, rst, t_valid, t_ready, t_data, t_sop, p_valid, p_ready, p_data, p_sop);
+    u_rs : entity work.rs_enc
+        port map (clk, rst, p_valid, p_ready, p_data, p_sop, r_valid, r_ready, r_data, r_sop);
+    u_inter : entity work.interleaver
+        port map (clk, rst, r_valid, r_ready, r_data, r_sop, e_valid, e_ready, e_data, e_sop);
+    u_conv : entity work.conv_enc generic map (G_FEC => G_FEC)
+        port map (clk, rst, e_valid, e_ready, e_data, c_valid, c_ready, c_data);
+    u_sd : entity work.sigma_delta
+        port map (clk, rst, c_valid, c_ready, c_data(1), c_data(0), m_valid, m_ready, m_i, m_q);
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- regs_i2c : esclave I²C (adresse 7 bits G_ADR, 2Ah par défaut) et banc de
+--   registres de réglage, écrits par le microcontrôleur de la carte ;
+--   banc : tb_top
+--   Registres : 00h identifiant 4Ah (lecture seule) ; 01h version 01h
+--               (lecture seule) ; 02h MODE : bit 0 DVB-S2, bits 3..1 FEC
+--               (0 = 1/2 … 4 = 7/8), bit 4 débit 2,5 MS/s (sinon 10 MS/s),
+--               défaut 00h ; 03h ENTREE : bits 1..0 : 0 automatique, 1 AIP1A,
+--               2 AIP1B, 3 mire, défaut 00h ; 04h ETAT (lecture seule) :
+--               entrée etat ; autres adresses : lues 00h, écritures ignorées
+--   Protocole : écriture : S, adresse + 0, registre, données… (pointeur
+--               incrémenté après chaque octet), P ; lecture : S, adresse + 0,
+--               registre, Sr, adresse + 1, données… jusqu'au NACK, P
+--   Principe : SCL et SDA synchronisés et filtrés (3 échantillons égaux) ;
+--              SDA retardé de 4 cycles de plus que SCL (début et fin jamais
+--              confondus avec un bit, même sans temps de maintien) ; bits lus
+--              au front montant de SCL, SDA posé au front descendant ; pas
+--              d'étirement de SCL (SCL en entrée seule)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity regs_i2c is
+    generic (
+        G_ADR : std_logic_vector(6 downto 0) := "0101010"     -- 2Ah
+    );
+    port (
+        clk    : in  std_logic;
+        rst    : in  std_logic;
+        scl_i  : in  std_logic;
+        sda_i  : in  std_logic;
+        sda_oe : out std_logic;
+        etat   : in  std_logic_vector(7 downto 0);
+        mode   : out std_logic_vector(7 downto 0);
+        entree : out std_logic_vector(7 downto 0)
+    );
+end entity regs_i2c;
+
+architecture rtl of regs_i2c is
+    type st_t is (S_LIBRE, S_ADR, S_REG, S_ECR, S_LEC);
+    signal st          : st_t := S_LIBRE;
+    signal scl_s       : std_logic_vector(4 downto 0) := (others => '1');   -- 2 synchronisation + 3 filtre
+    signal sda_s       : std_logic_vector(8 downto 0) := (others => '1');   -- 2 + 4 de retard + 3 filtre
+    signal scl, sda    : std_logic := '1';                                  -- lignes filtrées
+    signal scl_d, sda_d : std_logic := '1';                                 -- valeurs filtrées précédentes
+    signal nb          : natural range 0 to 9 := 0;                         -- fronts montants dans l'octet
+    signal sh          : std_logic_vector(7 downto 0) := (others => '0');
+    signal tx          : std_logic_vector(7 downto 0) := (others => '0');
+    signal ptr         : unsigned(7 downto 0) := (others => '0');
+    signal m_ack, prem : std_logic := '0';
+    signal oe          : std_logic := '0';
+    signal r_mode      : std_logic_vector(7 downto 0) := x"00";
+    signal r_entree    : std_logic_vector(7 downto 0) := x"00";
+
+    -- lire : E : adresse, registres → S : octet lu
+    function lire(a : unsigned(7 downto 0); m, e, et : std_logic_vector(7 downto 0)) return std_logic_vector is
+    begin
+        case to_integer(a) is
+            when 0      => return x"4A";
+            when 1      => return x"01";
+            when 2      => return m;
+            when 3      => return e;
+            when 4      => return et;
+            when others => return x"00";
+        end case;
+    end function;
+begin
+    sda_oe <= oe;
+    mode   <= r_mode;
+    entree <= r_entree;
+
+    -- E : SCL, SDA, état → T : filtrage, début / fin, octets reçus et émis,
+    --   acquittements, registres → S : SDA tiré, registres
+    process (clk)
+        variable scl_m : std_logic;
+        variable b                   : std_logic_vector(7 downto 0);
+    begin
+        if rising_edge(clk) then
+            scl_s <= scl_s(3 downto 0) & scl_i;
+            sda_s <= sda_s(7 downto 0) & sda_i;
+            scl_d <= scl;
+            sda_d <= sda;
+            if scl_s(4 downto 2) = "111" then scl_m := '1'; elsif scl_s(4 downto 2) = "000" then scl_m := '0'; else scl_m := scl; end if;
+            scl <= scl_m;
+            if sda_s(8 downto 6) = "111" then sda <= '1'; elsif sda_s(8 downto 6) = "000" then sda <= '0'; end if;
+            if rst = '1' then
+                st <= S_LIBRE; oe <= '0'; nb <= 0; ptr <= (others => '0');
+                r_mode <= x"00"; r_entree <= x"00";
+            elsif scl = '1' and scl_d = '1' and sda_d = '1' and sda = '0' then
+                st <= S_ADR; nb <= 0; oe <= '0';                    -- début (ou début répété)
+            elsif scl = '1' and scl_d = '1' and sda_d = '0' and sda = '1' then
+                st <= S_LIBRE; oe <= '0';                           -- fin
+            elsif st /= S_LIBRE then
+                if scl_d = '0' and scl = '1' then
+                    -- front montant : bit reçu ou acquittement du maître
+                    if nb < 8 then sh <= sh(6 downto 0) & sda; end if;
+                    if nb = 8 then m_ack <= not sda; end if;
+                    nb <= nb + 1;
+                elsif scl_d = '1' and scl = '0' then
+                    -- front descendant : SDA pour la tranche suivante
+                    if nb = 8 then
+                        if st = S_LEC then
+                            oe <= '0';                              -- acquittement du maître
+                        else
+                            case st is
+                                when S_ADR =>
+                                    if sh(7 downto 1) = G_ADR then
+                                        oe <= '1';
+                                        if sh(0) = '1' then st <= S_LEC; prem <= '1'; else st <= S_REG; end if;
+                                    else
+                                        st <= S_LIBRE;
+                                    end if;
+                                when S_REG =>
+                                    ptr <= unsigned(sh); oe <= '1'; st <= S_ECR;
+                                when others =>
+                                    case to_integer(ptr) is
+                                        when 2      => r_mode   <= sh and x"1F";
+                                        when 3      => r_entree <= sh and x"03";
+                                        when others => null;
+                                    end case;
+                                    ptr <= ptr + 1; oe <= '1';
+                            end case;
+                        end if;
+                    elsif nb = 9 then
+                        nb <= 0; oe <= '0';
+                        if st = S_LEC then
+                            if prem = '1' or m_ack = '1' then
+                                b := lire(ptr, r_mode, r_entree, etat);
+                                tx <= b; oe <= not b(7); ptr <= ptr + 1; prem <= '0';
+                            else
+                                st <= S_LIBRE;                      -- NACK du maître : fin de lecture
+                            end if;
+                        end if;
+                    elsif st = S_LEC and nb >= 1 and nb <= 7 then
+                        oe <= not tx(7 - nb);
+                    end if;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- jpeg2dvb_top : entité de tête de la carte (MPF100T-FCG484I) ; banc : tb_top
+--   Horloges : oscillateur MEMS 50 MHz → horloges (PLL) : clk_sys 80 MHz,
+--              clk_hs 320 MHz (sérialiseurs), clk_tvp 14,31818 MHz (XTAL1 du
+--              décodeur) ; tvp_sclk 27 MHz (décodeur) pour bt656_rx
+--   Ports : osc_50 ; tvp_* : décodeur TVP5150AM1 (XTAL1, RESETB, PDN, bus
+--           I²C maître, SCLK, YOUT) ; mcu_scl, mcu_sda : bus I²C du
+--           microcontrôleur (FPGA esclave 2Ah, regs_i2c) ; sd_i_p/n, sd_q_p/n :
+--           sorties LVDS sigma-delta 640 Mbit/s ; led_pll, led_tvp, led_video :
+--           PLL verrouillés, décodeur présent, vidéo verrouillée (actives à 1)
+--   Principe : remise à zéro tenue tant que les PLL ne sont pas verrouillés,
+--              relâchée de façon synchrone (8 cycles) ; registre ENTREE →
+--              choix de tvp_ctrl (1 : AIP1A, 2 : AIP1B, 0 et 3 : automatique ;
+--              3 : mire imposée, réservé à la sélection de source du chantier
+--              3b) ; registre MODE rangé, branché aux chantiers FEC, débit et
+--              DVB-S2 ; source : mire animée (dvbs_sd, DVB-S, FEC 1/2, 10 MS/s) ;
+--              sigma-delta au repos (01010101) avant le premier symbole
+--   Paramètres : G_TVP_HZ : horloge vue par tvp_ctrl (80 MHz ; réduite en
+--                simulation pour raccourcir les délais du décodeur)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity jpeg2dvb_top is
+    generic (
+        G_TVP_HZ : positive := 80_000_000
+    );
+    port (
+        osc_50     : in    std_logic;
+        tvp_xtal1  : out   std_logic;
+        tvp_resetb : out   std_logic;
+        tvp_pdn    : out   std_logic;
+        tvp_scl    : inout std_logic;
+        tvp_sda    : inout std_logic;
+        tvp_sclk   : in    std_logic;
+        tvp_d      : in    std_logic_vector(7 downto 0);
+        mcu_scl    : in    std_logic;
+        mcu_sda    : inout std_logic;
+        sd_i_p     : out   std_logic;
+        sd_i_n     : out   std_logic;
+        sd_q_p     : out   std_logic;
+        sd_q_n     : out   std_logic;
+        led_pll    : out   std_logic;
+        led_tvp    : out   std_logic;
+        led_video  : out   std_logic
+    );
+end entity jpeg2dvb_top;
+
+architecture rtl of jpeg2dvb_top is
+    component horloges is
+        port (
+            osc_50  : in  std_logic;
+            clk_sys : out std_logic;
+            clk_hs  : out std_logic;
+            clk_tvp : out std_logic;
+            verrou  : out std_logic
+        );
+    end component;
+    component sortie_lvds is
+        port (
+            clk_sys : in  std_logic;
+            clk_hs  : in  std_logic;
+            rst     : in  std_logic;
+            d_i     : in  std_logic_vector(7 downto 0);
+            d_q     : in  std_logic_vector(7 downto 0);
+            i_p     : out std_logic;
+            i_n     : out std_logic;
+            q_p     : out std_logic;
+            q_n     : out std_logic
+        );
+    end component;
+
+    signal clk_sys, clk_hs, clk_tvp, verrou : std_logic;
+    signal raz_sys    : std_logic_vector(7 downto 0) := (others => '1');
+    signal raz_sclk   : std_logic_vector(2 downto 0) := (others => '1');
+    signal rst, rst_sclk : std_logic;
+    signal pll_s      : std_logic_vector(1 downto 0) := "00";
+    signal sd_valid   : std_logic;
+    signal sd_i, sd_q : std_logic_vector(7 downto 0);
+    signal s_i, s_q   : std_logic_vector(7 downto 0);
+    signal t_scl_oe, t_sda_oe, m_sda_oe : std_logic;
+    signal t_scl_i, t_sda_i, m_scl_i, m_sda_i : std_logic;
+    signal present, video_ok, entree   : std_logic;
+    signal r_mode, r_entree, etat      : std_logic_vector(7 downto 0);
+    signal choix      : std_logic_vector(1 downto 0);
+    signal mire_imposee : std_logic;
+    signal b_valid, b_trame, b_dt, b_sync : std_logic;
+    signal b_cb, b_y0, b_cr, b_y1 : std_logic_vector(7 downto 0);
+    signal b_ligne, b_x : unsigned(8 downto 0);
+begin
+    u_horl : horloges port map (osc_50, clk_sys, clk_hs, clk_tvp, verrou);
+    tvp_xtal1 <= clk_tvp;
+
+    -- remise à zéro : E : verrouillage des PLL → T : mise à 1 immédiate,
+    --   relâchement synchrone après 8 cycles → S : rst (clk_sys), rst_sclk
+    --   (tvp_sclk)
+    process (clk_sys, verrou)
+    begin
+        if verrou = '0' then
+            raz_sys <= (others => '1');
+        elsif rising_edge(clk_sys) then
+            raz_sys <= raz_sys(6 downto 0) & '0';
+        end if;
+    end process;
+    rst <= raz_sys(7);
+    process (tvp_sclk, rst)
+    begin
+        if rst = '1' then
+            raz_sclk <= (others => '1');
+        elsif rising_edge(tvp_sclk) then
+            raz_sclk <= raz_sclk(1 downto 0) & '0';
+        end if;
+    end process;
+    rst_sclk <= raz_sclk(2);
+
+    -- chaîne d'émission et sorties LVDS (repos 01010101 avant le premier symbole)
+    u_tx : entity work.dvbs_sd port map (clk_sys, rst, sd_valid, '1', sd_i, sd_q);
+    s_i <= sd_i when sd_valid = '1' else "01010101";
+    s_q <= sd_q when sd_valid = '1' else "01010101";
+    u_lvds : sortie_lvds port map (clk_sys, clk_hs, rst, s_i, s_q, sd_i_p, sd_i_n, sd_q_p, sd_q_n);
+
+    -- décodeur vidéo : pilotage I²C (drain ouvert) et réception BT.656
+    u_tvp : entity work.tvp_ctrl generic map (G_HZ => G_TVP_HZ, G_I2C_HZ => 100_000)
+        port map (clk_sys, rst, tvp_resetb, tvp_pdn, t_scl_oe, t_sda_oe, t_scl_i, t_sda_i,
+                  present, video_ok, entree, choix);
+    t_scl_i <= to_x01(tvp_scl);
+    t_sda_i <= to_x01(tvp_sda);
+    tvp_scl <= '0' when t_scl_oe = '1' else 'Z';
+    tvp_sda <= '0' when t_sda_oe = '1' else 'Z';
+    u_bt656 : entity work.bt656_rx
+        port map (tvp_sclk, rst_sclk, tvp_d, b_valid, b_cb, b_y0, b_cr, b_y1, b_trame, b_ligne, b_x, b_dt, b_sync);
+
+    -- registres du microcontrôleur
+    process (clk_sys)
+    begin
+        if rising_edge(clk_sys) then
+            pll_s <= pll_s(0) & verrou;
+        end if;
+    end process;
+    etat <= "0000" & entree & video_ok & present & pll_s(1);
+    u_regs : entity work.regs_i2c port map (clk_sys, rst, m_scl_i, m_sda_i, m_sda_oe, etat, r_mode, r_entree);
+    m_scl_i <= to_x01(mcu_scl);
+    m_sda_i <= to_x01(mcu_sda);
+    mcu_sda <= '0' when m_sda_oe = '1' else 'Z';
+    choix <= "01" when r_entree(1 downto 0) = "01" else
+             "10" when r_entree(1 downto 0) = "10" else "00";
+    mire_imposee <= '1' when r_entree(1 downto 0) = "11" else '0';
+
+    led_pll   <= pll_s(1);
+    led_tvp   <= present;
+    led_video <= video_ok;
 end architecture rtl;

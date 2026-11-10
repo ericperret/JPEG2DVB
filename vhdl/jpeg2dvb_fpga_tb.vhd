@@ -4,11 +4,11 @@
 --  Objet      : bancs de test GHDL : chaque banc lit les références de
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-04
---  Version    : 2.4
+--  Date       : 2026-11-10
+--  Version    : 2.6
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 16 unités, dans l'ordre d'analyse :
+--  Contenu    : 17 unités, dans l'ordre d'analyse :
 --               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
 --               tb_octets     modules à flux d'octets (09, 10, 11, TS)
 --               tb_conv       codeur convolutif, 5 taux
@@ -24,8 +24,9 @@
 --               tb_sdm        sortie sigma-delta
 --               tb_bt656      récepteur BT.656
 --               tb_tvp5150    modèle I²C du décodeur TVP5150AM1
---               tb_tvp        pilotage du TVP5150AM1 (3 scénarios)
---  Conventions: context jpeg2dvb_ctx (déclaré dans jpeg2dvb_fpga.vhd) ;
+--               tb_tvp        pilotage du TVP5150AM1 (4 scénarios)
+--               tb_top        entité de tête (registres I²C, LED, sorties LVDS)
+--  Conventions: clauses library / use explicites dans chaque unité ;
 --               trous aléatoires en entrée et en sortie de chaque module à
 --               contrôle de flux ;
 --               process commentés « E : entrées → T : traitement → S : sorties »
@@ -43,6 +44,9 @@
 --               2.4  2026-11-04  entrée vidéo PAL : tb_bt656 (bt656.bin),
 --                                tb_tvp5150, tb_tvp (fonctionnement, décodeur
 --                                absent, blocage du bus)
+--               2.5  2026-11-10  clauses library / use à la place du context
+--               2.6  2026-11-10  tb_tvp : scénario entrée imposée ; tb_top (entité
+--                                de tête, analyser aussi jpeg2dvb_ip_sim.vhd)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -50,7 +54,9 @@
 --   référence produits par JPEG2DVB, aléa reproductible pour
 --   éprouver le contrôle de flux (valid / ready)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 package tb_pkg is
     -- fichier binaire lu octet par octet
@@ -107,7 +113,9 @@ end package body tb_pkg;
 --   éprouver le contrôle de flux
 --   Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -231,7 +239,9 @@ end architecture sim;
 --   aux bits codés de l'étape 12 (I puis Q de chaque symbole,
 --   regroupés par octets, poids fort en tête)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -346,7 +356,9 @@ end architecture sim;
 --   codés de l'étape 12, sortie comparée aux symboles entiers I, Q
 --   (octets signés) de l'étape 13
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -440,7 +452,9 @@ end architecture sim;
 --   de l'étape 13, sortie comparée aux échantillons I/Q 16 bits
 --   (petit-boutiste, entrelacés) du fichier .cs16 de l'étape 14
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -540,7 +554,9 @@ end architecture sim;
 --   .cs16 de l'étape 14 ; sortie à plein débit (un échantillon
 --   par cycle demandé, comme vers le sigma-delta)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.dvbs_pkg.all;
 use work.tb_pkg.all;
@@ -646,7 +662,9 @@ end architecture sim;
 --                G_CODE (quant_intra) : code fixe 1 à 31, ou 0 : code de chaque
 --                rangée lu dans qcode.bin (rangée = coefficient / 8 448)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -776,7 +794,9 @@ end architecture sim;
 --   comparés bit à bit aux bits de l'étape 05, longueur de chaque
 --   macrobloc comparée à la référence
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -902,7 +922,9 @@ end architecture sim;
 --   octet au flux élémentaire de l'étape 06 (fin de séquence comprise) ;
 --   code de chaque slice lu dans qcode.bin, slice_ok = 1 (code toujours prêt)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1053,7 +1075,9 @@ end architecture sim;
 --   qcode.bin (étape 03) pour sa rangée, bits VLC de la rangée précédente
 --   tous comptés (vanne)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1226,7 +1250,9 @@ end architecture sim;
 --   images comparés à ceux de l'étape 01 (fpga_test/mire.png chargée,
 --   option « mobile »)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1310,7 +1336,9 @@ end architecture sim;
 --   G_DUT = 2 : dvbs_tx, échantillons I/Q comparés au .cs16 de
 --   l'étape 14
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1419,7 +1447,9 @@ end architecture sim;
 --   par cycle comparés à sd_iq.bin (fpga_test/sdm.js) ; contre-pression
 --   aléatoire en sortie
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1529,7 +1559,9 @@ end architecture sim;
 --   aucun couple ne doit sortir avant le premier début de trame ni après
 --   la dernière ligne active
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 use work.tb_pkg.all;
 
@@ -1633,7 +1665,9 @@ end architecture sim;
 --                l'adresse de lecture B9h de la première lecture passé 1,3 s,
 --                puis octet repris là où il était (SDA tenu à 0)
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 entity tb_tvp5150 is
     generic (
@@ -1905,8 +1939,13 @@ end architecture sim;
 --   Scénario G_ABS = 2 : verrouillé sur B, transaction bloquée à 1,3 s (SCL
 --   tenu 20 ms, puis SDA tenu à 0) → garde, décodeur réputé absent, bus
 --   libéré, nouvelle configuration, verrouillage sur B
+--   Scénario G_ABS = 3 : entrée imposée : A imposée, signal sur B seulement →
+--   pas de bascule ; à 1,3 s B imposée → verrouillage ; à 1,9 s retour au
+--   choix automatique → reste sur B
 --------------------------------------------------------------------------------
-context work.jpeg2dvb_ctx;
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use std.env.all;
 
 entity tb_tvp is
@@ -1922,6 +1961,7 @@ architecture sim of tb_tvp is
     signal scl_oe, sda_oe, scl_x, sda_x : std_logic;
     signal resetb, pdn, present, video_ok, entree : std_logic;
     signal src_a, src_b : natural := 0;
+    signal choix   : std_logic_vector(1 downto 0) := "00";
     signal n_err, n_sel, n_debut : natural;
 begin
     clk <= not clk after 250 ns;
@@ -1934,7 +1974,7 @@ begin
     sda_x <= to_x01(sda);
 
     dut : entity work.tvp_ctrl generic map (G_HZ => 2_000_000, G_I2C_HZ => 100_000)
-        port map (clk, rst, resetb, pdn, scl_oe, sda_oe, scl_x, sda_x, present, video_ok, entree);
+        port map (clk, rst, resetb, pdn, scl_oe, sda_oe, scl_x, sda_x, present, video_ok, entree, choix);
     modele : entity work.tb_tvp5150 generic map (G_ABS => G_ABS)
         port map (resetb, pdn, scl, sda, src_a, src_b, n_err, n_sel, n_debut);
 
@@ -1991,6 +2031,16 @@ begin
             voir(2500 ms, '0', '0', '0', "2,5 s (decodeur absent)");
             if n_debut /= 6 then report integer'image(n_debut) & " debuts au lieu de 6 (3 essais de lecture)" severity warning; err := err + 1; end if;
             verdict("tvp_abs", 0, "decodeur absent, present et video_ok a 0, identifiant relu chaque seconde");
+        elsif G_ABS = 3 then
+            choix <= "01"; src_b <= 1;
+            voir(1200 ms, '1', '0', '0', "1,2 s (A imposee, signal sur B seulement)");
+            wait for 1300 ms - now;
+            choix <= "10";
+            voir(1800 ms, '1', '1', '1', "1,8 s (B imposee, verrouille)");
+            wait for 1900 ms - now;
+            choix <= "00";
+            voir(2300 ms, '1', '1', '1', "2,3 s (retour au choix automatique, reste sur B)");
+            verdict("tvp_force", 2, "A imposee sans signal : pas de bascule ; B imposee : verrouillage ; retour en automatique sans changement");
         else
             src_b <= 1;
             voir(1200 ms, '1', '1', '1', "1,2 s (verrouille sur B)");
@@ -1998,6 +2048,204 @@ begin
             voir(2600 ms, '1', '0', '0', "2,6 s (bus libere, decodeur reconfigure, acquisition sur A)");
             voir(3600 ms, '1', '1', '1', "3,6 s (verrouille sur B)");
             verdict("tvp_bloc", 4, "SCL bloque 20 ms : garde, liberation du bus (SDA tenu a 0), nouvelle configuration, verrouillage sur B");
+        end if;
+        finish;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_top : banc de l'entité de tête jpeg2dvb_top avec les modèles de
+--   jpeg2dvb_ip_sim.vhd ; décodeur absent (bus I²C du décodeur au repos),
+--   tvp_ctrl à 2 MHz vus (délais du décodeur divisés par 40)
+--   Contrôles : LED PLL après verrouillage ; microcontrôleur (maître I²C
+--   1 MHz) : identifiant, version, valeurs par défaut, écriture et relecture
+--   de MODE et ENTREE (bits masqués), registres en lecture seule, ETAT (PLL
+--   verrouillés, décodeur absent), adresse étrangère non acquittée ; RESETB
+--   du décodeur relâché à 600 µs, LED décodeur éteinte ; sorties LVDS : chaque groupe
+--   de 8 bits relu en série (bit 7 en premier, voies I et Q, sorties
+--   complémentaires) égal au groupe présenté au sérialiseur, flux sigma-delta
+--   continu dès le premier symbole et non constant
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+
+entity tb_top is
+end entity tb_top;
+
+architecture sim of tb_top is
+    constant TQ : time := 250 ns;                       -- quart de période SCL (1 MHz)
+    constant ADR : std_logic_vector(6 downto 0) := "0101010";
+    signal osc, sclk : std_logic := '0';
+    signal tvp_scl, tvp_sda, mcu_sda : std_logic;
+    signal mcu_scl : std_logic := '1';
+    signal tvp_xtal1, tvp_resetb, tvp_pdn : std_logic;
+    signal sd_i_p, sd_i_n, sd_q_p, sd_q_n : std_logic;
+    signal led_pll, led_tvp, led_video : std_logic;
+    signal fin_i2c : boolean := false;
+    signal err_i2c : natural := 0;
+    signal n_grp, n_trou, n_ecart, n_var : natural := 0;
+begin
+    osc  <= not osc after 10 ns;
+    sclk <= not sclk after 18.5 ns;
+    tvp_scl <= 'H';
+    tvp_sda <= 'H';
+    mcu_sda <= 'H';
+
+    dut : entity work.jpeg2dvb_top generic map (G_TVP_HZ => 2_000_000)
+        port map (osc, tvp_xtal1, tvp_resetb, tvp_pdn, tvp_scl, tvp_sda, sclk, x"10", mcu_scl, mcu_sda,
+                  sd_i_p, sd_i_n, sd_q_p, sd_q_n, led_pll, led_tvp, led_video);
+
+    -- microcontrôleur : E : scénario → T : transactions I²C, comparaisons
+    --   → S : err_i2c, fin_i2c
+    mcu : process
+        variable err : natural := 0;
+        variable ok  : boolean;
+        variable v   : std_logic_vector(7 downto 0);
+        procedure bas is begin mcu_sda <= '0'; end procedure;
+        procedure haut is begin mcu_sda <= 'Z'; end procedure;
+        procedure debut is
+        begin
+            haut; wait for TQ; mcu_scl <= '1'; wait for TQ; bas; wait for TQ; mcu_scl <= '0'; wait for TQ;
+        end procedure;
+        procedure fin is
+        begin
+            bas; wait for TQ; mcu_scl <= '1'; wait for TQ; haut; wait for 2 * TQ;
+        end procedure;
+        -- emet : E : octet → T : 8 bits puis acquittement lu → S : ack
+        procedure emet(o : std_logic_vector(7 downto 0); ack : out boolean) is
+        begin
+            for i in 7 downto 0 loop
+                if o(i) = '0' then bas; else haut; end if;
+                wait for TQ; mcu_scl <= '1'; wait for 2 * TQ; mcu_scl <= '0'; wait for TQ;
+            end loop;
+            haut; wait for TQ; mcu_scl <= '1'; wait for TQ;
+            ack := to_x01(mcu_sda) = '0';
+            wait for TQ; mcu_scl <= '0'; wait for TQ;
+        end procedure;
+        -- recoit : E : dernier octet → T : 8 bits lus, ACK ou NACK → S : octet
+        procedure recoit(dernier : boolean; o : out std_logic_vector(7 downto 0)) is
+        begin
+            haut;
+            for i in 7 downto 0 loop
+                wait for TQ; mcu_scl <= '1'; wait for TQ;
+                o(i) := to_x01(mcu_sda);
+                wait for TQ; mcu_scl <= '0'; wait for TQ;
+            end loop;
+            if dernier then haut; else bas; end if;
+            wait for TQ; mcu_scl <= '1'; wait for 2 * TQ; mcu_scl <= '0'; wait for TQ;
+            haut;
+        end procedure;
+        procedure erreur(m : string) is
+        begin
+            report "tb_top : " & m severity warning;
+            err := err + 1;
+        end procedure;
+        procedure ecrire(r, d : std_logic_vector(7 downto 0)) is
+            variable a1, a2, a3 : boolean;
+        begin
+            debut; emet(ADR & '0', a1); emet(r, a2); emet(d, a3); fin;
+            if not (a1 and a2 and a3) then erreur("ecriture du registre " & to_hstring(r) & " non acquittee"); end if;
+        end procedure;
+        procedure lire(r : std_logic_vector(7 downto 0); n : positive; o : out std_logic_vector) is
+            variable a1, a2, a3 : boolean;
+            variable x          : std_logic_vector(7 downto 0);
+        begin
+            debut; emet(ADR & '0', a1); emet(r, a2);
+            debut; emet(ADR & '1', a3);
+            for k in 0 to n - 1 loop
+                recoit(k = n - 1, x);
+                o(o'left - 8 * k downto o'left - 8 * k - 7) := x;
+            end loop;
+            fin;
+            if not (a1 and a2 and a3) then erreur("lecture du registre " & to_hstring(r) & " non acquittee"); end if;
+        end procedure;
+        procedure attendu(r, att : std_logic_vector(7 downto 0); m : string) is
+            variable x : std_logic_vector(7 downto 0);
+        begin
+            lire(r, 1, x);
+            if x /= att then erreur(m & " : " & to_hstring(x) & " lu, " & to_hstring(att) & " attendu"); end if;
+        end procedure;
+        variable bloc : std_logic_vector(39 downto 0);
+    begin
+        wait for 15 us;
+        if led_pll /= '0' then erreur("LED PLL allumee avant verrouillage"); end if;
+        wait for 15 us;
+        if led_pll /= '1' then erreur("LED PLL eteinte apres verrouillage"); end if;
+        -- lecture groupée des 5 registres (pointeur incrémenté)
+        lire(x"00", 5, bloc);
+        if bloc /= x"4A01000001" then erreur("registres 00h a 04h : " & to_hstring(bloc) & " lu, 4A01000001 attendu"); end if;
+        ecrire(x"02", x"FF");
+        attendu(x"02", x"1F", "MODE apres ecriture FFh");
+        ecrire(x"03", x"FE");
+        attendu(x"03", x"02", "ENTREE apres ecriture FEh");
+        ecrire(x"00", x"55");
+        attendu(x"00", x"4A", "identifiant apres ecriture");
+        ecrire(x"04", x"FF");
+        attendu(x"04", x"01", "ETAT (PLL verrouilles, decodeur absent)");
+        -- écriture groupée (pointeur incrémenté) puis relecture
+        debut; emet(ADR & '0', ok); emet(x"02", ok); emet(x"05", ok); emet(x"01", ok); fin;
+        lire(x"02", 2, bloc(39 downto 24));
+        if bloc(39 downto 24) /= x"0501" then erreur("ecriture groupee 02h, 03h : " & to_hstring(bloc(39 downto 24)) & " lu, 0501 attendu"); end if;
+        -- adresse étrangère
+        debut; emet("0101011" & '0', ok); fin;
+        if ok then erreur("adresse 2Bh acquittee"); end if;
+        attendu(x"00", x"4A", "identifiant apres adresse etrangere");
+        if now < 600 us then wait for 600 us - now; end if;
+        if tvp_resetb /= '1' or tvp_pdn /= '1' then erreur("RESETB ou PDN du decodeur a 0 a 600 us"); end if;
+        if led_tvp /= '0' or led_video /= '0' then erreur("LED decodeur ou video allumee, decodeur absent"); end if;
+        err_i2c <= err;
+        fin_i2c <= true;
+        wait;
+    end process;
+
+    -- sorties LVDS : E : groupes présentés au sérialiseur (noms externes),
+    --   voies série → T : relecture au milieu de chaque bit → S : compteurs
+    lvds : process
+        alias clk_s is << signal .tb_top.dut.clk_sys : std_logic >>;
+        alias g_i   is << signal .tb_top.dut.s_i : std_logic_vector(7 downto 0) >>;
+        alias g_q   is << signal .tb_top.dut.s_q : std_logic_vector(7 downto 0) >>;
+        alias v     is << signal .tb_top.dut.sd_valid : std_logic >>;
+        alias r     is << signal .tb_top.dut.rst : std_logic >>;
+        variable a, b, ri, rq : std_logic_vector(7 downto 0);
+        variable vu, vi       : boolean := false;
+        variable prec         : std_logic_vector(7 downto 0) := x"55";
+    begin
+        wait until rising_edge(clk_s);
+        if r = '0' then
+            a := g_i; b := g_q;
+            if v = '1' then
+                vu := true;
+                if g_i /= prec then n_var <= n_var + 1; end if;
+                prec := g_i;
+            elsif vu then
+                n_trou <= n_trou + 1;
+            end if;
+            wait for 0.78 ns;
+            for k in 7 downto 0 loop
+                ri(k) := sd_i_p; rq(k) := sd_q_p;
+                if sd_i_n /= not sd_i_p or sd_q_n /= not sd_q_p then n_ecart <= n_ecart + 1; end if;
+                if k > 0 then wait for 1.5625 ns; end if;
+            end loop;
+            if ri /= a or rq /= b then
+                if n_ecart < 5 then report "groupe LVDS " & integer'image(n_grp) & " : " & to_hstring(ri) & "/" & to_hstring(rq) & " lu, " & to_hstring(a) & "/" & to_hstring(b) & " attendu" severity warning; end if;
+                n_ecart <= n_ecart + 1;
+            end if;
+            if vu then n_grp <= n_grp + 1; end if;
+        end if;
+    end process;
+
+    -- verdict : E : compteurs → S : OK / ECHEC
+    verdict : process
+    begin
+        wait until fin_i2c;
+        if err_i2c = 0 and n_ecart = 0 and n_trou = 0 and n_grp > 10_000 and n_var > 1_000 then
+            report "OK top : registres I2C (identifiant, defauts, masques, lecture seule, ETAT, ecriture et lecture groupees, adresse etrangere), LED, RESETB, "
+                   & integer'image(n_grp) & " groupes LVDS relus en serie sans ecart ni trou";
+        else
+            report "ECHEC top : " & integer'image(err_i2c) & " erreurs I2C, " & integer'image(n_ecart) & " ecarts LVDS, " & integer'image(n_trou) & " trous, "
+                   & integer'image(n_grp) & " groupes, " & integer'image(n_var) & " variations" severity error;
         end if;
         finish;
     end process;
