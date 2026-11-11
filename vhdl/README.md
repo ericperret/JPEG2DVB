@@ -2,7 +2,7 @@
   Name     : README.md
   Purpose  : FPGA port of JPEG2DVB (23 cm DVB-S transmitter), VHDL-2008
   Author   : Eric PERRET
-  Date     : 2026-11-10
+  Date     : 2026-11-11
   License  : CC BY-NC 4.0
 -->
 
@@ -18,21 +18,21 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 
 | Module | Function | JPEG2DVB step | Testbench | Status |
 |---|---|---|---|---|
-| `dct8x8_int` | Integer 8 × 8 DCT (2 passes, 8 multipliers per pass) | 02 (integer DCT) | `tb_bloc` | ✔ identical |
-| `quant_intra` | Intra quantisation, default matrix, exact division through a reciprocal table; scale code read with each coefficient (one code per row) | 03 | `tb_bloc` | ✔ per-row codes, codes 1 and 31 |
+| `dct8x8_int` | Integer 8 × 8 DCT: 2 passes, 4 multipliers per pass (coefficient symmetry), row pass while loading, intermediate results and output in memory | 02 (integer DCT) | `tb_bloc` | ✔ identical |
+| `quant_intra` | Intra quantisation, default matrix, exact division through reciprocals read from a synchronous ROM (2,048 × 26 bits), three stages; scale code read with each coefficient (one code per row) | 03 | `tb_bloc` | ✔ per-row codes, codes 1 and 31 |
 | `rate_ctrl` | TM5 rate control in integers: one quantiser_scale_code per macroblock row, row gate between DCT and quantisation, exact count of the VLC bits, 5-step division | 03 (TM5) | `tb_rc` | ✔ 54 codes, gate checked |
 | `zigzag` | Zigzag scan, two ping-pong banks | 04 | `tb_bloc` | ✔ identical |
 | `vlc_enc` + `vlc_tab_pkg` | MPEG-2 VLC: differential DC, B.14, escape, end of block | 05 | `tb_vlc` | ✔ bits and lengths |
 | `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices with their own scale code, sequence end | 06 | `tb_es` | ✔ 3 pictures |
-| `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets | 07, 08 | `tb_octets` | ✔ 976 packets |
+| `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets; scheduling and PTS by running sums, no multiplier | 07, 08 | `tb_octets` | ✔ 976 packets |
 | `prbs_disp` | Energy dispersal | 09 | `tb_octets` | ✔ identical |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identical |
-| `interleaver` | Forney interleaver I = 12, M = 17 | 11 | `tb_octets` | ✔ identical |
+| `interleaver` | Forney interleaver I = 12, M = 17, synchronous-read memory | 11 | `tb_octets` | ✔ identical |
 | `conv_enc` | Convolutional encoder K = 7, 171/133, puncturing 1/2 to 7/8 | 12 | `tb_conv` | ✔ all 5 rates |
 | `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identical |
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0.35, 8 phases × 13 16-bit coefficients, no multiplier | 14 (`.cs16`) | `tb_srrc` | ✔ 160,000 samples |
 | `tx_backend` | Back-end chain: TS → I/Q (steps 09 to 14 assembled) | 08 → 14 | `tb_backend` | ✔ 160,000 samples, one per clock |
-| `mire_gen` + `mire_pkg` | Animated 16-colour test pattern, moving square and counter, 4:2:0 macroblocks | 01 (`fpga_test/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
+| `mire_gen` + `mire_pkg` | Animated 16-colour test pattern computed from its geometry (no image memory), moving square and counter, 4:2:0 macroblocks | 01 (`fpga_test/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
 | `video_enc` | Front end: test pattern → DCT → TM5 rate control → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 TS packets |
 | `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
 | `bt656_rx` | BT.656 receiver for the TVP5150AM1 decoder: SAV / EAV codes, field, line, Cb Y Cr Y pairs, 27 MHz SCLK clock | PAL input | `tb_bt656` | ✔ 414,720 pairs (4 fields, colour and black and white) |
@@ -148,13 +148,28 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 
 - Clock: 80 MHz = 8 × symbol rate (10 MS/s). One 1,504-bit TS slot lasts exactly 13,056 clocks.
 - The SRRC filter outputs one sample per clock; once the stream is running the back end follows without gaps (1,136 start-up clocks, including the interleaver memory clear).
-- DCT: 192 clocks per block (26.7 million coefficients per second at 80 MHz, 15.6 million needed for 720 × 576 at 25 pictures/s).
+- DCT: about 140 clocks per block (36.6 million coefficients per second at 80 MHz, 15.6 million needed for 720 × 576 at 25 pictures/s).
+
+## Area (MPF050T target)
+
+Reductions of 2026-11-11, all bit-identical to the references:
+
+| Module | Before | After |
+|---|---|---|
+| `sdm3`, `sd_entree` | 25-bit comparators, 24-bit registers and candidates | thresholds and corrections are multiples of FS: high-order bits only (15-bit comparators, 14-bit `Pk` and candidates), 17-, 20- and 22-bit states, 16-bit input contributions |
+| `quant_intra` | combinational reciprocal table (1,984 × 25 bits), 22 × 24 and 22 × 14 products | synchronous ROM, 17 × 14 and 13 × 13 products |
+| `dct8x8_int` | 16 multipliers, 1,664 data flip-flops | 8 multipliers, 414 flip-flops, 64 × 18 and 64 × 12 memories |
+| `ts_mux` | four products per slot, 32-bit counters | running differences; no more wrap of the slot counter (8 days) or of the PTS at 2²¹ pictures |
+| `interleaver` | asynchronous memory read | synchronous read |
+| `mire_gen` | image of 101,376 4-bit words | colour computed by comparisons |
+
+To check in the Libero resource report: `quant_intra` 3 LSRAM (ROM), `interleaver` 1 LSRAM, `dct8x8_int` memories in µSRAM. `quant_intra` assumes |F| ≤ 4,095 (the DCT gives |F| ≤ 2,040).
 
 ## To do
 
 1. ✔ Done (2026-10-19): TM5 rate control in integer arithmetic, in JPEG2DVB page 03 (specification item P7), then in VHDL (`rate_ctrl`), bit for bit.
 2. Sigma-delta output (item P3): ✔ third-order 1-bit modulator and interpolation (`sd_entree`, `sdm3`, `sigma_delta`, `sdm` testbench); ✔ LVDS serialisers (PF_IOD, top level), to be validated in Libero.
-3. LSRAM mapping: synchronous read of the interleaver memory (1,122 bytes); pipelining of long paths (quantisation, VLC) after the first Libero synthesis.
+3. LSRAM mapping: ✔ synchronous read of the interleaver memory (1,122 bytes) and three-stage quantisation (2026-11-11); remaining: inferences to check in Libero, pipelining of the VLC.
 4. 720 × 576 PAL video input: ✔ 3a, TVP5150AM1 control and BT.656 reception (2026-11-04); 3b, crossing to the 80 MHz clock, merging both fields, 4:2:0 macroblock formatting; 720 × 576 mode of the chain (45 macroblocks per slice) at 10 MS/s.
 5. DVB-S2 QPSK 1/4, normal frames, pilots, CCM, alongside DVB-S, selected by a DIP switch.
 6. ✔ Board top-level entity (2026-11-10); remaining: pin assignment with the PCB, wiring of the MODE register (FEC, symbol rate, DVB-S2 at run time).
@@ -172,6 +187,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-10-19 | TM5 rate control bit for bit in VHDL: testbenches adapted (per-row codes, per-slice codes, `slice_ok`), new `tb_rc` testbench, `run_tests.sh` 1.2; 23 testbenches OK, 11 modules synthesisable without latches |
 | 2026-11-04 | PAL video input, work item 3a: `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 without a microcontroller); `bt656.js`, `tb_bt656` and `tb_tvp` testbenches (`tb_tvp5150` I²C model, standard-mode timing); `run_tests.sh` 1.5; 28 testbenches OK, 16 modules synthesisable without latches |
 | 2026-11-10 | Libero: explicit `library` / `use` clauses instead of the VHDL-2008 `context`, interleaver pointers without initial value (Synplify MF682); first error-free synthesis of `dvbs_tx`. Top level (work item 6): `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (I²C slave 2Ah), forced input in `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc`; `tvp_force` and `top` testbenches; `run_tests.sh` 1.6 |
+| 2026-11-11 | Area reduction for the MPF050T, output bit-identical (`jpeg2dvb_fpga.vhd` 2.6 to 2.11): `sdm3` and `sd_entree` on the useful bits, `quant_intra` with a synchronous ROM, `dct8x8_int` with 4 multipliers per pass and memories, `ts_mux` without multipliers, `interleaver` with synchronous read, computed test pattern (`mire.js` 1.2, `fusion.js` 1.1) |
 
 ## License
 

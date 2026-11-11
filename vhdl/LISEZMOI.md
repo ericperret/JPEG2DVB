@@ -2,7 +2,7 @@
   Nom      : LISEZMOI.md
   Objet    : portage FPGA de JPEG2DVB (émetteur DVB-S 23 cm), VHDL-2008
   Auteur   : Eric PERRET
-  Date     : 2026-11-10
+  Date     : 2026-11-11
   Licence  : CC BY-NC 4.0
 -->
 
@@ -18,21 +18,21 @@ VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid`
 
 | Module | Fonction | Étape JPEG2DVB | Banc | État |
 |---|---|---|---|---|
-| `dct8x8_int` | DCT 8 × 8 entière (2 passes, 8 multiplieurs par passe) | 02 (DCT entière) | `tb_bloc` | ✔ identique |
-| `quant_intra` | Quantification intra, matrice par défaut, division exacte par table d'inverses ; code d'échelle lu avec chaque coefficient (un code par rangée) | 03 | `tb_bloc` | ✔ codes par rangée, codes 1 et 31 |
+| `dct8x8_int` | DCT 8 × 8 entière : 2 passes, 4 multiplieurs par passe (symétrie des coefficients), passe lignes pendant le chargement, résultats intermédiaires et sortie en mémoire | 02 (DCT entière) | `tb_bloc` | ✔ identique |
+| `quant_intra` | Quantification intra, matrice par défaut, division exacte par inverses lus dans une mémoire morte synchrone (2 048 × 26 bits), trois étages ; code d'échelle lu avec chaque coefficient (un code par rangée) | 03 | `tb_bloc` | ✔ codes par rangée, codes 1 et 31 |
 | `rate_ctrl` | Régulation de débit TM5 en entiers : un quantiser_scale_code par rangée de macroblocs, vanne de rangée entre la DCT et la quantification, comptage exact des bits VLC, division en 5 pas | 03 (TM5) | `tb_rc` | ✔ 54 codes, vanne contrôlée |
 | `zigzag` | Balayage zigzag, deux bancs en alternance | 04 | `tb_bloc` | ✔ identique |
 | `vlc_enc` + `vlc_tab_pkg` | VLC MPEG-2 : DC différentiel, B.14, échappement, fin de bloc | 05 | `tb_vlc` | ✔ bits et longueurs |
 | `es_mux` + `bit_packer` | Flux élémentaire : en-têtes, GOP de 12, slices avec leur code d'échelle, fin de séquence | 06 | `tb_es` | ✔ 3 images |
-| `ts_mux` | PES (PTS) et Transport Stream à débit constant : PAT/PMT 80 ms, PCR 30 ms, paquets nuls | 07, 08 | `tb_octets` | ✔ 976 paquets |
+| `ts_mux` | PES (PTS) et Transport Stream à débit constant : PAT/PMT 80 ms, PCR 30 ms, paquets nuls ; ordonnancement et PTS en cumul, sans multiplieur | 07, 08 | `tb_octets` | ✔ 976 paquets |
 | `prbs_disp` | Dispersion d'énergie | 09 | `tb_octets` | ✔ identique |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identique |
-| `interleaver` | Entrelaceur de Forney I = 12, M = 17 | 11 | `tb_octets` | ✔ identique |
+| `interleaver` | Entrelaceur de Forney I = 12, M = 17, mémoire à lecture synchrone | 11 | `tb_octets` | ✔ identique |
 | `conv_enc` | Codeur convolutif K = 7, 171/133, poinçonnage 1/2 à 7/8 | 12 | `tb_conv` | ✔ les 5 taux |
 | `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identique |
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0,35, 8 phases × 13 coefficients 16 bits, sans multiplieur | 14 (`.cs16`) | `tb_srrc` | ✔ 160 000 échantillons |
 | `tx_backend` | Chaîne arrière : TS → I/Q (09 à 14 assemblées) | 08 → 14 | `tb_backend` | ✔ 160 000 échantillons, un par cycle |
-| `mire_gen` + `mire_pkg` | Mire animée 16 couleurs, carré mobile et compteur, macroblocs 4:2:0 | 01 (`fpga_test/mire.png`, option mobile) | `tb_mire` | ✔ 2 images |
+| `mire_gen` + `mire_pkg` | Mire animée 16 couleurs calculée depuis sa géométrie (sans mémoire d'image), carré mobile et compteur, macroblocs 4:2:0 | 01 (`fpga_test/mire.png`, option mobile) | `tb_mire` | ✔ 2 images |
 | `video_enc` | Tête de chaîne : mire → DCT → régulation TM5 → quantification → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 paquets TS |
 | `dvbs_tx` | Émetteur complet : mire → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160 000 échantillons |
 | `bt656_rx` | Récepteur BT.656 du décodeur TVP5150AM1 : codes SAV / EAV, trame, ligne, couples Cb Y Cr Y, horloge SCLK 27 MHz | entrée PAL | `tb_bt656` | ✔ 414 720 couples (4 trames, couleur et noir et blanc) |
@@ -148,13 +148,28 @@ Le dossier `fpga_test/` contient les outils de test (`run_tests.sh`, scripts Nod
 
 - Horloge : 80 MHz = 8 × débit symbole (10 MS/s). Un créneau TS de 1 504 bits dure exactement 13 056 cycles.
 - Le filtre SRRC sort un échantillon par cycle ; la chaîne arrière suit sans trou une fois le flux établi (1 136 cycles d'amorçage, dont la mise à zéro de l'entrelaceur).
-- DCT : 192 cycles par bloc (26,7 millions de coefficients par seconde à 80 MHz, pour 15,6 millions nécessaires en 720 × 576 à 25 images/s).
+- DCT : environ 140 cycles par bloc (36,6 millions de coefficients par seconde à 80 MHz, pour 15,6 millions nécessaires en 720 × 576 à 25 images/s).
+
+## Surface (cible MPF050T)
+
+Réductions du 2026-11-11, toutes identiques au bit près aux références :
+
+| Module | Avant | Après |
+|---|---|---|
+| `sdm3`, `sd_entree` | comparateurs de 25 bits, registres et candidats de 24 bits | seuils et corrections multiples de FS : poids forts seuls (comparateurs de 15 bits, `Pk` et candidats de 14 bits), états de 17, 20 et 22 bits, apports de 16 bits |
+| `quant_intra` | table d'inverses combinatoire (1 984 × 25 bits), produits 22 × 24 et 22 × 14 | mémoire morte synchrone, produits 17 × 14 et 13 × 13 |
+| `dct8x8_int` | 16 multiplieurs, 1 664 bascules de données | 8 multiplieurs, 414 bascules, mémoires 64 × 18 et 64 × 12 |
+| `ts_mux` | quatre produits par créneau, compteurs de 32 bits | écarts tenus en cumul ; plus de rebouclage du compteur de créneaux (8 jours) ni du PTS à 2²¹ images |
+| `interleaver` | lecture asynchrone de la mémoire | lecture synchrone |
+| `mire_gen` | image de 101 376 mots de 4 bits | couleur calculée par comparaisons |
+
+À contrôler dans le rapport de ressources Libero : `quant_intra` 3 LSRAM (mémoire morte), `interleaver` 1 LSRAM, `dct8x8_int` mémoires en µSRAM. `quant_intra` suppose |F| ≤ 4 095 (la DCT donne |F| ≤ 2 040).
 
 ## Reste à faire
 
 1. ✔ Fait (2026-10-19) : régulation de débit TM5 en arithmétique entière, dans la page 03 de JPEG2DVB (point P7 du cahier des charges), puis en VHDL (`rate_ctrl`), au bit près.
 2. Sortie sigma-delta (point P3) : ✔ modulateur 1 bit d'ordre 3 et interpolation (`sd_entree`, `sdm3`, `sigma_delta`, banc `sdm`) ; ✔ sérialiseurs LVDS (PF_IOD, entité de tête), à valider dans Libero.
-3. Mise en mémoire LSRAM : lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) ; découpage en étages des chemins longs (quantification, VLC) après la première synthèse Libero.
+3. Mise en mémoire LSRAM : ✔ lecture synchrone de la mémoire de l'entrelaceur (1 122 octets) et quantification en trois étages (2026-11-11) ; reste : inférences à contrôler dans Libero, découpage en étages du VLC.
 4. Entrée vidéo PAL 720 × 576 : ✔ 3a, pilotage du TVP5150AM1 et réception BT.656 (2026-11-04) ; 3b, passage vers l'horloge 80 MHz, réunion des deux trames, mise en macroblocs 4:2:0 ; mode 720 × 576 de la chaîne (45 macroblocs par slice) à 10 MS/s.
 5. DVB-S2 QPSK 1/4, trames longues, pilotes, CCM, à côté de DVB-S, choix par interrupteur DIP.
 6. ✔ Entité de tête de la carte (2026-11-10) ; reste : brochage avec le PCB, branchement du registre MODE (FEC, débit, DVB-S2 en marche).
@@ -172,6 +187,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-10-19 | Régulation TM5 au bit près en VHDL : bancs adaptés (codes par rangée, codes par slice, `slice_ok`), nouveau banc `tb_rc`, `run_tests.sh` 1.2 ; 23 bancs OK, 11 modules synthétisables sans verrou |
 | 2026-11-04 | Entrée vidéo PAL, chantier 3a : `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 sans microcontrôleur) ; `bt656.js`, bancs `tb_bt656` et `tb_tvp` (modèle I²C `tb_tvp5150`, chronologie du mode standard) ; `run_tests.sh` 1.5 ; 28 bancs OK, 16 modules synthétisables sans verrou |
 | 2026-11-10 | Libero : clauses `library` / `use` à la place du `context` VHDL-2008, pointeurs de l'entrelaceur sans valeur initiale (Synplify MF682) ; première synthèse de `dvbs_tx` sans erreur. Entité de tête (chantier 6) : `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (esclave I²C 2Ah), entrée imposée dans `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc` ; bancs `tvp_force` et `top` ; `run_tests.sh` 1.6 |
+| 2026-11-11 | Réduction de surface pour le MPF050T, sortie inchangée au bit près (`jpeg2dvb_fpga.vhd` 2.6 à 2.11) : `sdm3` et `sd_entree` sur les bits utiles, `quant_intra` en mémoire morte synchrone, `dct8x8_int` à 4 multiplieurs par passe et mémoires, `ts_mux` sans multiplieur, `interleaver` en lecture synchrone, mire calculée (`mire.js` 1.2, `fusion.js` 1.1) |
 
 ## Licence
 
