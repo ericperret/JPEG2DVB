@@ -3,14 +3,15 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
-  Date       : 2026-11-04
-  Version    : 1.4
+  Date       : 2026-11-11
+  Version    : 1.5
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
                1.2  2026-10-19  sdm.js et sd_iq.bin : référence de la sortie sigma-delta
                1.3  2026-10-19  sdm.js 2.0 : entrée par les symboles QPSK, SRRC à 640 MS/s par tables
                1.4  2026-11-04  entrée vidéo PAL : bt656.js, bt656.bin, bt656_ref.bin ; bancs tvp
+               1.5  2026-11-11  mire.js 1.2 (paquetage sans image), fusion.js 1.1
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -25,10 +26,10 @@ Le VHDL est dans `../vhdl/` : `jpeg2dvb_fpga.vhd` (modules) et `jpeg2dvb_fpga_tb
 | `refs.js` | Extrait les références de la chaîne arrière (étapes 08 à 14) d'un dossier de sorties JPEG2DVB ; réécrit le paquetage `srrc_coef_pkg` |
 | `refs_video.js` | Extrait les références vidéo (étapes 01 à 08) d'un dossier de sorties JPEG2DVB : DCT entière, régulation TM5 |
 | `gen_vlc.js` | Lit les tables VLC de `page05-rle-huffman.html` et réécrit le paquetage `vlc_tab_pkg` |
-| `mire.js` | Dessine la mire 16 couleurs : `mire.png` (entrée de la page 01) et paquetage `mire_pkg` |
+| `mire.js` | Dessine la mire 16 couleurs : `mire.png` (entrée de la page 01) et paquetage `mire_pkg` (géométrie, fonction `mire_idx`, palette ; sans image) ; contrôle que `mire_idx` redonne l'image |
 | `sdm.js` | Référence de la sortie sigma-delta (cahier des charges § 5.4) : symboles de `qpsk.bin` → SRRC à 640 MS/s par tables → sigma-delta 1 bit d'ordre 3 par voie à 640 Mbit/s ; vérifie que la formulation par anticipation du VHDL donne le même flux que la boucle pas à pas ; écrit `sd_iq.bin`, réécrit le paquetage `sdm_coef_pkg` et affiche le contrôle spectral. `node sdm.js` ou `node sdm.js ENTREE.bin N SORTIE.bin` |
 | `bt656.js` | Référence du récepteur `bt656_rx` : flux BT.656 PAL 625 lignes tel que le sort le TVP5150AM1 (image 720 × 576 : mire doublée, ligne marquée dans les 8 premiers pixels ; une image en couleur, une en noir et blanc), entrée au milieu d'une ligne de suppression, et couples attendus ; écrit `bt656.bin` et `bt656_ref.bin`. `node bt656.js` |
-| `fusion.js` | Module commun aux trois générateurs : met un paquetage généré au format du fichier fusionné et le remplace entre ses balises `-- >>>` / `-- <<<` |
+| `fusion.js` | Module commun aux trois générateurs : met un paquetage généré au format du fichier fusionné et le remplace entre ses balises `-- >>>` / `-- <<<` ; les clauses `library` / `use` sont conservées |
 
 Ces outils ne servent que si une page JPEG2DVB change : les références doivent alors suivre la page.
 

@@ -4,15 +4,17 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : mise en forme commune des unités VHDL rangées dans
                vhdl/jpeg2dvb_fpga.vhd : cartouche d'unité réduit à un bloc de
-               description, clauses ieee remplacées par le context commun ;
+               description, clauses library / use ieee conservées ;
                réécriture d'un paquetage généré entre ses balises
   Auteur     : Eric PERRET
-  Date       : 2026-10-19
-  Version    : 1.0
+  Date       : 2026-11-11
+  Version    : 1.1
   Plateforme : Node.js (aucune dépendance)
   Licence    : CC BY-NC 4.0
   Usage      : module, utilisé par refs.js, gen_vlc.js et mire.js
   Historique : 1.0  2026-10-19  création
+               1.1  2026-11-11  clauses library / use ieee conservées (le context
+                     jpeg2dvb_ctx a été retiré du fichier VHDL en 2.4)
 ================================================================================
 */
 'use strict';
@@ -20,7 +22,6 @@ const fs = require('fs'), path = require('path');
 
 const CARTOUCHE = /^--={10,}\n([\s\S]*?)\n--={10,}\n/;
 const EXCLUS = ['Nom', 'Projet', 'Auteur', 'Date', 'Version', 'Plateforme', 'Licence', 'Historique', 'Contenu'];
-const IEEE = /library ieee;\n(use ieee\.[a-z_0-9]+\.all;\n)+/;
 
 /* lireCartouche — E : texte d'une unité → T : découpe les champs « --  Clé : valeur »
    et leurs lignes de suite → S : { champs : [[clé, [lignes]]], reste } ou null */
@@ -37,11 +38,11 @@ function lireCartouche(t) {
 }
 
 /* normaliser — E : texte complet d'une unité (cartouche, clauses, code) →
-   T : bloc de description (objet, interface, principe, paramètres), context
-   commun → S : { texte, nom, objet, historique } */
+   T : bloc de description (objet, interface, principe, paramètres), clauses
+   ieee inchangées → S : { texte, nom, objet, historique } */
 function normaliser(t) {
     const c = lireCartouche(t);
-    if (!c) { return { texte: t.replace(IEEE, 'context work.jpeg2dvb_ctx;\n'), nom: '', objet: '', historique: [] }; }
+    if (!c) { return { texte: t, nom: '', objet: '', historique: [] }; }
     const champ = k => (c.champs.find(x => x[0] === k) || [k, ['']])[1];
     const nom = champ('Nom')[0].replace('.vhd', '').trim();
     const L = '-'.repeat(80);
@@ -52,7 +53,7 @@ function normaliser(t) {
     }
     b += L + '\n';
     const historique = champ('Historique').map(l => l.trim()).filter(l => l);
-    return { texte: b + c.reste.replace(IEEE, 'context work.jpeg2dvb_ctx;\n'), nom, objet: champ('Objet').join(' ').replace(/\s+/g, ' '), historique };
+    return { texte: b + c.reste, nom, objet: champ('Objet').join(' ').replace(/\s+/g, ' '), historique };
 }
 
 /* section — E : nom du fichier d'origine (ex. mire_pkg.vhd), texte généré →
