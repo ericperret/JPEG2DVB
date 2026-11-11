@@ -6,8 +6,8 @@
 #               GHDL ; chaque banc compare la sortie de son module, au bit près,
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
-#  Date       : 2026-11-10
-#  Version    : 1.6
+#  Date       : 2026-11-11
+#  Version    : 1.8
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -24,6 +24,9 @@
 #                                bt656_rx, tvp_ctrl au contrôle de synthèse
 #               1.6  2026-11-10  entité de tête : jpeg2dvb_ip_sim.vhd analysé, bancs
 #                                tvp_force et top ; regs_i2c, dvbs_sd au contrôle de synthèse
+#               1.7  2026-11-11  banc csa (embrouillage DVB-CSA) ; csa_enc au contrôle de
+#                                synthèse
+#               1.8  2026-11-11  banc mcpc (multiplexeur à deux programmes)
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -59,6 +62,8 @@ vlc|tb_vlc|
 es|tb_es|-gG_N_OUT=115224
 rc|tb_rc|
 ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=115224 -gG_N_OUT=183488 -gG_PKT=188
+mcpc|tb_octets|-gG_DUT=6 -gG_IN=es.bin -gG_OUT=ts_mcpc.bin -gG_N_IN=115224 -gG_IN2=es2.bin -gG_N_IN2=28433 -gG_N_OUT=357200 -gG_PKT=188
+csa|tb_octets|-gG_DUT=5 -gG_IN=csa_in.bin -gG_OUT=ts_csa.bin -gG_N_IN=33276 -gG_N_OUT=33276 -gG_PKT=188 -gG_DELAI=40
 mire|tb_mire|
 video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
 emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000
@@ -82,7 +87,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx tvp_ctrl regs_i2c dvbs_sd; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux csa_enc rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx tvp_ctrl regs_i2c dvbs_sd; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else
