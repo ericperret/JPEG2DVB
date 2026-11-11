@@ -7,7 +7,7 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-11
---  Version    : 2.7
+--  Version    : 2.8
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 32 unités, dans l'ordre d'analyse :
@@ -88,6 +88,10 @@
 --                                (2 048 mots de 26 bits, LSRAM) au lieu d'une table
 --                                combinatoire, division sur 17 × 14 bits, trois
 --                                étages ; sortie inchangée au bit près
+--               2.8  2026-11-11  dct8x8_int : symétrie des coefficients (4 multiplieurs
+--                                par passe), passe lignes pendant le chargement,
+--                                R' et F en mémoire (64 × 18, 64 × 12) au lieu de
+--                                1 664 bascules ; sortie inchangée au bit près
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1584,8 +1588,19 @@ end architecture rtl;
 --   Principe : Ci[k][n] = round(4096 · c(k)/2 · cos((2n+1)kπ/16)), 13 bits ;
 --              passe lignes R'[y][u] = (Σx Ci[u][x]·f[y][x] + 32) >> 6 ;
 --              passe colonnes F[v][u] = (Σy Ci[v][y]·R'[y][u] + 2¹⁷) >> 18
---              (décalages arithmétiques). Un résultat par cycle et par passe,
---              8 multiplieurs par passe ; 192 cycles par bloc.
+--              (décalages arithmétiques).
+--              Symétrie Ci[k][7 − n] = (−1)^k · Ci[k][n] : chaque somme porte sur
+--              4 produits Ci[k][n] · (a(n) ± a(7 − n)), + si k pair, − si k impair
+--              (4 multiplieurs par passe, même résultat entier).
+--   Étages : lignes : les 8 pixels d'une ligne reçus, leurs sommes et
+--            différences sont figées ; les 8 R' de la ligne sont écrits en
+--            mémoire pendant que la ligne suivante se charge ;
+--            colonnes : la colonne u de R' est lue (8 cycles), sommes et
+--            différences figées, les 8 F[v][u] écrits dans le tampon de sortie
+--            pendant la lecture de la colonne suivante ;
+--            sortie : tampon lu en ordre naturel, pendant le chargement du bloc
+--            suivant. |F| ≤ 2 040 : tampon de 12 bits.
+--   Débit : environ 140 cycles par bloc en régime continu (192 auparavant).
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -1605,88 +1620,198 @@ entity dct8x8_int is
 end entity dct8x8_int;
 
 architecture rtl of dct8x8_int is
-    type ci_t is array (0 to 7, 0 to 7) of integer range -2048 to 2047;
+    -- moitié gauche de Ci (n = 0 à 3) ; Ci[k][7 − n] = (−1)^k · Ci[k][n]
+    type ci_t is array (0 to 7, 0 to 3) of integer range -2048 to 2047;
     constant CI : ci_t := (
-        (1448,  1448,  1448,  1448,  1448,  1448,  1448,  1448),
-        (2009,  1703,  1138,   400,  -400, -1138, -1703, -2009),
-        (1892,   784,  -784, -1892, -1892,  -784,   784,  1892),
-        (1703,  -400, -2009, -1138,  1138,  2009,   400, -1703),
-        (1448, -1448, -1448,  1448,  1448, -1448, -1448,  1448),
-        (1138, -2009,   400,  1703, -1703,  -400,  2009, -1138),
-        ( 784, -1892,  1892,  -784,  -784,  1892, -1892,   784),
-        ( 400, -1138,  1703, -2009,  2009, -1703,  1138,  -400));
+        (1448,  1448,  1448,  1448),
+        (2009,  1703,  1138,   400),
+        (1892,   784,  -784, -1892),
+        (1703,  -400, -2009, -1138),
+        (1448, -1448, -1448,  1448),
+        (1138, -2009,   400,  1703),
+        ( 784, -1892,  1892,  -784),
+        ( 400, -1138,  1703, -2009));
 
-    type pix_t  is array (0 to 63) of unsigned(7 downto 0);
-    type rang_t is array (0 to 63) of signed(17 downto 0);       -- R' sur 18 bits signés
-    signal blk : pix_t;
-    signal rr  : rang_t;
-    type etat_t is (CHARGE, LIGNES, COLONNES);
-    signal etat    : etat_t := CHARGE;
-    signal idx     : natural range 0 to 63 := 0;
-    signal o_valid : std_logic := '0';
-    signal libre   : std_logic;
+    -- passe lignes
+    type pix7_t is array (0 to 6) of unsigned(7 downto 0);
+    type opl_t  is array (0 to 3) of signed(9 downto 0);
+    signal lig      : pix7_t;                              -- pixels 0 à 6 de la ligne en cours
+    signal l_s, l_d : opl_t;                               -- f(x) + f(7 − x), f(x) − f(7 − x)
+    signal xi, yi   : natural range 0 to 7 := 0;
+    signal charge   : std_logic := '1';                    -- le bloc se charge
+    signal l_act    : std_logic := '0';
+    signal l_u, l_y : natural range 0 to 7 := 0;
+    -- R' en mémoire (adresse 8y + u)
+    type rr_t is array (0 to 63) of signed(17 downto 0);
+    signal rr       : rr_t;
+    signal rr_plein : std_logic := '0';                    -- R' complet, à lire
+    -- passe colonnes
+    type col7_t is array (0 to 6) of signed(17 downto 0);
+    type opc_t  is array (0 to 3) of signed(18 downto 0);
+    signal c_occ    : std_logic := '0';                    -- passe colonnes en cours
+    signal c_act    : std_logic := '0';                    -- lecture de R' en cours
+    signal c_u, c_y : natural range 0 to 7 := 0;
+    signal q_valid  : std_logic := '0';
+    signal q_u, q_y : natural range 0 to 7 := 0;
+    signal rq       : signed(17 downto 0);                 -- R' lu
+    signal col      : col7_t;                              -- R'[0..6][u] de la colonne en cours
+    signal k_s, k_d : opc_t;                               -- R'(y) + R'(7 − y), R'(y) − R'(7 − y)
+    signal k_act    : std_logic := '0';
+    signal k_v, k_u : natural range 0 to 7 := 0;
+    -- tampon de sortie (adresse 8v + u)
+    type fb_t is array (0 to 63) of signed(11 downto 0);
+    signal fb       : fb_t;
+    signal f_plein  : std_logic := '0';
+    signal lec      : natural range 0 to 63 := 0;
+    signal o_valid  : std_logic := '0';
+    signal libre    : std_logic;
 begin
     libre   <= (not o_valid) or m_ready;
-    s_ready <= '1' when etat = CHARGE and rst = '0' else '0';
+    s_ready <= charge and not rst;
     m_valid <= o_valid;
 
-    -- E : pixels 0..255 par blocs de 64 → T : passe lignes (Σ + 32) >> 6, passe
-    --   colonnes (Σ + 2¹⁷) >> 18, coefficients Ci sur 13 bits → S :
-    --   coefficients F[v][u]
+    -- E : pixels 0..255 par blocs de 64 → T : passe lignes (Σ + 32) >> 6 au fil
+    --   du chargement, passe colonnes (Σ + 2¹⁷) >> 18 colonne par colonne,
+    --   coefficients Ci sur 13 bits → S : coefficients F[v][u] en ordre naturel
     process (clk)
-        variable y, u, v : natural range 0 to 7;
-        variable acc     : signed(35 downto 0);
+        variable tl   : signed(9 downto 0);
+        variable accl : signed(24 downto 0);
+        variable tc   : signed(18 downto 0);
+        variable accc : signed(33 downto 0);
+        variable p7   : signed(9 downto 0);
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                etat    <= CHARGE;
-                idx     <= 0;
-                o_valid <= '0';
+                xi <= 0; yi <= 0; charge <= '1'; l_act <= '0'; rr_plein <= '0';
+                c_occ <= '0'; c_act <= '0'; q_valid <= '0'; k_act <= '0';
+                f_plein <= '0'; lec <= 0; o_valid <= '0';
             else
+                ----------------------------------------------------------------
+                -- passe lignes : R'[l_y][l_u], un par cycle
+                ----------------------------------------------------------------
+                if l_act = '1' then
+                    accl := to_signed(32, 25);
+                    for i in 0 to 3 loop
+                        if l_u mod 2 = 0 then tl := l_s(i); else tl := l_d(i); end if;
+                        accl := accl + resize(to_signed(CI(l_u, i), 13) * tl, 25);
+                    end loop;
+                    rr(l_y * 8 + l_u) <= resize(shift_right(accl, 6), 18);
+                    if l_u = 7 then
+                        l_act <= '0';
+                        if l_y = 7 then
+                            rr_plein <= '1';
+                        end if;
+                    else
+                        l_u <= l_u + 1;
+                    end if;
+                end if;
+                ----------------------------------------------------------------
+                -- chargement : au huitième pixel, sommes et différences de la ligne
+                ----------------------------------------------------------------
+                if s_valid = '1' and charge = '1' then
+                    if xi < 7 then
+                        lig <= lig(1 to 6) & s_data;
+                        xi  <= xi + 1;
+                    else
+                        p7 := signed(resize(s_data, 10));
+                        l_s(0) <= signed(resize(lig(0), 10)) + p7;
+                        l_d(0) <= signed(resize(lig(0), 10)) - p7;
+                        for i in 1 to 3 loop
+                            l_s(i) <= signed(resize(lig(i), 10)) + signed(resize(lig(7 - i), 10));
+                            l_d(i) <= signed(resize(lig(i), 10)) - signed(resize(lig(7 - i), 10));
+                        end loop;
+                        l_act <= '1';
+                        l_u   <= 0;
+                        l_y   <= yi;
+                        xi    <= 0;
+                        if yi = 7 then
+                            yi     <= 0;
+                            charge <= '0';
+                        else
+                            yi <= yi + 1;
+                        end if;
+                    end if;
+                end if;
+
+                ----------------------------------------------------------------
+                -- passe colonnes : F[k_v][k_u], un par cycle, vers le tampon
+                ----------------------------------------------------------------
+                if k_act = '1' then
+                    accc := to_signed(131072, 34);
+                    for i in 0 to 3 loop
+                        if k_v mod 2 = 0 then tc := k_s(i); else tc := k_d(i); end if;
+                        accc := accc + resize(to_signed(CI(k_v, i), 13) * tc, 34);
+                    end loop;
+                    fb(k_v * 8 + k_u) <= resize(shift_right(accc, 18), 12);
+                    if k_v = 7 then
+                        k_act <= '0';
+                        if k_u = 7 then
+                            f_plein <= '1';
+                            c_occ   <= '0';
+                        end if;
+                    else
+                        k_v <= k_v + 1;
+                    end if;
+                end if;
+                -- R' lu : colonne rangée, puis sommes et différences au huitième
+                if q_valid = '1' then
+                    if q_y < 7 then
+                        col <= col(1 to 6) & rq;
+                    else
+                        k_s(0) <= resize(col(0), 19) + resize(rq, 19);
+                        k_d(0) <= resize(col(0), 19) - resize(rq, 19);
+                        for i in 1 to 3 loop
+                            k_s(i) <= resize(col(i), 19) + resize(col(7 - i), 19);
+                            k_d(i) <= resize(col(i), 19) - resize(col(7 - i), 19);
+                        end loop;
+                        k_act <= '1';
+                        k_v   <= 0;
+                        k_u   <= q_u;
+                    end if;
+                end if;
+                -- lecture de R' colonne par colonne ; la dernière adresse émise,
+                --   le bloc suivant peut se charger
+                q_valid <= c_act;
+                q_u     <= c_u;
+                q_y     <= c_y;
+                rq      <= rr(c_y * 8 + c_u);
+                if c_act = '1' then
+                    if c_y = 7 then
+                        c_y <= 0;
+                        if c_u = 7 then
+                            c_u      <= 0;
+                            c_act    <= '0';
+                            rr_plein <= '0';
+                            charge   <= '1';
+                        else
+                            c_u <= c_u + 1;
+                        end if;
+                    else
+                        c_y <= c_y + 1;
+                    end if;
+                elsif rr_plein = '1' and c_occ = '0' and f_plein = '0' then
+                    c_act <= '1';
+                    c_occ <= '1';
+                    c_u   <= 0;
+                    c_y   <= 0;
+                end if;
+
+                ----------------------------------------------------------------
+                -- sortie : tampon en ordre naturel
+                ----------------------------------------------------------------
                 if libre = '1' then
                     o_valid <= '0';
-                end if;
-                case etat is
-                    when CHARGE =>
-                        if s_valid = '1' then
-                            blk(idx) <= s_data;
-                            if idx = 63 then
-                                idx  <= 0;
-                                etat <= LIGNES;
-                            else
-                                idx <= idx + 1;
-                            end if;
-                        end if;
-                    when LIGNES =>
-                        y := idx / 8; u := idx mod 8;
-                        acc := (others => '0');
-                        for x in 0 to 7 loop
-                            acc := acc + to_signed(CI(u, x), 13) * signed('0' & blk(y * 8 + x));
-                        end loop;
-                        rr(idx) <= resize(shift_right(acc + 32, 6), 18);
-                        if idx = 63 then
-                            idx  <= 0;
-                            etat <= COLONNES;
+                    if f_plein = '1' then
+                        m_data  <= resize(fb(lec), 16);
+                        o_valid <= '1';
+                        if lec = 63 then
+                            lec     <= 0;
+                            f_plein <= '0';
                         else
-                            idx <= idx + 1;
+                            lec <= lec + 1;
                         end if;
-                    when COLONNES =>
-                        if libre = '1' then
-                            v := idx / 8; u := idx mod 8;
-                            acc := (others => '0');
-                            for yy in 0 to 7 loop
-                                acc := acc + resize(to_signed(CI(v, yy), 13) * rr(yy * 8 + u), 36);
-                            end loop;
-                            m_data  <= resize(shift_right(acc + 131072, 18), 16);
-                            o_valid <= '1';
-                            if idx = 63 then
-                                idx  <= 0;
-                                etat <= CHARGE;
-                            else
-                                idx <= idx + 1;
-                            end if;
-                        end if;
-                end case;
+                    end if;
+                end if;
             end if;
         end if;
     end process;
