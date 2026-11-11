@@ -25,6 +25,7 @@ VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid`
 | `vlc_enc` + `vlc_tab_pkg` | VLC MPEG-2 : DC différentiel, B.14, échappement, fin de bloc | 05 | `tb_vlc` | ✔ bits et longueurs |
 | `es_mux` + `bit_packer` | Flux élémentaire : en-têtes, GOP de 12, slices avec leur code d'échelle, fin de séquence | 06 | `tb_es` | ✔ 3 images |
 | `ts_mux` | PES (PTS) et Transport Stream à débit constant : PAT/PMT 80 ms, PCR 30 ms, paquets nuls ; ordonnancement et PTS en cumul, sans multiplieur | 07, 08 | `tb_octets` | ✔ 976 paquets |
+| `csa_enc` + `csa_tab_pkg` | Embrouillage DVB-CSA des paquets d'un PID, clé fixe (BISS-1) : chiffrement par blocs en chaîne depuis la fin du paquet, puis chiffrement de flux ; module seul, pas encore dans la chaîne | — (`fpga_test/csa.js`) | `tb_octets` | ✔ 177 paquets, cas limites |
 | `prbs_disp` | Dispersion d'énergie | 09 | `tb_octets` | ✔ identique |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identique |
 | `interleaver` | Entrelaceur de Forney I = 12, M = 17, mémoire à lecture synchrone | 11 | `tb_octets` | ✔ identique |
@@ -173,6 +174,7 @@ Réductions du 2026-11-11, toutes identiques au bit près aux références :
 4. Entrée vidéo PAL 720 × 576 : ✔ 3a, pilotage du TVP5150AM1 et réception BT.656 (2026-11-04) ; 3b, passage vers l'horloge 80 MHz, réunion des deux trames, mise en macroblocs 4:2:0 ; mode 720 × 576 de la chaîne (45 macroblocs par slice) à 10 MS/s.
 5. DVB-S2 QPSK 1/4, trames longues, pilotes, CCM, à côté de DVB-S, choix par interrupteur DIP.
 6. ✔ Entité de tête de la carte (2026-11-10) ; reste : brochage avec le PCB, branchement du registre MODE (FEC, débit, DVB-S2 en marche).
+7. Embrouillage de la vidéo (BISS-1) : ✔ module `csa_enc` (2026-11-11) ; reste : insertion entre `ts_mux` et la dispersion d'énergie, identifiant 0000 à 9999 tiré à la mise sous tension et clé qui en découle, programme 2 en clair (mire fixe et identifiant), image noire sur le programme 1 sans caméra.
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -188,6 +190,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-11-04 | Entrée vidéo PAL, chantier 3a : `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 sans microcontrôleur) ; `bt656.js`, bancs `tb_bt656` et `tb_tvp` (modèle I²C `tb_tvp5150`, chronologie du mode standard) ; `run_tests.sh` 1.5 ; 28 bancs OK, 16 modules synthétisables sans verrou |
 | 2026-11-10 | Libero : clauses `library` / `use` à la place du `context` VHDL-2008, pointeurs de l'entrelaceur sans valeur initiale (Synplify MF682) ; première synthèse de `dvbs_tx` sans erreur. Entité de tête (chantier 6) : `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (esclave I²C 2Ah), entrée imposée dans `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc` ; bancs `tvp_force` et `top` ; `run_tests.sh` 1.6 |
 | 2026-11-11 | Réduction de surface pour le MPF050T, sortie inchangée au bit près (`jpeg2dvb_fpga.vhd` 2.6 à 2.11) : `sdm3` et `sd_entree` sur les bits utiles, `quant_intra` en mémoire morte synchrone, `dct8x8_int` à 4 multiplieurs par passe et mémoires, `ts_mux` sans multiplieur, `interleaver` en lecture synchrone, mire calculée (`mire.js` 1.2, `fusion.js` 1.1) |
+| 2026-11-11 | Embrouillage DVB-CSA à clé fixe (BISS-1) : `csa_enc`, `csa_tab_pkg`, référence `csa.js` (autotest sur deux vecteurs publics), banc `csa` ; `jpeg2dvb_fpga.vhd` 2.12, `jpeg2dvb_fpga_tb.vhd` 2.7, `run_tests.sh` 1.7 |
 
 ## Licence
 

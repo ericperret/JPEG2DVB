@@ -25,6 +25,7 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `vlc_enc` + `vlc_tab_pkg` | MPEG-2 VLC: differential DC, B.14, escape, end of block | 05 | `tb_vlc` | ✔ bits and lengths |
 | `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices with their own scale code, sequence end | 06 | `tb_es` | ✔ 3 pictures |
 | `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets; scheduling and PTS by running sums, no multiplier | 07, 08 | `tb_octets` | ✔ 976 packets |
+| `csa_enc` + `csa_tab_pkg` | DVB-CSA scrambling of the packets of one PID, fixed key (BISS-1): chained block cipher from the end of the packet, then stream cipher; stand-alone module, not yet in the chain | — (`fpga_test/csa.js`) | `tb_octets` | ✔ 177 packets, boundary cases |
 | `prbs_disp` | Energy dispersal | 09 | `tb_octets` | ✔ identical |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identical |
 | `interleaver` | Forney interleaver I = 12, M = 17, synchronous-read memory | 11 | `tb_octets` | ✔ identical |
@@ -173,6 +174,7 @@ To check in the Libero resource report: `quant_intra` 3 LSRAM (ROM), `interleave
 4. 720 × 576 PAL video input: ✔ 3a, TVP5150AM1 control and BT.656 reception (2026-11-04); 3b, crossing to the 80 MHz clock, merging both fields, 4:2:0 macroblock formatting; 720 × 576 mode of the chain (45 macroblocks per slice) at 10 MS/s.
 5. DVB-S2 QPSK 1/4, normal frames, pilots, CCM, alongside DVB-S, selected by a DIP switch.
 6. ✔ Board top-level entity (2026-11-10); remaining: pin assignment with the PCB, wiring of the MODE register (FEC, symbol rate, DVB-S2 at run time).
+7. Video scrambling (BISS-1): ✔ `csa_enc` module (2026-11-11); remaining: insertion between `ts_mux` and energy dispersal, identifier 0000 to 9999 drawn at power-up and the key derived from it, programme 2 in clear (fixed test pattern and identifier), black picture on programme 1 without a camera.
 
 Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
@@ -188,6 +190,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-11-04 | PAL video input, work item 3a: `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 without a microcontroller); `bt656.js`, `tb_bt656` and `tb_tvp` testbenches (`tb_tvp5150` I²C model, standard-mode timing); `run_tests.sh` 1.5; 28 testbenches OK, 16 modules synthesisable without latches |
 | 2026-11-10 | Libero: explicit `library` / `use` clauses instead of the VHDL-2008 `context`, interleaver pointers without initial value (Synplify MF682); first error-free synthesis of `dvbs_tx`. Top level (work item 6): `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (I²C slave 2Ah), forced input in `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc`; `tvp_force` and `top` testbenches; `run_tests.sh` 1.6 |
 | 2026-11-11 | Area reduction for the MPF050T, output bit-identical (`jpeg2dvb_fpga.vhd` 2.6 to 2.11): `sdm3` and `sd_entree` on the useful bits, `quant_intra` with a synchronous ROM, `dct8x8_int` with 4 multipliers per pass and memories, `ts_mux` without multipliers, `interleaver` with synchronous read, computed test pattern (`mire.js` 1.2, `fusion.js` 1.1) |
+| 2026-11-11 | Fixed-key DVB-CSA scrambling (BISS-1): `csa_enc`, `csa_tab_pkg`, `csa.js` reference (self-test on two public vectors), `csa` testbench; `jpeg2dvb_fpga.vhd` 2.12, `jpeg2dvb_fpga_tb.vhd` 2.7, `run_tests.sh` 1.7 |
 
 ## License
 

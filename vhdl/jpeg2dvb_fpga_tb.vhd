@@ -4,13 +4,13 @@
 --  Objet      : bancs de test GHDL : chaque banc lit les références de
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-10
---  Version    : 2.6
+--  Date       : 2026-11-11
+--  Version    : 2.8
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 17 unités, dans l'ordre d'analyse :
 --               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
---               tb_octets     modules à flux d'octets (09, 10, 11, TS)
+--               tb_octets     modules à flux d'octets (09, 10, 11, TS, embrouillage)
 --               tb_conv       codeur convolutif, 5 taux
 --               tb_qpsk       QPSK
 --               tb_srrc       filtre SRRC
@@ -47,6 +47,10 @@
 --               2.5  2026-11-10  clauses library / use à la place du context
 --               2.6  2026-11-10  tb_tvp : scénario entrée imposée ; tb_top (entité
 --                                de tête, analyser aussi jpeg2dvb_ip_sim.vhd)
+--               2.7  2026-11-11  tb_octets : embrouillage DVB-CSA (G_DUT = 5, mot de
+--                                contrôle G_CW), délai réglable (G_DELAI)
+--               2.8  2026-11-11  tb_octets : multiplexeur à deux programmes (G_DUT = 6,
+--                                canal 2 lu dans G_IN2)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -111,7 +115,10 @@ end package body tb_pkg;
 --   JPEG2DVB, sortie comparée octet par octet au fichier de l'étape
 --   suivante ; trous aléatoires côté entrée et côté sortie pour
 --   éprouver le contrôle de flux
---   Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux
+--   Paramètres : G_DUT 1 = prbs_disp, 2 = rs_enc, 3 = interleaver, 4 = ts_mux,
+--                5 = csa_enc (mot de contrôle G_CW, octet 0 en poids faible),
+--                6 = ts_mux à deux programmes (canal 2 : G_IN2, G_N_IN2 octets) ;
+--                G_DELAI : délai de garde en cycles par octet attendu
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -128,7 +135,11 @@ entity tb_octets is
         G_N_IN   : natural := 12032;
         G_N_OUT  : natural := 12032;
         G_PKT    : natural := 188;          -- longueur des paquets en entrée (repère s_sop)
-        G_ALEA   : boolean := true
+        G_ALEA   : boolean := true;
+        G_CW     : std_logic_vector(63 downto 0) := x"8A214821B1482148";
+        G_IN2    : string  := "es2.bin";
+        G_N_IN2  : natural := 0;
+        G_DELAI  : natural := 20
     );
 end entity tb_octets;
 
@@ -143,6 +154,9 @@ architecture sim of tb_octets is
     signal m_ready : std_logic := '1';
     signal m_data  : octet_t;
     signal m_sop   : std_logic;
+    signal s2_valid : std_logic := '0';
+    signal s2_ready : std_logic;
+    signal s2_data  : octet_t := (others => '0');
 begin
     clk <= not clk after 5 ns;
 
@@ -154,7 +168,43 @@ begin
         dut : entity work.interleaver port map (clk, rst, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_data, m_sop);
     elsif G_DUT = 4 generate
         dut : entity work.ts_mux port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data, m_sop);
+    elsif G_DUT = 5 generate
+        dut : entity work.csa_enc port map (clk, rst, '1', G_CW, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_data, m_sop);
+    elsif G_DUT = 6 generate
+        dut : entity work.ts_mux generic map (G_MCPC => true, G_AB2 => 15)
+            port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data, m_sop, s2_valid, s2_ready, s2_data);
     end generate;
+
+    -- source du canal 2 : octets du second fichier d'entrée (G_DUT = 6)
+    source2 : process
+        file f      : octets_f;
+        variable c  : character;
+        variable r  : std_logic_vector(15 downto 0) := x"5A17";
+    begin
+        if G_N_IN2 = 0 then
+            wait;
+        end if;
+        file_open(f, REF & G_IN2, read_mode);
+        wait until rising_edge(clk) and rst = '0';
+        for k in 0 to G_N_IN2 - 1 loop
+            read(f, c);
+            if G_ALEA then
+                r := alea(r);
+                if r(0) = '1' and r(1) = '1' then
+                    s2_valid <= '0';
+                    wait until rising_edge(clk);
+                end if;
+            end if;
+            s2_data  <= octet(c);
+            s2_valid <= '1';
+            loop
+                wait until rising_edge(clk);
+                exit when s2_ready = '1';
+            end loop;
+        end loop;
+        s2_valid <= '0';
+        wait;
+    end process;
 
     -- source : octets du fichier d'entrée
     source : process
@@ -225,7 +275,7 @@ begin
                     finish;
                 end if;
             end if;
-            if cycles > 20 * G_N_OUT + 10000 then
+            if cycles > G_DELAI * G_N_OUT + 10000 then
                 report "ECHEC " & G_OUT & " : delai depasse, " & integer'image(n) & " octets recus" severity error;
                 finish;
             end if;

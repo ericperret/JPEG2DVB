@@ -7,15 +7,16 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-11
---  Version    : 2.11
+--  Version    : 2.13
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 32 unités, dans l'ordre d'analyse :
+--  Contenu    : 34 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
 --               mire_pkg      géométrie et palette de la mire (généré par mire.js)
 --               vlc_tab_pkg   tables VLC B.12 à B.14 (généré par gen_vlc.js)
+--               csa_tab_pkg   tables de l'embrouillage DVB-CSA (généré par csa.js)
 --               prbs_disp     dispersion d'énergie (étape 09)
 --               rs_enc        Reed-Solomon (204,188) (étape 10)
 --               interleaver   entrelaceur de Forney I = 12 (étape 11)
@@ -30,6 +31,7 @@
 --               bit_packer    mots de longueur variable → octets
 --               es_mux        flux élémentaire (étape 06)
 --               ts_mux        PES et Transport Stream (étapes 07, 08)
+--               csa_enc       embrouillage DVB-CSA d'un PID, clé fixe (BISS-1)
 --               rate_ctrl     régulation de débit TM5 (étape 03)
 --               mire_gen      mire animée (étape 01)
 --               video_enc     tête de chaîne, mire → TS (01 à 08)
@@ -102,6 +104,11 @@
 --               2.11 2026-11-11  mire : image de 101 376 mots retirée ; mire_pkg 1.2
 --                                décrit la mire par sa géométrie (mire_idx), mire_gen
 --                                calcule la couleur par comparaisons ; sortie inchangée
+--               2.12 2026-11-11  embrouillage DVB-CSA (BISS-1) : csa_tab_pkg, csa_enc
+--                                (module seul, pas encore dans la chaîne)
+--               2.13 2026-11-11  ts_mux à deux programmes (MCPC, G_MCPC) : canal 2 sur
+--                                s2_*, PAT à 2 programmes, PMT 2 (0x0200), vidéo 0x0201 ;
+--                                à un programme (défaut), sortie inchangée
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -759,6 +766,95 @@ package body vlc_tab_pkg is
     end function;
 end package body vlc_tab_pkg;
 -- <<< vlc_tab_pkg.vhd
+
+-- >>> csa_tab_pkg.vhd
+--------------------------------------------------------------------------------
+-- csa_tab_pkg : tables de l'embrouillage DVB-CSA, en forme directe :
+--   boîte S et permutations du chiffrement par blocs, permutation
+--   de la clé, sélections de bits et boîtes du chiffrement de flux
+--   (fichier généré par fpga_test/csa.js)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+package csa_tab_pkg is
+    -- chiffrement par blocs : boîte S ; le bit i de sa sortie va en CSA_BPERM(i)
+    type csa_sbox_t is array (0 to 255) of std_logic_vector(7 downto 0);
+    constant CSA_SBOX : csa_sbox_t := (
+        x"3A", x"EA", x"68", x"FE", x"33", x"E9", x"88", x"1A", x"83", x"CF", x"E1", x"7F", x"BA", x"E2", x"38", x"12",
+        x"E8", x"27", x"61", x"95", x"0C", x"36", x"E5", x"70", x"A2", x"06", x"82", x"7C", x"17", x"A3", x"26", x"49",
+        x"BE", x"7A", x"6D", x"47", x"C1", x"51", x"8F", x"F3", x"CC", x"5B", x"67", x"BD", x"CD", x"18", x"08", x"C9",
+        x"FF", x"69", x"EF", x"03", x"4E", x"48", x"4A", x"84", x"3F", x"B4", x"10", x"04", x"DC", x"F5", x"5C", x"C6",
+        x"16", x"AB", x"AC", x"4C", x"F1", x"6A", x"2F", x"3C", x"3B", x"D4", x"D5", x"94", x"D0", x"C4", x"63", x"62",
+        x"71", x"A1", x"F9", x"4F", x"2E", x"AA", x"C5", x"56", x"E3", x"39", x"93", x"CE", x"65", x"64", x"E4", x"58",
+        x"6C", x"19", x"42", x"79", x"DD", x"EE", x"96", x"F6", x"8A", x"EC", x"1E", x"85", x"53", x"45", x"DE", x"BB",
+        x"7E", x"0A", x"9A", x"13", x"2A", x"9D", x"C2", x"5E", x"5A", x"1F", x"32", x"35", x"9C", x"A8", x"73", x"30",
+        x"29", x"3D", x"E7", x"92", x"87", x"1B", x"2B", x"4B", x"A5", x"57", x"97", x"40", x"15", x"E6", x"BC", x"0E",
+        x"EB", x"C3", x"34", x"2D", x"B8", x"44", x"25", x"A4", x"1C", x"C7", x"23", x"ED", x"90", x"6E", x"50", x"00",
+        x"99", x"9E", x"4D", x"D9", x"DA", x"8D", x"6F", x"5F", x"3E", x"D7", x"21", x"74", x"86", x"DF", x"6B", x"05",
+        x"8E", x"5D", x"37", x"11", x"D2", x"28", x"75", x"D6", x"A7", x"77", x"24", x"BF", x"F0", x"B0", x"02", x"B7",
+        x"F8", x"FC", x"81", x"09", x"B1", x"01", x"76", x"91", x"7D", x"0F", x"C8", x"A0", x"F2", x"CB", x"78", x"60",
+        x"D1", x"F7", x"E0", x"B5", x"98", x"22", x"B3", x"20", x"1D", x"A6", x"DB", x"7B", x"59", x"9F", x"AE", x"31",
+        x"FB", x"D3", x"B6", x"CA", x"43", x"72", x"07", x"F4", x"D8", x"41", x"14", x"55", x"0D", x"54", x"8B", x"B9",
+        x"AD", x"46", x"0B", x"AF", x"80", x"52", x"2C", x"FA", x"8C", x"89", x"66", x"FD", x"B2", x"A9", x"9B", x"C0");
+    type csa_bperm_t is array (0 to 7) of natural range 0 to 7;
+    constant CSA_BPERM : csa_bperm_t := (1, 7, 5, 4, 2, 6, 0, 3);
+    -- clé : le bit i va en CSA_KPERM(i)
+    type csa_kperm_t is array (0 to 63) of natural range 0 to 63;
+    constant CSA_KPERM : csa_kperm_t := (
+        19, 27, 55, 46,  1, 15, 36, 22, 56, 61, 39, 21, 54, 58, 50, 28,
+         7, 29, 51,  6, 33, 35, 20, 16, 47, 30, 32, 63, 10, 11,  4, 38,
+        62, 26, 40, 18, 12, 52, 37, 53, 23, 59, 41, 17, 31,  0, 25, 43,
+        44, 14,  2, 13, 45, 48,  3, 60, 49,  8, 34,  5,  9, 42, 57, 24);
+    -- flux : bits de B (après décalage) ajoutés au bit o de D
+    type csa_bsel_t is array (0 to 3, 0 to 3) of natural range 0 to 39;
+    constant CSA_BSEL : csa_bsel_t := (
+        (13, 27, 32, 38),
+        (16, 21, 23, 34),
+        (15, 18, 24, 33),
+        (12, 25, 30, 39));
+    -- flux : 7 boîtes ; entrées : 5 bits de A (après décalage, le premier en
+    --   poids faible de l'indice) ; sorties : 2 bits parmi X (0 à 3), Y (4 à 7),
+    --   Z (8 à 11), P (12), Q (13) ; tables d'un bit par sortie, indice de
+    --   gauche à droite : CSA_F_T1 → CSA_F_OUT(k, 1), CSA_F_T0 → CSA_F_OUT(k, 0)
+    type csa_f_in_t is array (0 to 6, 0 to 4) of natural range 0 to 39;
+    constant CSA_F_IN : csa_f_in_t := (
+        ( 9, 14, 27, 28, 37),
+        (19, 22, 24, 33, 38),
+        (13, 17, 20, 30, 39),
+        ( 6, 16, 25, 31, 36),
+        ( 7,  8, 21, 23, 26),
+        ( 5, 11, 15, 18, 32),
+        (10, 12, 29, 34, 35));
+    type csa_f_out_t is array (0 to 6, 0 to 1) of natural range 0 to 13;
+    constant CSA_F_OUT : csa_f_out_t := (
+        ( 1, 11),
+        ( 6,  8),
+        ( 7,  9),
+        ( 0, 10),
+        ( 2,  4),
+        ( 3,  5),
+        (12, 13));
+    type csa_f_tab_t is array (0 to 6) of std_logic_vector(0 to 31);
+    constant CSA_F_T1 : csa_f_tab_t := (
+        "11100100000110111110100101100001",
+        "10101001011111000010101001011001",
+        "01010110101010010100101111010010",
+        "01000101101010110010110110010110",
+        "10011110000011110100100110110100",
+        "10010010100011010110011110110010",
+        "01101010011101001001010101101010");
+    constant CSA_F_T0 : csa_f_tab_t := (
+        "11001101001010010010110011010110",
+        "00011101010110100110001111000110",
+        "00001100001101111111001110000110",
+        "11011010011010010111101000010100",
+        "01100110100110010110100101101001",
+        "11011001001010001000011011011011",
+        "00111001110000101001001111100101");
+end package csa_tab_pkg;
+-- <<< csa_tab_pkg.vhd
 
 --------------------------------------------------------------------------------
 -- prbs_disp : dispersion d'énergie DVB-S (EN 300 421 § 4.4.1), un octet par
@@ -2342,18 +2438,24 @@ entity ts_mux is
         G_PSI   : natural := 25000;         -- période PAT/PMT 80 ms
         G_PCR   : natural := 9375;          -- période PCR 30 ms
         G_IMG   : natural := 12500;         -- période image 40 ms
-        G_GOP   : natural := 12
+        G_GOP   : natural := 12;
+        G_MCPC  : boolean := false;         -- deux programmes (canal 2 sur s2_*)
+        G_AB1   : natural := 17;            -- mémoire du canal 1 : 2^G_AB1 octets
+        G_AB2   : natural := 14             -- mémoire du canal 2 : 2^G_AB2 octets
     );
     port (
-        clk     : in  std_logic;
-        rst     : in  std_logic;
-        s_valid : in  std_logic;
-        s_ready : out std_logic;
-        s_data  : in  std_logic_vector(7 downto 0);
-        m_valid : out std_logic;
-        m_ready : in  std_logic;
-        m_data  : out std_logic_vector(7 downto 0);
-        m_sop   : out std_logic
+        clk      : in  std_logic;
+        rst      : in  std_logic;
+        s_valid  : in  std_logic;
+        s_ready  : out std_logic;
+        s_data   : in  std_logic_vector(7 downto 0);
+        m_valid  : out std_logic;
+        m_ready  : in  std_logic;
+        m_data   : out std_logic_vector(7 downto 0);
+        m_sop    : out std_logic;
+        s2_valid : in  std_logic := '0';
+        s2_ready : out std_logic;
+        s2_data  : in  std_logic_vector(7 downto 0) := (others => '0')
     );
 end entity ts_mux;
 
@@ -2387,120 +2489,182 @@ architecture rtl of ts_mux is
         p(j) := c(31 downto 24); p(j + 1) := c(23 downto 16); p(j + 2) := c(15 downto 8); p(j + 3) := c(7 downto 0);
         return p;
     end function;
-    -- PAT : programme 1 → PMT PID 0x0100 ; PMT : vidéo MPEG-2 PID 0x0101, PCR sur 0x0101
-    constant PAT : octets_t(0 to 187) := paquet_psi((x"47", x"40", x"00", x"10", x"00"),
-        (x"00", x"B0", x"0D", x"00", x"01", x"C1", x"00", x"00", x"00", x"01", x"E1", x"00"));
-    constant PMT : octets_t(0 to 187) := paquet_psi((x"47", x"41", x"00", x"10", x"00"),
+    -- PAT : programme 1 → PMT PID 0x0100 (et programme 2 → PMT PID 0x0200 en
+    --   MCPC) ; PMT 1 : vidéo MPEG-2 PID 0x0101, PCR sur 0x0101 ; PMT 2 : vidéo
+    --   MPEG-2 PID 0x0201, PCR sur 0x0101
+    -- pat : E : MCPC ou non → S : paquet PAT à un ou deux programmes
+    function pat(mcpc : boolean) return octets_t is
+    begin
+        if mcpc then
+            return paquet_psi((x"47", x"40", x"00", x"10", x"00"),
+                (x"00", x"B0", x"11", x"00", x"01", x"C1", x"00", x"00", x"00", x"01", x"E1", x"00", x"00", x"02", x"E2", x"00"));
+        end if;
+        return paquet_psi((x"47", x"40", x"00", x"10", x"00"),
+            (x"00", x"B0", x"0D", x"00", x"01", x"C1", x"00", x"00", x"00", x"01", x"E1", x"00"));
+    end function;
+    constant PAT_P : octets_t(0 to 187) := pat(G_MCPC);
+    constant PMT1  : octets_t(0 to 187) := paquet_psi((x"47", x"41", x"00", x"10", x"00"),
         (x"02", x"B0", x"12", x"00", x"01", x"C1", x"00", x"00", x"E1", x"01", x"F0", x"00", x"02", x"E1", x"01", x"F0", x"00"));
+    constant PMT2  : octets_t(0 to 187) := paquet_psi((x"47", x"42", x"00", x"10", x"00"),
+        (x"02", x"B0", x"12", x"00", x"02", x"C1", x"00", x"00", x"E1", x"01", x"F0", x"00", x"02", x"E2", x"01", x"F0", x"00"));
 
-    -- mémoire du flux élémentaire
-    constant AB : natural := 17;
-    type ram_t is array (0 to 2 ** AB - 1) of octet_t;
-    signal ram    : ram_t;
-    signal ecr    : unsigned(AB - 1 downto 0) := (others => '0');
-    signal der3   : std_logic_vector(23 downto 0) := (others => '1');   -- 3 derniers octets
-    signal en_tete_seq : std_logic := '0';
-    type adr_t is array (0 to 7) of unsigned(AB - 1 downto 0);
-    signal au_deb, au_fin : adr_t := (others => (others => '0'));
-    signal nb_deb, nb_cpl : unsigned(31 downto 0) := (others => '0');   -- images commencées, complètes
+    -- mémoires des flux élémentaires : canal 1 (indice 0), canal 2 (indice 1)
+    -- ab_max : E : deux largeurs d'adresse → S : la plus grande
+    function ab_max(a, b : natural) return natural is
+    begin
+        if a > b then return a; end if;
+        return b;
+    end function;
+    constant ABM : natural := ab_max(G_AB1, G_AB2);
+    subtype adr_t is unsigned(ABM - 1 downto 0);
+    -- masque : E : canal → S : masque d'adresse de sa mémoire
+    function masque(c : natural) return adr_t is
+        variable m : adr_t := (others => '0');
+    begin
+        if c = 0 then
+            m(G_AB1 - 1 downto 0) := (others => '1');
+        else
+            m(G_AB2 - 1 downto 0) := (others => '1');
+        end if;
+        return m;
+    end function;
+    type ram1_t is array (0 to 2 ** G_AB1 - 1) of octet_t;
+    type ram2_t is array (0 to 2 ** G_AB2 - 1) of octet_t;
+    signal ram1   : ram1_t;
+    signal ram2   : ram2_t;
+    type adr2_t  is array (0 to 1) of adr_t;
+    type adr28_t is array (0 to 1, 0 to 7) of adr_t;
+    type u32_2_t is array (0 to 1) of unsigned(31 downto 0);
+    type der3_2_t is array (0 to 1) of std_logic_vector(23 downto 0);
+    signal sv     : std_logic_vector(0 to 1);
+    signal sd     : octets_t(0 to 1);
+    signal ecr    : adr2_t := (others => (others => '0'));
+    signal der3   : der3_2_t := (others => (others => '1'));    -- 3 derniers octets
+    signal en_tete_seq : std_logic_vector(0 to 1) := "00";
+    signal au_deb, au_fin : adr28_t := (others => (others => (others => '0')));
+    signal nb_deb, nb_cpl : u32_2_t := (others => (others => '0'));   -- images commencées, complètes
 
     -- ordonnancement
     type type_t is (T_PAT, T_PMT, T_PCR, T_NUL, T_VID);
     signal typ      : type_t := T_NUL;
+    signal can      : natural range 0 to 1 := 0;                              -- canal du paquet vidéo en cours
+    signal i_pmt    : natural range 0 to 1 := 0;                              -- PMT en cours
     signal d_psi, d_pcr : signed(31 downto 0) := (others => '0');             -- G_K·k − G_PSI·m, G_K·k − G_PCR·m
-    signal d_img    : signed(39 downto 0) := to_signed(-G_IMG, 40);           -- G_K·k − G_IMG·(n + 1)
-    signal pts_r    : unsigned(32 downto 0) := to_unsigned(12600, 33);        -- 3 600·(n + 1) + 9 000
-    signal pmt_du   : std_logic := '0';
+    type d_img_2_t is array (0 to 1) of signed(39 downto 0);
+    type pts_2_t is array (0 to 1) of unsigned(32 downto 0);
+    signal d_img    : d_img_2_t := (others => to_signed(-G_IMG, 40));         -- G_K·k − G_IMG·(n + 1)
+    signal pts_r    : pts_2_t := (others => to_unsigned(12600, 33));          -- 3 600·(n + 1) + 9 000
+    signal pmt_du   : natural range 0 to 2 := 0;                              -- PMT restant à émettre
     signal pcr_base : unsigned(32 downto 0) := (others => '0');
     signal pcr_ext  : unsigned(8 downto 0) := to_unsigned(234, 9);
     signal pcr_r    : natural range 0 to 469 := 415;
     signal p_base   : unsigned(32 downto 0);
     signal p_ext    : unsigned(8 downto 0);
-    signal cc_pat, cc_pmt, cc_vid : unsigned(3 downto 0) := (others => '0');
-    signal n_vid    : unsigned(31 downto 0) := (others => '0');
-    signal n_gop    : natural range 0 to 255 := 0;
-    signal pes_ptr  : natural range 0 to 2 ** AB + 16 := 0;    -- octet suivant du PES en cours
-    signal pes_lg   : natural range 0 to 2 ** AB + 16 := 0;
+    type cc_2_t is array (0 to 1) of unsigned(3 downto 0);
+    signal cc_pat   : unsigned(3 downto 0) := (others => '0');
+    signal cc_pmt, cc_vid : cc_2_t := (others => (others => '0'));
+    signal n_vid    : u32_2_t := (others => (others => '0'));
+    type gop_2_t is array (0 to 1) of natural range 0 to 255;
+    signal n_gop    : gop_2_t := (others => 0);
+    type lg_2_t is array (0 to 1) of natural range 0 to 2 ** ABM + 16;
+    signal pes_ptr  : lg_2_t := (others => 0);                 -- octet suivant du PES en cours
+    signal pes_lg   : lg_2_t := (others => 0);
     signal debut, avec_pcr, rai : std_logic := '0';
     signal afl      : natural range 0 to 184 := 0;
     signal actif    : std_logic := '0';
     signal pos      : natural range 0 to 187 := 0;
     -- pipeline de sortie
     signal a_valid, a_ram, a_sop : std_logic := '0';
-    signal a_oct, ram_q : octet_t := (others => '0');
+    signal a_can    : natural range 0 to 1 := 0;
+    signal a_oct, ram_q1, ram_q2 : octet_t := (others => '0');
     signal o_valid  : std_logic := '0';
     signal libre    : std_logic;
-    signal place    : std_logic;
+    signal place    : std_logic_vector(0 to 1);
 begin
-    libre   <= (not o_valid) or m_ready;
-    m_valid <= o_valid;
-    s_ready <= place and not rst;
+    libre    <= (not o_valid) or m_ready;
+    m_valid  <= o_valid;
+    s_ready  <= place(0) and not rst;
+    s2_ready <= place(1) and not rst when G_MCPC else '0';
+    sv(0) <= s_valid;  sd(0) <= s_data;
+    sv(1) <= s2_valid when G_MCPC else '0';
+    sd(1) <= s2_data;
 
     -- place libre : on ne recouvre pas l'image la plus ancienne non encore envoyée
     process (all)
-        variable base : unsigned(AB - 1 downto 0);
+        variable base : adr_t;
     begin
-        if n_vid < nb_deb then
-            base := au_deb(to_integer(n_vid(2 downto 0)));
-        else
-            base := ecr;
-        end if;
-        if (ecr - base) < 2 ** AB - 16 and nb_deb - n_vid < 7 then place <= '1'; else place <= '0'; end if;
+        for c in 0 to 1 loop
+            if n_vid(c) < nb_deb(c) then
+                base := au_deb(c, to_integer(n_vid(c)(2 downto 0)));
+            else
+                base := ecr(c);
+            end if;
+            if ((ecr(c) - base) and masque(c)) < masque(c) - 15 and nb_deb(c) - n_vid(c) < 7 then place(c) <= '1'; else place(c) <= '0'; end if;
+        end loop;
     end process;
 
-    -- E : octets ES, créneaux → T : mémoire tournante, repérage des débuts
-    --   d'image, choix PAT/PMT, PCR, vidéo ou nul par créneau → S : paquets TS
+    -- E : octets ES des deux canaux, créneaux → T : mémoires tournantes,
+    --   repérage des débuts d'image, choix PAT/PMT, PCR, vidéo du canal 1, du
+    --   canal 2 ou nul par créneau → S : paquets TS
     process (clk)
-        variable w      : unsigned(AB - 1 downto 0);
-        variable fire_psi, fire_pcr, pret : boolean;
-        variable af, maxcu, cu, reste : natural range 0 to 2 ** AB + 16;
+        variable w      : adr_t;
+        variable fire_psi, fire_pcr : boolean;
+        variable pret   : boolean;
+        variable v      : natural range 0 to 1;
+        variable af, maxcu, cu, reste : natural range 0 to 2 ** ABM + 16;
         variable oct    : octet_t;
         variable lit    : boolean;
-        variable adr    : unsigned(AB - 1 downto 0);
+        variable adr    : adr_t;
         variable pts    : unsigned(32 downto 0);
-        variable lp     : natural range 0 to 2 ** AB + 16;
+        variable lp     : natural range 0 to 2 ** ABM + 16;
         variable carry  : natural range 0 to 1;
         variable e2     : natural range 0 to 1023;
         variable ni     : natural range 0 to 7;
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                ecr <= (others => '0'); der3 <= (others => '1'); en_tete_seq <= '0';
-                nb_deb <= (others => '0'); nb_cpl <= (others => '0');
-                d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= to_signed(-G_IMG, 40);
-                pts_r <= to_unsigned(12600, 33); pmt_du <= '0';
+                ecr <= (others => (others => '0')); der3 <= (others => (others => '1')); en_tete_seq <= "00";
+                nb_deb <= (others => (others => '0')); nb_cpl <= (others => (others => '0'));
+                d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= (others => to_signed(-G_IMG, 40));
+                pts_r <= (others => to_unsigned(12600, 33)); pmt_du <= 0;
                 pcr_base <= (others => '0'); pcr_ext <= to_unsigned(234, 9); pcr_r <= 415;
-                cc_pat <= (others => '0'); cc_pmt <= (others => '0'); cc_vid <= (others => '0');
-                n_vid <= (others => '0'); n_gop <= 0; pes_ptr <= 0; actif <= '0'; pos <= 0;
+                cc_pat <= (others => '0'); cc_pmt <= (others => (others => '0')); cc_vid <= (others => (others => '0'));
+                n_vid <= (others => (others => '0')); n_gop <= (others => 0); pes_ptr <= (others => 0); actif <= '0'; pos <= 0;
                 a_valid <= '0'; o_valid <= '0';
             else
                 ----------------------------------------------------------------
-                -- écriture du flux élémentaire, repérage des images
+                -- écriture des flux élémentaires, repérage des images
                 ----------------------------------------------------------------
-                if s_valid = '1' and place = '1' then
-                    w := ecr;
-                    ram(to_integer(w)) <= s_data;
-                    ecr  <= w + 1;
-                    der3 <= der3(15 downto 0) & s_data;
-                    if der3 = x"000001" then
-                        if s_data = x"B3" or (s_data = x"00" and en_tete_seq = '0') then
-                            -- début d'image à w − 3 ; l'image précédente est complète
-                            if nb_deb > 0 then
-                                au_fin(to_integer(nb_deb(2 downto 0) - 1)) <= w - 3;
-                                nb_cpl <= nb_cpl + 1;
+                for c in 0 to 1 loop
+                    if sv(c) = '1' and place(c) = '1' then
+                        w := ecr(c);
+                        if c = 0 then
+                            ram1(to_integer(w(G_AB1 - 1 downto 0))) <= sd(0);
+                        else
+                            ram2(to_integer(w(G_AB2 - 1 downto 0))) <= sd(1);
+                        end if;
+                        ecr(c)  <= (w + 1) and masque(c);
+                        der3(c) <= der3(c)(15 downto 0) & sd(c);
+                        if der3(c) = x"000001" then
+                            if sd(c) = x"B3" or (sd(c) = x"00" and en_tete_seq(c) = '0') then
+                                -- début d'image à w − 3 ; l'image précédente est complète
+                                if nb_deb(c) > 0 then
+                                    au_fin(c, to_integer(nb_deb(c)(2 downto 0) - 1)) <= (w - 3) and masque(c);
+                                    nb_cpl(c) <= nb_cpl(c) + 1;
+                                end if;
+                                au_deb(c, to_integer(nb_deb(c)(2 downto 0))) <= (w - 3) and masque(c);
+                                nb_deb(c) <= nb_deb(c) + 1;
+                                if sd(c) = x"B3" then en_tete_seq(c) <= '1'; else en_tete_seq(c) <= '0'; end if;
+                            elsif sd(c) = x"00" then
+                                en_tete_seq(c) <= '0';
+                            elsif sd(c) = x"B7" then
+                                -- fin de séquence : la dernière image se termine après ce code
+                                au_fin(c, to_integer(nb_deb(c)(2 downto 0) - 1)) <= (w + 1) and masque(c);
+                                nb_cpl(c) <= nb_cpl(c) + 1;
                             end if;
-                            au_deb(to_integer(nb_deb(2 downto 0))) <= w - 3;
-                            nb_deb <= nb_deb + 1;
-                            en_tete_seq <= '1' when s_data = x"B3" else '0';
-                        elsif s_data = x"00" then
-                            en_tete_seq <= '0';
-                        elsif s_data = x"B7" then
-                            -- fin de séquence : la dernière image se termine après ce code
-                            au_fin(to_integer(nb_deb(2 downto 0) - 1)) <= w + 1;
-                            nb_cpl <= nb_cpl + 1;
                         end if;
                     end if;
-                end if;
+                end loop;
 
                 ----------------------------------------------------------------
                 -- sortie : étage B (octet final), étage A (choix et lecture)
@@ -2508,42 +2672,59 @@ begin
                 if libre = '1' then
                     o_valid <= a_valid;
                     m_sop   <= a_sop;
-                    m_data  <= ram_q when a_ram = '1' else a_oct;
+                    if a_ram = '0' then
+                        m_data <= a_oct;
+                    elsif a_can = 0 then
+                        m_data <= ram_q1;
+                    else
+                        m_data <= ram_q2;
+                    end if;
 
                     if actif = '0' then
                         -- choix du paquet du créneau k
                         a_valid  <= '0';
                         fire_psi := d_psi >= 0;
                         fire_pcr := d_pcr >= 0;
-                        pret     := n_vid < nb_cpl and d_img >= 0;
+                        -- canal 1 d'abord ; canal 2 seulement hors créneau d'un PCR dû
+                        pret := false; v := 0;
+                        if n_vid(0) < nb_cpl(0) and d_img(0) >= 0 then
+                            pret := true;
+                        elsif G_MCPC and n_vid(1) < nb_cpl(1) and d_img(1) >= 0 and not fire_pcr then
+                            pret := true; v := 1;
+                        end if;
                         d_psi <= d_psi + G_K;
                         d_pcr <= d_pcr + G_K;
-                        if d_img(38) = '0' or d_img(39) = '1' then
-                            d_img <= d_img + G_K;
-                        end if;
+                        for c in 0 to 1 loop
+                            if d_img(c)(38) = '0' or d_img(c)(39) = '1' then
+                                d_img(c) <= d_img(c) + G_K;
+                            end if;
+                        end loop;
                         avec_pcr <= '0';
                         if fire_psi then
-                            typ <= T_PAT; pmt_du <= '1'; d_psi <= d_psi + G_K - G_PSI;
-                        elsif pmt_du = '1' then
-                            typ <= T_PMT; pmt_du <= '0';
+                            typ <= T_PAT; d_psi <= d_psi + G_K - G_PSI;
+                            if G_MCPC then pmt_du <= 2; else pmt_du <= 1; end if;
+                        elsif pmt_du /= 0 then
+                            typ <= T_PMT; pmt_du <= pmt_du - 1;
+                            if G_MCPC and pmt_du = 1 then i_pmt <= 1; else i_pmt <= 0; end if;
                         else
                             if fire_pcr then d_pcr <= d_pcr + G_K - G_PCR; avec_pcr <= '1'; end if;
                             if not pret then
-                                typ <= T_PCR when fire_pcr else T_NUL;
+                                if fire_pcr then typ <= T_PCR; else typ <= T_NUL; end if;
                             else
                                 typ <= T_VID;
-                                ni := to_integer(n_vid(2 downto 0));
-                                if pes_ptr = 0 then
-                                    lp := to_integer(au_fin(ni) - au_deb(ni)) + 14;
-                                    pes_lg <= lp;
+                                can <= v;
+                                ni := to_integer(n_vid(v)(2 downto 0));
+                                if pes_ptr(v) = 0 then
+                                    lp := to_integer((au_fin(v, ni) - au_deb(v, ni)) and masque(v)) + 14;
+                                    pes_lg(v) <= lp;
                                 else
-                                    lp := pes_lg;
+                                    lp := pes_lg(v);
                                 end if;
-                                debut <= '1' when pes_ptr = 0 else '0';
-                                rai   <= '1' when pes_ptr = 0 and n_gop = 0 else '0';
-                                if fire_pcr then af := 8; elsif pes_ptr = 0 and n_gop = 0 then af := 2; else af := 0; end if;
+                                if pes_ptr(v) = 0 then debut <= '1'; else debut <= '0'; end if;
+                                if pes_ptr(v) = 0 and n_gop(v) = 0 then rai <= '1'; else rai <= '0'; end if;
+                                if fire_pcr then af := 8; elsif pes_ptr(v) = 0 and n_gop(v) = 0 then af := 2; else af := 0; end if;
                                 maxcu := 184 - af;
-                                reste := lp - pes_ptr;
+                                reste := lp - pes_ptr(v);
                                 if reste < maxcu then cu := reste; else cu := maxcu; end if;
                                 afl <= af + maxcu - cu;
                             end if;
@@ -2567,25 +2748,28 @@ begin
                         oct := x"FF"; lit := false; adr := (others => '0');
                         case typ is
                             when T_PAT =>
-                                oct := PAT(pos);
+                                oct := PAT_P(pos);
                                 if pos = 3 then oct := x"1" & std_logic_vector(cc_pat); end if;
                             when T_PMT =>
-                                oct := PMT(pos);
-                                if pos = 3 then oct := x"1" & std_logic_vector(cc_pmt); end if;
+                                if i_pmt = 0 then oct := PMT1(pos); else oct := PMT2(pos); end if;
+                                if pos = 3 then oct := x"1" & std_logic_vector(cc_pmt(i_pmt)); end if;
                             when T_NUL =>
                                 case pos is
                                     when 0 => oct := x"47"; when 1 => oct := x"1F"; when 2 => oct := x"FF"; when 3 => oct := x"10";
                                     when others => null;
                                 end case;
                             when T_PCR | T_VID =>
+                                -- PID 0x0101 (canal 1, PCR seul) ou 0x0201 (canal 2)
                                 case pos is
                                     when 0 => oct := x"47";
-                                    when 1 => oct := x"41" when typ = T_VID and debut = '1' else x"01";
+                                    when 1 =>
+                                        if typ = T_VID and can = 1 then oct := x"02"; else oct := x"01"; end if;
+                                        if typ = T_VID and debut = '1' then oct(6) := '1'; end if;
                                     when 2 => oct := x"01";
                                     when 3 =>
-                                        if typ = T_PCR then oct := x"2" & std_logic_vector(cc_vid);
-                                        elsif afl > 0 then oct := x"3" & std_logic_vector(cc_vid);
-                                        else oct := x"1" & std_logic_vector(cc_vid); end if;
+                                        if typ = T_PCR then oct := x"2" & std_logic_vector(cc_vid(0));
+                                        elsif afl > 0 then oct := x"3" & std_logic_vector(cc_vid(can));
+                                        else oct := x"1" & std_logic_vector(cc_vid(can)); end if;
                                     when others => null;
                                 end case;
                                 if typ = T_PCR then
@@ -2609,14 +2793,14 @@ begin
                                         oct := '0' & rai & '0' & avec_pcr & "0000";      -- random_access, PCR_flag
                                     elsif pos >= 4 + afl then
                                         -- charge utile : en-tête PES puis flux élémentaire
-                                        ni := to_integer(n_vid(2 downto 0));
-                                        pts := pts_r;
-                                        case pes_ptr is
+                                        ni := to_integer(n_vid(can)(2 downto 0));
+                                        pts := pts_r(can);
+                                        case pes_ptr(can) is
                                             when 0 | 1 => oct := x"00";
                                             when 2  => oct := x"01";
                                             when 3  => oct := x"E0";
-                                            when 4  => if pes_lg - 6 > 65535 then oct := x"00"; else oct := std_logic_vector(to_unsigned((pes_lg - 6) / 256, 8)); end if;
-                                            when 5  => if pes_lg - 6 > 65535 then oct := x"00"; else oct := std_logic_vector(to_unsigned((pes_lg - 6) mod 256, 8)); end if;
+                                            when 4  => if pes_lg(can) - 6 > 65535 then oct := x"00"; else oct := std_logic_vector(to_unsigned((pes_lg(can) - 6) / 256, 8)); end if;
+                                            when 5  => if pes_lg(can) - 6 > 65535 then oct := x"00"; else oct := std_logic_vector(to_unsigned((pes_lg(can) - 6) mod 256, 8)); end if;
                                             when 6  => oct := x"84";
                                             when 7  => oct := x"80";
                                             when 8  => oct := x"05";
@@ -2627,37 +2811,463 @@ begin
                                             when 13 => oct := std_logic_vector(pts(6 downto 0)) & '1';
                                             when others =>
                                                 lit := true;
-                                                adr := au_deb(ni) + to_unsigned(pes_ptr - 14, AB);
+                                                adr := (au_deb(can, ni) + to_unsigned(pes_ptr(can) - 14, ABM)) and masque(can);
                                         end case;
-                                        if pes_ptr = pes_lg - 1 then
-                                            pes_ptr <= 0;
-                                            n_vid   <= n_vid + 1;
-                                            d_img   <= d_img - G_IMG;
-                                            pts_r   <= pts_r + 3600;
-                                            n_gop   <= 0 when n_gop = G_GOP - 1 else n_gop + 1;
+                                        if pes_ptr(can) = pes_lg(can) - 1 then
+                                            pes_ptr(can) <= 0;
+                                            n_vid(can)   <= n_vid(can) + 1;
+                                            d_img(can)   <= d_img(can) - G_IMG;
+                                            pts_r(can)   <= pts_r(can) + 3600;
+                                            if n_gop(can) = G_GOP - 1 then n_gop(can) <= 0; else n_gop(can) <= n_gop(can) + 1; end if;
                                         else
-                                            pes_ptr <= pes_ptr + 1;
+                                            pes_ptr(can) <= pes_ptr(can) + 1;
                                         end if;
                                     end if;
                                 end if;
                         end case;
                         a_oct   <= oct;
-                        a_ram   <= '1' when lit else '0';
-                        a_sop   <= '1' when pos = 0 else '0';
+                        if lit then a_ram <= '1'; else a_ram <= '0'; end if;
+                        a_can   <= can;
+                        if pos = 0 then a_sop <= '1'; else a_sop <= '0'; end if;
                         a_valid <= '1';
-                        ram_q   <= ram(to_integer(adr));
+                        ram_q1  <= ram1(to_integer(adr(G_AB1 - 1 downto 0)));
+                        ram_q2  <= ram2(to_integer(adr(G_AB2 - 1 downto 0)));
                         if pos = 187 then
                             actif <= '0';
                             case typ is
                                 when T_PAT => cc_pat <= cc_pat + 1;
-                                when T_PMT => cc_pmt <= cc_pmt + 1;
-                                when T_VID => cc_vid <= cc_vid + 1;
+                                when T_PMT => cc_pmt(i_pmt) <= cc_pmt(i_pmt) + 1;
+                                when T_VID => cc_vid(can) <= cc_vid(can) + 1;
                                 when others => null;
                             end case;
                         else
                             pos <= pos + 1;
                         end if;
                     end if;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- csa_enc : embrouillage DVB-CSA des paquets TS d'un PID, clé fixe (BISS-1) ;
+--   référence bit à bit : fpga_test/csa.js (ts_csa.bin)
+--   Interface : entrée et sortie : paquets TS de 188 octets (valid / ready,
+--               s_sop et m_sop sur la synchro) ; en : embrouillage actif ;
+--               cw : mot de contrôle de 8 octets, octet 0 en bits 7..0 (stable
+--               pendant le fonctionnement)
+--   Paramètre : G_PID : PID embrouillé (vidéo 0x0101)
+--   Principe : le paquet est rangé en mémoire (188 octets). Un paquet du PID,
+--              avec charge utile, non déjà embrouillé et d'au moins 8 octets de
+--              charge est chiffré derrière son en-tête (4 octets, plus le champ
+--              d'adaptation), transport_scrambling_control passe à « 10 » ;
+--              les autres passent inchangés.
+--              Blocs : du dernier bloc entier de 8 octets au premier,
+--              bloc ← E(bloc ⊕ bloc suivant chiffré), 56 tours d'un cycle ; la
+--              clé des tours sort d'un registre de 64 bits : K0 (six
+--              permutations du mot de contrôle, simple câblage), un octet par
+--              tour, permutation inverse tous les 8 tours.
+--              Sortie : les octets sont relus dans l'ordre ; le premier bloc
+--              initialise le chiffrement de flux (4 tours par octet), les
+--              octets suivants reçoivent 8 bits de flux (4 tours) ; ils
+--              partent dans une file de 256 octets lue par l'aval.
+--   Débit : environ 3 400 cycles par paquet embrouillé (créneau TS le plus
+--           court : 7 461 cycles à 10 MS/s, FEC 7/8) ; le paquet suivant se
+--           charge dès que le précédent est entièrement dans la file.
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.dvbs_pkg.all;
+use work.csa_tab_pkg.all;
+
+entity csa_enc is
+    generic (
+        G_PID : natural := 16#0101#
+    );
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        en      : in  std_logic;
+        cw      : in  std_logic_vector(63 downto 0);
+        s_valid : in  std_logic;
+        s_ready : out std_logic;
+        s_data  : in  octet_t;
+        s_sop   : in  std_logic;
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_data  : out octet_t;
+        m_sop   : out std_logic
+    );
+end entity csa_enc;
+
+architecture rtl of csa_enc is
+    subtype mot_t is std_logic_vector(63 downto 0);
+    subtype reg_t is std_logic_vector(39 downto 0);
+    subtype q_t   is std_logic_vector(3 downto 0);
+    -- état du chiffrement de flux
+    type flux_t is record
+        a, b             : reg_t;
+        x, y, z, d, e, f : q_t;
+        p, q, c          : std_logic;
+    end record;
+
+    -- cle_perm : E : clé → S : clé permutée (le bit i va en CSA_KPERM(i))
+    function cle_perm(k : mot_t) return mot_t is
+        variable n : mot_t;
+    begin
+        for i in 0 to 63 loop
+            n(CSA_KPERM(i)) := k(i);
+        end loop;
+        return n;
+    end function;
+    -- cle_inv : E : clé → S : permutation inverse
+    function cle_inv(k : mot_t) return mot_t is
+        variable n : mot_t;
+    begin
+        for i in 0 to 63 loop
+            n(i) := k(CSA_KPERM(i));
+        end loop;
+        return n;
+    end function;
+    -- cle_0 : E : mot de contrôle → T : six permutations → S : clé des tours 0 à 7
+    function cle_0(k : mot_t) return mot_t is
+        variable n : mot_t := k;
+    begin
+        for i in 1 to 6 loop
+            n := cle_perm(n);
+        end loop;
+        return n;
+    end function;
+    -- perm8 : E : sortie de la boîte S → S : ses bits permutés
+    function perm8(s : octet_t) return octet_t is
+        variable r : octet_t;
+    begin
+        for i in 0 to 7 loop
+            r(CSA_BPERM(i)) := s(i);
+        end loop;
+        return r;
+    end function;
+    -- flux_init : E : mot de contrôle → S : état initial (A, B chargés, quartets
+    --   de chaque octet échangés ; le reste à zéro)
+    function flux_init(k : mot_t) return flux_t is
+        variable s : flux_t;
+    begin
+        s.a := (others => '0'); s.b := (others => '0');
+        for j in 0 to 3 loop
+            for b in 0 to 7 loop
+                s.a(8 * j + b) := k(8 * j + (b + 4) mod 8);
+                s.b(8 * j + b) := k(32 + 8 * j + (b + 4) mod 8);
+            end loop;
+        end loop;
+        s.x := "0000"; s.y := "0000"; s.z := "0000"; s.d := "0000"; s.e := "0000"; s.f := "0000";
+        s.p := '0'; s.q := '0'; s.c := '0';
+        return s;
+    end function;
+    -- boite : E : table de 32 bits, indice de 5 bits → T : sélection par
+    --   comparaisons (logique, pas de mémoire) → S : bit de la table
+    function boite(tab : std_logic_vector(0 to 31); v : std_logic_vector(4 downto 0)) return std_logic is
+        variable r : std_logic := '0';
+    begin
+        for i in 0 to 31 loop
+            if unsigned(v) = i and tab(i) = '1' then
+                r := '1';
+            end if;
+        end loop;
+        return r;
+    end function;
+    -- flux_tour : E : état, initialisation, quartets d'entrée pour A et B → T :
+    --   un tour (décalages, D, E, F, retenue, boîtes) → S : état suivant
+    function flux_tour(s : flux_t; init : std_logic; iva, ivb : q_t) return flux_t is
+        variable r      : flux_t;
+        variable na, tb : q_t;
+        variable bs     : q_t;
+        variable som    : unsigned(4 downto 0);
+        variable v      : std_logic_vector(4 downto 0);
+        variable res    : std_logic_vector(13 downto 0);
+    begin
+        na := s.a(39 downto 36) xor s.x;
+        tb := s.b(27 downto 24) xor s.b(39 downto 36) xor s.y;
+        if init = '1' then
+            na := na xor s.d xor iva;
+            tb := tb xor ivb;
+        end if;
+        if s.p = '1' then
+            tb := tb(2 downto 0) & tb(3);
+        end if;
+        r.a := s.a(35 downto 0) & na;
+        r.b := s.b(35 downto 0) & tb;
+        for o in 0 to 3 loop
+            bs(o) := r.b(CSA_BSEL(o, 0)) xor r.b(CSA_BSEL(o, 1)) xor r.b(CSA_BSEL(o, 2)) xor r.b(CSA_BSEL(o, 3));
+        end loop;
+        r.d := s.e xor s.z xor bs;
+        r.e := s.f;
+        if s.q = '1' then
+            som := resize(unsigned(s.z), 5) + resize(unsigned(s.e), 5) + unsigned'("0000" & s.c);
+            r.f := std_logic_vector(som(3 downto 0));
+            r.c := som(4);
+        else
+            r.f := s.e;
+            r.c := s.c;
+        end if;
+        for k in 0 to 6 loop
+            for m in 0 to 4 loop
+                v(m) := r.a(CSA_F_IN(k, m));
+            end loop;
+            res(CSA_F_OUT(k, 0)) := boite(CSA_F_T0(k), v);
+            res(CSA_F_OUT(k, 1)) := boite(CSA_F_T1(k), v);
+        end loop;
+        r.x := res(3 downto 0); r.y := res(7 downto 4); r.z := res(11 downto 8);
+        r.p := res(12); r.q := res(13);
+        return r;
+    end function;
+
+    -- mémoire du paquet et file de sortie
+    type ram_t is array (0 to 255) of octet_t;
+    signal tamp    : ram_t;
+    signal adr     : unsigned(7 downto 0) := (others => '0');
+    signal lu      : octet_t;
+    signal fifo    : ram_t;
+    signal f_ecr, f_lec : unsigned(8 downto 0) := (others => '0');
+    signal f_pleine, f_vide : std_logic;
+    signal cs      : natural range 0 to 187 := 0;          -- rang de l'octet en sortie
+
+    type etat_t is (CHARGE, PREP, B_LIT, B_TOURS, B_ECRIT, S_ADR, S_ATT, S_OCT, S_TOURS, S_POUSSE);
+    signal etat    : etat_t := CHARGE;
+    signal wp      : natural range 0 to 187 := 0;
+    signal h1, h2, h3, h4 : octet_t := (others => '0');
+    signal brouille : std_logic := '0';
+    signal hdr     : natural range 0 to 188 := 188;        -- premier octet de la charge
+    signal bi      : natural range 0 to 22 := 0;           -- bloc en cours
+    signal base    : natural range 0 to 187 := 0;          -- son premier octet
+    signal cnt     : natural range 0 to 63 := 0;
+    signal w, chaine : mot_t := (others => '0');           -- bloc en cours, bloc suivant chiffré (octet 0 en bits 7..0)
+    signal kreg    : mot_t := (others => '0');
+    signal pos     : natural range 0 to 187 := 0;
+    signal oct, ks, sor : octet_t := (others => '0');      -- octet relu, flux, octet à sortir
+    signal rc      : natural range 0 to 3 := 0;
+    signal fl      : flux_t;
+    signal o_valid : std_logic := '0';
+    signal libre   : std_logic;
+begin
+    libre    <= (not o_valid) or m_ready;
+    m_valid  <= o_valid;
+    s_ready  <= '1' when etat = CHARGE and rst = '0' else '0';
+    f_vide   <= '1' when f_ecr = f_lec else '0';
+    f_pleine <= '1' when f_ecr(7 downto 0) = f_lec(7 downto 0) and f_ecr(8) /= f_lec(8) else '0';
+
+    -- lecture synchrone de la mémoire du paquet
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            lu <= tamp(to_integer(adr));
+        end if;
+    end process;
+
+    -- E : paquets TS, mot de contrôle → T : rangement, chiffrement par blocs
+    --   depuis la fin, relecture avec chiffrement de flux → S : octets dans la
+    --   file, puis vers l'aval
+    process (clk)
+        variable ecr    : boolean;
+        variable e_adr  : natural range 0 to 255;
+        variable e_oct  : octet_t;
+        variable pousse : boolean;
+        variable p      : natural range 0 to 187;
+        variable hd     : natural range 0 to 511;
+        variable nb     : natural range 0 to 23;
+        variable kb, s, o, kn : octet_t;
+        variable v0, v1, v2, v3, v4, v5, v6, v7 : octet_t;
+        variable wr     : mot_t;
+        variable kr     : mot_t;
+        variable nf     : flux_t;
+    begin
+        if rising_edge(clk) then
+            ecr := false; e_adr := 0; e_oct := (others => '0');
+            pousse := false;
+            if rst = '1' then
+                etat <= CHARGE; wp <= 0; brouille <= '0'; cnt <= 0; pos <= 0; rc <= 0;
+                f_ecr <= (others => '0');
+            else
+                case etat is
+                    -- rangement du paquet, en-tête retenu
+                    when CHARGE =>
+                        if s_valid = '1' then
+                            if s_sop = '1' then p := 0; else p := wp; end if;
+                            ecr := true; e_adr := p; e_oct := s_data;
+                            case p is
+                                when 1 => h1 <= s_data;
+                                when 2 => h2 <= s_data;
+                                when 3 => h3 <= s_data;
+                                when 4 => h4 <= s_data;
+                                when others => null;
+                            end case;
+                            if p = 187 then
+                                wp   <= 0;
+                                etat <= PREP;
+                            else
+                                wp <= p + 1;
+                            end if;
+                        end if;
+                    -- règle de l'en-tête : paquet à embrouiller ou non
+                    when PREP =>
+                        hd := 4;
+                        if h3(5) = '1' then
+                            hd := 5 + to_integer(unsigned(h4));
+                        end if;
+                        if en = '1' and unsigned(std_logic_vector'(h1(4 downto 0) & h2)) = G_PID and h3(4) = '1' and h3(7 downto 6) = "00" and hd <= 180 then
+                            nb := (188 - hd) / 8;
+                            brouille <= '1';
+                            hdr    <= hd;
+                            bi     <= nb - 1;
+                            base   <= hd + 8 * (nb - 1);
+                            chaine <= (others => '0');
+                            fl     <= flux_init(cw);
+                            cnt    <= 0;
+                            etat   <= B_LIT;
+                        else
+                            brouille <= '0';
+                            hdr  <= 188;
+                            pos  <= 0;
+                            etat <= S_ADR;
+                        end if;
+                    -- bloc lu (adresse au cycle c, octet deux cycles après), ⊕ bloc suivant chiffré
+                    when B_LIT =>
+                        if cnt <= 7 then
+                            adr <= to_unsigned(base + cnt, 8);
+                        end if;
+                        if cnt >= 2 then
+                            -- octet cnt − 2 : entre par le haut, les deux registres tournent d'un octet
+                            w      <= (lu xor chaine(7 downto 0)) & w(63 downto 8);
+                            chaine <= chaine(7 downto 0) & chaine(63 downto 8);
+                        end if;
+                        if cnt = 9 then
+                            cnt  <= 0;
+                            kreg <= cle_0(cw);
+                            etat <= B_TOURS;
+                        else
+                            cnt <= cnt + 1;
+                        end if;
+                    -- 56 tours ; clé : octet de poids faible de kreg, ⊕ rang du groupe de 8 tours
+                    when B_TOURS =>
+                        kb := kreg(7 downto 0) xor std_logic_vector(to_unsigned(cnt / 8, 8));
+                        v0 := w(7 downto 0);   v1 := w(15 downto 8);  v2 := w(23 downto 16); v3 := w(31 downto 24);
+                        v4 := w(39 downto 32); v5 := w(47 downto 40); v6 := w(55 downto 48); v7 := w(63 downto 56);
+                        s  := CSA_SBOX(to_integer(unsigned(kb xor v7)));
+                        -- W7 … W0 ← W0 ⊕ S, W7, W6 ⊕ perm(S), W5, W4 ⊕ W0, W3 ⊕ W0, W2 ⊕ W0, W1
+                        w  <= (v0 xor s) & v7 & (v6 xor perm8(s)) & v5 & (v4 xor v0) & (v3 xor v0) & (v2 xor v0) & v1;
+                        kr := kreg(7 downto 0) & kreg(63 downto 8);
+                        if cnt mod 8 = 7 then
+                            kreg <= cle_inv(kr);
+                        else
+                            kreg <= kr;
+                        end if;
+                        if cnt = 55 then
+                            cnt  <= 0;
+                            etat <= B_ECRIT;
+                        else
+                            cnt <= cnt + 1;
+                        end if;
+                    -- bloc chiffré rangé à sa place ; il sert au bloc précédent
+                    when B_ECRIT =>
+                        ecr := true; e_adr := base + cnt; e_oct := w(7 downto 0);
+                        wr := w(7 downto 0) & w(63 downto 8);      -- un tour complet en 8 cycles
+                        w  <= wr;
+                        if cnt = 7 then
+                            chaine <= wr;
+                            cnt    <= 0;
+                            if bi = 0 then
+                                pos  <= 0;
+                                etat <= S_ADR;
+                            else
+                                bi   <= bi - 1;
+                                base <= base - 8;
+                                etat <= B_LIT;
+                            end if;
+                        else
+                            cnt <= cnt + 1;
+                        end if;
+                    -- relecture de l'octet pos
+                    when S_ADR =>
+                        adr  <= to_unsigned(pos, 8);
+                        etat <= S_ATT;
+                    when S_ATT =>
+                        etat <= S_OCT;
+                    when S_OCT =>
+                        o := lu;
+                        if pos = 3 and brouille = '1' then
+                            o(7 downto 6) := "10";
+                        end if;
+                        oct <= o;
+                        sor <= o;                                  -- octet en clair, sauf flux ci-dessous
+                        if brouille = '1' and pos >= hdr then
+                            rc   <= 0;
+                            etat <= S_TOURS;
+                        else
+                            etat <= S_POUSSE;
+                        end if;
+                    -- 4 tours du flux : initialisation par le premier bloc, puis 8 bits de flux
+                    when S_TOURS =>
+                        if pos < hdr + 8 then
+                            if rc mod 2 = 0 then
+                                fl <= flux_tour(fl, '1', oct(7 downto 4), oct(3 downto 0));
+                            else
+                                fl <= flux_tour(fl, '1', oct(3 downto 0), oct(7 downto 4));
+                            end if;
+                        else
+                            nf := flux_tour(fl, '0', "0000", "0000");
+                            fl <= nf;
+                            kn := ks(5 downto 0) & (nf.d(3) xor nf.d(2)) & (nf.d(1) xor nf.d(0));
+                            ks <= kn;
+                            if rc = 3 then
+                                sor <= oct xor kn;
+                            end if;
+                        end if;
+                        if rc = 3 then
+                            etat <= S_POUSSE;
+                        else
+                            rc <= rc + 1;
+                        end if;
+                    -- octet vers la file
+                    when S_POUSSE =>
+                        if f_pleine = '0' then
+                            pousse := true;
+                            if pos = 187 then
+                                etat <= CHARGE;
+                            else
+                                pos  <= pos + 1;
+                                etat <= S_ADR;
+                            end if;
+                        end if;
+                end case;
+
+                -- écritures des deux mémoires
+                if ecr then
+                    tamp(e_adr) <= e_oct;
+                end if;
+                if pousse then
+                    fifo(to_integer(f_ecr(7 downto 0))) <= sor;
+                    f_ecr <= f_ecr + 1;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    -- E : file → T : un octet par transfert, synchro tous les 188 octets → S :
+    --   paquets TS vers l'aval
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                f_lec <= (others => '0'); cs <= 0; o_valid <= '0';
+            elsif libre = '1' then
+                o_valid <= '0';
+                if f_vide = '0' then
+                    m_data  <= fifo(to_integer(f_lec(7 downto 0)));
+                    m_sop   <= '1' when cs = 0 else '0';
+                    o_valid <= '1';
+                    f_lec   <= f_lec + 1;
+                    cs      <= 0 when cs = 187 else cs + 1;
                 end if;
             end if;
         end if;
