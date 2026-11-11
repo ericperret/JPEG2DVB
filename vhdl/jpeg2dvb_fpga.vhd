@@ -6,8 +6,8 @@
 --               chaque module de la chaîne reproduit au bit près une étape de
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-10
---  Version    : 2.5
+--  Date       : 2026-11-11
+--  Version    : 2.6
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 32 unités, dans l'ordre d'analyse :
@@ -78,6 +78,12 @@
 --                                initiale, en registres (Synplify MF682)
 --               2.5  2026-11-10  entité de tête (chantier 6) : dvbs_sd, regs_i2c,
 --                                jpeg2dvb_top ; tvp_ctrl : entrée imposée (choix)
+--               2.6  2026-11-11  réduction de surface, sortie inchangée au bit près :
+--                                sdm3 : seuils et corrections multiples de FS, donc
+--                                comparaisons, Pk et candidats sur les seuls bits de
+--                                poids fort (14 bits au lieu de 24), états x1, x2, x3
+--                                sur 17, 20, 22 bits ; dvbs_pkg 1.4 : SD_G, apports
+--                                du groupe sur 16 bits (sd_entree)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -129,8 +135,9 @@ package dvbs_pkg is
     ----------------------------------------------------------------------------
     -- Sortie sigma-delta : apport des entrées d'un groupe de 8 instants (sdm3)
     ----------------------------------------------------------------------------
-    constant SD_W : natural := 24;                                 -- largeur des mots de la boucle
-    type sd_grp_t is array (0 to 7) of signed(SD_W - 1 downto 0);  -- In3 … In7, U1, U2, U3 d'un groupe
+    constant SD_W : natural := 24;                                 -- largeur des mots de la boucle (|Pk| < 2²³)
+    constant SD_G : natural := 16;                                 -- largeur des apports (|In|, |U| ≤ 26 966)
+    type sd_grp_t is array (0 to 7) of signed(SD_G - 1 downto 0);  -- In3 … In7, U1, U2, U3 d'un groupe
 
     ----------------------------------------------------------------------------
     -- Budget de la régulation TM5 (étape 03) en bits par image :
@@ -3178,7 +3185,7 @@ begin
 
     -- E : fenêtre, cycle → T : 8 sommes de 13 constantes signées → S : groupe
     process (clk)
-        variable s : signed(SD_W - 1 downto 0);
+        variable s : signed(SD_G - 1 downto 0);
     begin
         if rising_edge(clk) then
             if rst = '1' then
@@ -3188,9 +3195,9 @@ begin
                     s := (others => '0');
                     for d in 0 to 12 loop
                         if fen(d) = '0' then
-                            s := s + to_signed(TAB(q, i, d), SD_W);
+                            s := s + to_signed(TAB(q, i, d), SD_G);
                         else
-                            s := s - to_signed(TAB(q, i, d), SD_W);
+                            s := s - to_signed(TAB(q, i, d), SD_G);
                         end if;
                     end loop;
                     g_r(i) <= s;
@@ -3219,6 +3226,13 @@ end architecture rtl;
 --              pour s0…s3 et pour s4…s7 ; les 16 résultats possibles selon s4…s7
 --              sont préparés, puis choisis. Garde : si |xi| > 2¹⁵ en début de
 --              cycle, les états repartent de zéro (P ← In').
+--   Largeurs : Dk, T et R sont multiples de FS : Pk ≥ Dk équivaut à
+--              ⌊Pk / FS⌋ ≥ Dk / FS, et ⌊(Q − R) / FS⌋ = ⌊Q / FS⌋ − R / FS. Seuls
+--              les SD_W − SDM_F bits de poids fort de Pk sont gardés, comparés
+--              et corrigés ; les SDM_F bits de poids faible de x1, x2, x3 sont
+--              ceux de Y. Bornes sous la garde (|U1| ≤ 3 840, |U2| ≤ 13 473,
+--              |U3| ≤ 26 966) : |x1| ≤ 44 800 (17 bits), |x2| ≤ 386 209 (20 bits),
+--              |x3| ≤ 1 599 830 (22 bits), |Pk| ≤ 5 260 950 (24 bits).
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -3243,8 +3257,14 @@ architecture rtl of sdm3 is
     constant A2    : integer := 6 * FS;
     constant A3    : integer := 16 * FS;
     constant GARDE : integer := 2 ** 15;
-    subtype mot_t is signed(SD_W - 1 downto 0);
-    type mot8_t is array (0 to 7) of mot_t;
+    constant W1    : natural := 17;                      -- x1, y1
+    constant W2    : natural := 20;                      -- x2, y2
+    constant W3    : natural := 22;                      -- x3, y3
+    constant WH    : natural := SD_W - SDM_F;            -- poids forts de Pk
+    subtype mot_t  is signed(SD_W - 1 downto 0);
+    subtype haut_t is signed(WH - 1 downto 0);
+    subtype app_t  is signed(SD_G - 1 downto 0);
+    type haut8_t is array (0 to 7) of haut_t;
     type int_tab is array (natural range <>) of integer;
 
     function c2(m : integer) return integer is begin return m * (m - 1) / 2; end function;
@@ -3308,17 +3328,24 @@ architecture rtl of sdm3 is
     constant RH6 : int_tab(0 to 15) := demi(16, 0); constant RL6 : int_tab(0 to 15) := demi(16, 4);
     constant RH7 : int_tab(0 to 15) := demi(17, 0); constant RL7 : int_tab(0 to 15) := demi(17, 4);
 
-    signal x1, x2, x3 : mot_t := (others => '0');
-    signal p          : mot8_t := (others => (others => '0'));
-    signal u1, u2, u3 : mot_t := (others => '0');
+    signal x1         : signed(W1 - 1 downto 0) := (others => '0');
+    signal x2         : signed(W2 - 1 downto 0) := (others => '0');
+    signal x3         : signed(W3 - 1 downto 0) := (others => '0');
+    signal p          : haut8_t := (others => (others => '0'));     -- ⌊Pk / FS⌋
+    signal u1, u2, u3 : app_t := (others => '0');
     signal b_r        : std_logic_vector(7 downto 0) := (others => '0');
     type cmp_t is array (0 to 7) of std_logic_vector(0 to 127);
     signal cmp        : cmp_t := (others => (others => '0'));     -- cmp(k)(b) = Pk ≥ Dk(b)
 
     -- in_de : E : groupe, k → S : Ink (0 pour k < 3)
-    function in_de(g : sd_grp_t; k : natural) return mot_t is
+    function in_de(g : sd_grp_t; k : natural) return app_t is
     begin
         if k < 3 then return (others => '0'); else return g(k - 3); end if;
+    end function;
+    -- haut : E : mot de la boucle → S : ses poids forts, ⌊v / FS⌋
+    function haut(v : mot_t) return haut_t is
+    begin
+        return v(SD_W - 1 downto SDM_F);
     end function;
     -- rh, rl : E : k, motif de 4 décisions → S : demi-correction de Pk
     function rh(k, v : natural) return integer is
@@ -3339,13 +3366,13 @@ begin
     bits <= b_r;
 
     -- comparaisons : les 255 tests Pk ≥ Dk(b) en parallèle, par le signe d'une
-    --   soustraction (chaîne de retenue)
+    --   soustraction (chaîne de retenue) sur les poids forts : ⌊Pk / FS⌋ − Dk / FS
     g_k : for k in 0 to 7 generate
         g_b : for b in 0 to 2 ** k - 1 generate
-            signal dif : signed(SD_W downto 0);
+            signal dif : signed(WH downto 0);
         begin
-            dif <= resize(p(k), SD_W + 1) - to_signed(DK(2 ** k - 1 + b), SD_W + 1);
-            cmp(k)(b) <= not dif(SD_W);
+            dif <= resize(p(k), WH + 1) - to_signed(DK(2 ** k - 1 + b) / FS, WH + 1);
+            cmp(k)(b) <= not dif(WH);
         end generate;
     end generate;
 
@@ -3360,9 +3387,19 @@ begin
         variable hi, lo  : natural range 0 to 15;
         variable vb      : std_logic_vector(0 to 3);
         variable t       : std_logic_vector(0 to 7);
-        variable y1, y2, y3, q : mot_t;
-        type cand_t is array (0 to 15) of mot_t;
-        variable c1, c2v, c3, cp : cand_t;
+        variable y1      : signed(W1 - 1 downto 0);
+        variable y2      : signed(W2 - 1 downto 0);
+        variable y3      : signed(W3 - 1 downto 0);
+        variable q       : mot_t;
+        variable qh      : haut_t;
+        type c1_t is array (0 to 15) of signed(W1 - SDM_F - 1 downto 0);
+        type c2_t is array (0 to 15) of signed(W2 - SDM_F - 1 downto 0);
+        type c3_t is array (0 to 15) of signed(W3 - SDM_F - 1 downto 0);
+        type cp_t is array (0 to 15) of haut_t;
+        variable c1      : c1_t;
+        variable c2v     : c2_t;
+        variable c3      : c3_t;
+        variable cp      : cp_t;
         variable ovf     : boolean;
     begin
         if rising_edge(clk) then
@@ -3372,7 +3409,7 @@ begin
                 u1 <= (others => '0'); u2 <= (others => '0'); u3 <= (others => '0');
                 b_r <= (others => '0');
             elsif charge = '1' then
-                for k in 0 to 7 loop p(k) <= in_de(gs, k); end loop;
+                for k in 0 to 7 loop p(k) <= haut(resize(in_de(gs, k), SD_W)); end loop;
                 u1 <= gs(5); u2 <= gs(6); u3 <= gs(7);
                 x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
             elsif pas = '1' then
@@ -3396,26 +3433,30 @@ begin
                 for k in 0 to 7 loop b_r(7 - k) <= s(k); end loop;
                 -- état suivant : Y = M⁸·X + U, X ← Y − T(s), Pk ← Qk − Rk(s)
                 ovf := abs (x1) > GARDE or abs (x2) > GARDE or abs (x3) > GARDE;
-                y1 := x1 + u1;
-                y2 := shift_left(x1, 3) + x2 + u2;
-                y3 := shift_left(x1, 5) - shift_left(x1, 2) + shift_left(x2, 3) + x3 + u3;
+                y1 := x1 + resize(u1, W1);
+                y2 := shift_left(resize(x1, W2), 3) + x2 + resize(u2, W2);
+                y3 := shift_left(resize(x1, W3), 5) - shift_left(resize(x1, W3), 2) + shift_left(resize(x2, W3), 3) + x3 + resize(u3, W3);
                 if ovf then
                     x1 <= (others => '0'); x2 <= (others => '0'); x3 <= (others => '0');
-                    for k in 0 to 7 loop p(k) <= in_de(gs, k); end loop;
+                    for k in 0 to 7 loop p(k) <= haut(resize(in_de(gs, k), SD_W)); end loop;
                 else
                     -- 16 candidats (un par motif s4…s7) calculés sans attendre s4…s7,
                     --   la demi-correction de s0…s3 retranchée dès que s0…s3 sont connus,
-                    --   puis choix par s4…s7
+                    --   puis choix par s4…s7 ; corrections multiples de FS : seuls les
+                    --   poids forts sont corrigés, les SDM_F poids faibles sont ceux de Y
                     for v in 0 to 15 loop
-                        c1(v) := y1 - to_signed(TL1(v), SD_W) - to_signed(TH1(hi), SD_W);
-                        c2v(v) := y2 - to_signed(TL2(v), SD_W) - to_signed(TH2(hi), SD_W);
-                        c3(v) := y3 - to_signed(TL3(v), SD_W) - to_signed(TH3(hi), SD_W);
+                        c1(v) := y1(W1 - 1 downto SDM_F) - to_signed(TL1(v) / FS, W1 - SDM_F) - to_signed(TH1(hi) / FS, W1 - SDM_F);
+                        c2v(v) := y2(W2 - 1 downto SDM_F) - to_signed(TL2(v) / FS, W2 - SDM_F) - to_signed(TH2(hi) / FS, W2 - SDM_F);
+                        c3(v) := y3(W3 - 1 downto SDM_F) - to_signed(TL3(v) / FS, W3 - SDM_F) - to_signed(TH3(hi) / FS, W3 - SDM_F);
                     end loop;
-                    x1 <= c1(lo); x2 <= c2v(lo); x3 <= c3(lo);
+                    x1 <= c1(lo) & y1(SDM_F - 1 downto 0);
+                    x2 <= c2v(lo) & y2(SDM_F - 1 downto 0);
+                    x3 <= c3(lo) & y3(SDM_F - 1 downto 0);
                     for k in 0 to 7 loop
-                        q := resize(y1 * to_signed(c2(k), 6), SD_W) + resize(y2 * to_signed(k, 5), SD_W) + y3 + in_de(gs, k);
+                        q := resize(y1 * to_signed(c2(k), 6), SD_W) + resize(y2 * to_signed(k, 5), SD_W) + resize(y3, SD_W) + resize(in_de(gs, k), SD_W);
+                        qh := haut(q);
                         for v in 0 to 15 loop
-                            cp(v) := q - to_signed(rl(k, v), SD_W) - to_signed(rh(k, hi), SD_W);
+                            cp(v) := qh - to_signed(rl(k, v) / FS, WH) - to_signed(rh(k, hi) / FS, WH);
                         end loop;
                         p(k) <= cp(lo);
                     end loop;
