@@ -7,7 +7,7 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-11
---  Version    : 2.6
+--  Version    : 2.7
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 32 unités, dans l'ordre d'analyse :
@@ -84,6 +84,10 @@
 --                                poids fort (14 bits au lieu de 24), états x1, x2, x3
 --                                sur 17, 20, 22 bits ; dvbs_pkg 1.4 : SD_G, apports
 --                                du groupe sur 16 bits (sd_entree)
+--               2.7  2026-11-11  quant_intra : inverses en mémoire morte synchrone
+--                                (2 048 mots de 26 bits, LSRAM) au lieu d'une table
+--                                combinatoire, division sur 17 × 14 bits, trois
+--                                étages ; sortie inchangée au bit près
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1696,9 +1700,15 @@ end architecture rtl;
 --               coefficient ; sortie : coefficients quantifiés signés 16 bits
 --   Principe : DC : (F + 4) >> 3 borné à 0..255 ;
 --              AC : ±floor((32|F| + D) / (2D)) borné à 2 047, D = W·2·code
---              (même arrondi que Math.round de la page 03). Division exacte
---              par l'inverse m = floor(2²⁴ / 2D) + 1 tiré d'une table (63 × 31),
---              puis correction d'une unité.
+--              (même arrondi que Math.round de la page 03). Division exacte :
+--              le quotient vaut ⌊n / d⌋ avec n = 16|F| + W·code et d = 2·W·code ;
+--              estimation ⌊n·m / 2¹⁸⌋ par l'inverse m = ⌊2¹⁸ / d⌋ + 1, puis
+--              correction d'une unité (vérifié sur les 63 × 31 × 4 096 cas).
+--              m (14 bits) et W·code (12 bits) sont lus dans une mémoire morte
+--              synchrone de 2 048 mots (adresse : code & position).
+--   Étages : A : |F|, DC, lecture de la mémoire ; B : produit n·m ;
+--            C : correction, bornage, signe. Les trois avancent ensemble.
+--   Domaine : |F| ≤ 4 095 (la DCT de pixels 8 bits donne |F| ≤ 2 040)
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -1730,80 +1740,128 @@ architecture rtl of quant_intra is
         26, 27, 29, 32, 35, 40, 48, 58,
         26, 27, 29, 34, 38, 46, 56, 69,
         27, 29, 35, 38, 46, 56, 69, 83);
-    type inv_t is array (0 to 63, 1 to 31) of natural range 0 to 2 ** 24;
-    -- inverses : E : matrice W → T : m = ⌊2²⁴ / (4·W·code)⌋ + 1 pour 64
-    --   positions × 31 codes → S : table des inverses
-    function inverses return inv_t is
-        variable t : inv_t;
+    constant RB : natural := 18;                         -- échelle de l'inverse : 2^RB
+    subtype mot_t is std_logic_vector(25 downto 0);      -- m (14 bits) & W·code (12 bits)
+    type rom_t is array (0 to 2047) of mot_t;
+    -- inverses : E : matrice W → T : pour 32 codes × 64 positions (code 0 traité
+    --   comme 1, position 0 = DC, inutilisée), m = ⌊2^RB / (2·W·code)⌋ + 1 et
+    --   W·code → S : contenu de la mémoire morte, adresse = 64·code + position
+    function inverses return rom_t is
+        variable t  : rom_t := (others => (others => '0'));
+        variable c  : natural range 1 to 31;
+        variable wc : natural range 0 to 4095;
     begin
-        for i in 0 to 63 loop
-            for c in 1 to 31 loop
-                t(i, c) := (2 ** 24) / (4 * W(i) * c) + 1;     -- 2D = 4·W·code
+        for cc in 0 to 31 loop
+            if cc = 0 then c := 1; else c := cc; end if;
+            for i in 1 to 63 loop
+                wc := W(i) * c;
+                t(64 * cc + i) := std_logic_vector(to_unsigned((2 ** RB) / (2 * wc) + 1, 14)) & std_logic_vector(to_unsigned(wc, 12));
             end loop;
         end loop;
         return t;
     end function;
-    constant INV : inv_t := inverses;
+    constant INV : rom_t := inverses;
 
     signal idx     : natural range 0 to 63 := 0;
+    signal adr     : unsigned(10 downto 0);
+    signal rom_q   : mot_t := (others => '0');           -- étage A : mot lu
+    signal a_valid, a_dc, a_neg : std_logic := '0';
+    signal a_abs   : unsigned(11 downto 0) := (others => '0');   -- |F|, ou DC borné
+    signal b_valid, b_dc, b_neg : std_logic := '0';
+    signal b_n     : unsigned(16 downto 0) := (others => '0');   -- n = 16|F| + W·code
+    signal b_wc    : unsigned(11 downto 0) := (others => '0');
+    signal b_q     : unsigned(12 downto 0) := (others => '0');   -- estimation, ou DC borné
     signal o_valid : std_logic := '0';
     signal libre   : std_logic;
 begin
     libre   <= (not o_valid) or m_ready;
     s_ready <= libre and not rst;
     m_valid <= o_valid;
+    adr     <= code & to_unsigned(idx, 6);
 
-    -- E : coefficient, code → T : DC (F + 4) >> 3 borné à 0..255 ; AC produit
-    --   par l'inverse puis correction d'une unité, borné à 2 047 → S :
-    --   coefficient quantifié
+    -- E : code, position → T : lecture synchrone → S : inverse et W·code du
+    --   coefficient entré dans l'étage A
     process (clk)
-        variable c        : natural range 1 to 31;
-        variable a        : unsigned(15 downto 0);
-        variable den      : unsigned(13 downto 0);
-        variable num      : unsigned(21 downto 0);
-        variable p        : unsigned(45 downto 0);
-        variable q        : unsigned(21 downto 0);
-        variable dc       : signed(16 downto 0);
-        variable r        : integer range -2047 to 2047;
+    begin
+        if rising_edge(clk) then
+            if libre = '1' then
+                rom_q <= INV(to_integer(adr));
+            end if;
+        end if;
+    end process;
+
+    -- E : coefficient, code → T : A : DC (F + 4) >> 3 borné à 0..255, AC |F| et
+    --   signe ; B : estimation du quotient par l'inverse ; C : correction d'une
+    --   unité, borné à 2 047, signe → S : coefficient quantifié
+    process (clk)
+        variable dc : signed(16 downto 0);
+        variable a  : unsigned(15 downto 0);
+        variable n  : unsigned(16 downto 0);
+        variable p  : unsigned(30 downto 0);
+        variable d  : unsigned(12 downto 0);
+        variable q  : unsigned(12 downto 0);
+        variable r  : integer range 0 to 2047;
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 idx     <= 0;
+                a_valid <= '0';
+                b_valid <= '0';
                 o_valid <= '0';
             elsif libre = '1' then
-                o_valid <= s_valid;
+                -- étage A
+                a_valid <= s_valid;
                 if s_valid = '1' then
                     if idx = 0 then
                         dc := shift_right(resize(s_data, 17) + 4, 3);
                         if dc < 0 then
-                            m_data <= (others => '0');
+                            a_abs <= (others => '0');
                         elsif dc > 255 then
-                            m_data <= to_signed(255, 16);
+                            a_abs <= to_unsigned(255, 12);
                         else
-                            m_data <= resize(dc, 16);
+                            a_abs <= unsigned(dc(11 downto 0));
                         end if;
+                        a_dc  <= '1';
+                        a_neg <= '0';
                     else
-                        c   := 1 when code = 0 else to_integer(code);
-                        a   := unsigned(abs(s_data));
-                        den := to_unsigned(4 * W(idx) * c, 14);
-                        num := shift_left(resize(a, 22), 5) + resize(den, 22) / 2;     -- 32|F| + D
-                        p   := num * to_unsigned(INV(idx, c), 24);
-                        q   := resize(p(45 downto 24), 22);
-                        if resize(q * den, 36) > resize(num, 36) then
-                            q := q - 1;
-                        end if;
-                        if q > 2047 then
-                            r := 2047;
-                        else
-                            r := to_integer(q);
-                        end if;
-                        if s_data < 0 then
-                            m_data <= to_signed(-r, 16);
-                        else
-                            m_data <= to_signed(r, 16);
-                        end if;
+                        a     := unsigned(abs(s_data));
+                        a_abs <= a(11 downto 0);
+                        a_dc  <= '0';
+                        a_neg <= s_data(15);
                     end if;
                     idx <= 0 when idx = 63 else idx + 1;
+                end if;
+                -- étage B
+                b_valid <= a_valid;
+                b_dc    <= a_dc;
+                b_neg   <= a_neg;
+                n       := resize(a_abs & "0000", 17) + unsigned(rom_q(11 downto 0));
+                p       := n * unsigned(rom_q(25 downto 12));
+                b_n     <= n;
+                b_wc    <= unsigned(rom_q(11 downto 0));
+                if a_dc = '1' then
+                    b_q <= resize(a_abs, 13);
+                else
+                    b_q <= p(30 downto RB);
+                end if;
+                -- étage C
+                o_valid <= b_valid;
+                q := b_q;
+                if b_dc = '0' then
+                    d := b_wc & '0';
+                    if q * d > resize(b_n, 26) then
+                        q := q - 1;
+                    end if;
+                end if;
+                if q > 2047 then
+                    r := 2047;
+                else
+                    r := to_integer(q);
+                end if;
+                if b_neg = '1' then
+                    m_data <= to_signed(-r, 16);
+                else
+                    m_data <= to_signed(r, 16);
                 end if;
             end if;
         end if;
