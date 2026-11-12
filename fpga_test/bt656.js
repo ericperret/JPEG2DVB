@@ -10,18 +10,24 @@
                les 8 premiers pixels ; une image en couleur, une image en
                noir et blanc (Cb = Cr = 128)
   Auteur     : Eric PERRET
-  Date       : 2026-11-04
-  Version    : 1.0
+  Date       : 2026-11-11
+  Version    : 1.1
   Plateforme : Node.js (zlib intégré, aucune dépendance)
   Licence    : CC BY-NC 4.0
-  Usage      : node bt656.js         → bt656.bin (entrée) et bt656_ref.bin (sortie attendue)
+  Usage      : node bt656.js         → bt656.bin (entrée), bt656_ref.bin (sortie attendue
+                                       de bt656_rx) et cam_mb.bin (sortie attendue de cam_mb)
   Flux       : fin de la trame 2 d'une image précédente, entrée au milieu
                d'une ligne (le récepteur doit attendre un début de trame),
                image 0 en couleur, image 1 en noir et blanc, lignes 1 et 2
                de l'image suivante
   Référence  : 4 trames de 288 lignes × 360 couples, octets Cb Y0 Cr Y1 dans
                l'ordre du flux
+  Macroblocs : chaque trame (720 × 288) est une image de 45 × 18 macroblocs
+               4:2:0 ; ordre : rangée par rangée, 6 blocs par macrobloc (4 Y, Cb,
+               Cr), 64 valeurs par bloc ; chrominance : moyenne arrondie des
+               deux lignes de chaque paire de la trame, (a + b + 1) >> 1
   Historique : 1.0  2026-11-04  création
+               1.1  2026-11-11  cam_mb.bin : macroblocs attendus en sortie de cam_mb
 ================================================================================
 */
 'use strict';
@@ -126,4 +132,24 @@ if (refB.length !== 4 * 288 * OCT_ACTIF) { throw new Error('référence : ' + re
 for (let i = 0; i < refB.length; i++) { if (refB[i] === 0 || refB[i] === 255) { throw new Error('octet réservé dans la zone active'); } }
 fs.writeFileSync(path.join(__dirname, 'bt656.bin'), fluxB);
 fs.writeFileSync(path.join(__dirname, 'bt656_ref.bin'), refB);
+
+/* macroblocs — E : couples d'une trame (288 lignes × 1 440 octets Cb Y0 Cr Y1)
+   → T : 45 × 18 macroblocs, 4 blocs Y, puis Cb et Cr moyennés sur deux lignes
+   → S : octets dans l'ordre des macroblocs */
+function macroblocs(t) {
+    const out = Buffer.alloc(45 * 18 * 384);
+    const Y = (l, x) => t[l * OCT_ACTIF + (x >> 1) * 4 + ((x & 1) ? 3 : 1)];
+    const C = (l, p, cr) => t[l * OCT_ACTIF + p * 4 + (cr ? 2 : 0)];
+    let o = 0;
+    for (let r = 0; r < 18; r++) {
+        for (let m = 0; m < 45; m++) {
+            for (let b = 0; b < 4; b++) { for (let y = 0; y < 8; y++) { for (let x = 0; x < 8; x++) { out[o++] = Y(16 * r + 8 * (b >> 1) + y, 16 * m + 8 * (b & 1) + x); } } }
+            for (let cr = 0; cr < 2; cr++) { for (let y = 0; y < 8; y++) { for (let x = 0; x < 8; x++) { out[o++] = (C(16 * r + 2 * y, 8 * m + x, cr) + C(16 * r + 2 * y + 1, 8 * m + x, cr) + 1) >> 1; } } }
+        }
+    }
+    return out;
+}
+const mbB = Buffer.concat([0, 1, 2, 3].map(f => macroblocs(refB.subarray(f * 288 * OCT_ACTIF, (f + 1) * 288 * OCT_ACTIF))));
+fs.writeFileSync(path.join(__dirname, 'cam_mb.bin'), mbB);
+console.log('cam_mb.bin', mbB.length, 'octets (4 trames de 810 macroblocs)');
 console.log('bt656.bin', fluxB.length, 'octets ; bt656_ref.bin', refB.length, 'octets (', refB.length / 4, 'couples )');

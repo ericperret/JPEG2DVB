@@ -7,7 +7,7 @@
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
 #  Date       : 2026-11-11
-#  Version    : 1.8
+#  Version    : 1.9
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -27,6 +27,7 @@
 #               1.7  2026-11-11  banc csa (embrouillage DVB-CSA) ; csa_enc au contrôle de
 #                                synthèse
 #               1.8  2026-11-11  banc mcpc (multiplexeur à deux programmes)
+#               1.9  2026-11-11  banc cam (entrée caméra) ; cam_mb au contrôle de synthèse
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -69,6 +70,7 @@ video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
 emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000
 sdm|tb_sdm|
 bt656|tb_bt656|
+cam|tb_cam|
 tvp|tb_tvp|
 tvp_abs|tb_tvp|-gG_ABS=1
 tvp_bloc|tb_tvp|-gG_ABS=2
@@ -87,7 +89,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux csa_enc rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx tvp_ctrl regs_i2c dvbs_sd; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux csa_enc rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx cam_mb tvp_ctrl regs_i2c dvbs_sd; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else
