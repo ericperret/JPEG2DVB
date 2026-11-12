@@ -7,7 +7,7 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-12
---  Version    : 2.23
+--  Version    : 2.24
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC), PolarFire MPF100T
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 42 unités, dans l'ordre d'analyse :
@@ -170,6 +170,9 @@
 --                                dernière lecture de l'accumulation LDPC (état
 --                                E_PRE0) ; cumul de la parité : lecture et écriture
 --                                alignées (compteur jp)
+--               2.24 2026-11-12  codeur : nombre de macroblocs par rangée transmis à
+--                                vlc_enc (G_COLS ; 22 par défaut : prédiction DC
+--                                remise à zéro tous les 22 macroblocs en 720 × 576)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -4252,7 +4255,7 @@ begin
         port map (clk, rst, code, g_valid, g_ready, g_data, q_valid, q_ready, q_data);
     u_zz : entity work.zigzag
         port map (clk, rst, q_valid, q_ready, q_data, z_valid, z_ready, z_data);
-    u_vlc : entity work.vlc_enc
+    u_vlc : entity work.vlc_enc generic map (G_COLS => COLS)
         port map (clk, rst, z_valid, z_ready, z_data, v_valid, v_ready, v_code, v_lg, v_fin);
     u_es : entity work.es_mux generic map (G_LARG => G_LARG, G_HAUT => G_HAUT, G_TRAMES => G_TRAMES, G_BIT_RATE => G_BIT_RATE, G_BIT_RATE2 => G_BIT_RATE2, G_GOP => G_GOP, G_IMAGES => G_IMAGES)
         port map (clk, rst, code, code_ok, v_valid, v_ready, v_code, v_lg, v_fin, m_valid, m_ready, m_data, norme);
@@ -6639,7 +6642,7 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- jpeg2dvb_top : entité de tête de la carte (MPF050T-FCVG484I) ; banc : tb_top
+-- jpeg2dvb_top : entité de tête de la carte (MPF100T-FCG484I) ; banc : tb_top
 --   Horloges : oscillateur MEMS 50 MHz → horloges (PLL) : clk_sys 80 MHz,
 --              clk_hs 320 MHz (sérialiseurs), clk_tvp 14,31818 MHz (XTAL1 du
 --              décodeur) ; tvp_sclk 27 MHz (décodeur) pour bt656_rx
