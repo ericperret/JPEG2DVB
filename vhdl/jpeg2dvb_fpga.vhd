@@ -7,8 +7,8 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-12
---  Version    : 2.22
---  Plateforme : VHDL-2008, synthétisable (Libero SoC)
+--  Version    : 2.23
+--  Plateforme : VHDL-2008, synthétisable (Libero SoC), PolarFire MPF100T
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 42 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
@@ -163,6 +163,13 @@
 --                                present, clé = numéro répété trois fois ; mire_gen :
 --                                numéro affiché (entrées aff, num) ; dvbs_sd : entrées
 --                                biss, biss_num ; jpeg2dvb_top : biss branché
+--               2.23 2026-11-12  dvbs2_tx, trois corrections (banc tb_s2, 3 trames
+--                                identiques à la référence dvbs2.js) : adresse de
+--                                lecture de K et P rendue à l'encodeur tant que
+--                                l'émetteur n'a pas commencé à lire le jeu ;
+--                                dernière lecture de l'accumulation LDPC (état
+--                                E_PRE0) ; cumul de la parité : lecture et écriture
+--                                alignées (compteur jp)
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -5692,7 +5699,7 @@ architecture rtl of dvbs2_tx is
     signal fait, lu     : std_logic_vector(0 to 1) := "00";       -- bascules : jeu prêt = fait ⊕ lu
 
     -- encodeur (étapes 1 et 2)
-    type ee_t is (E_ATT, E_ENT, E_DATA, E_BCH, E_RAZ, E_ACC0, E_ACC, E_PRE, E_FIN);
+    type ee_t is (E_ATT, E_ENT, E_DATA, E_BCH, E_RAZ, E_ACC0, E_ACC, E_PRE0, E_PRE, E_FIN);
     signal ee       : ee_t := E_ATT;
     signal cnt_ts   : natural range 0 to 187 := 0;                -- position dans le paquet TS
     signal crc_up   : std_logic_vector(7 downto 0) := (others => '0');
@@ -5720,6 +5727,7 @@ architecture rtl of dvbs2_tx is
     signal dbit     : std_logic := '0';
     signal e_ra_k   : natural range 0 to S2_MK - 1 := 0;
     signal e_ra_p   : natural range 0 to S2_MP - 1 := 0;
+    signal jp       : natural range 0 to S2_MP - 1 := 0;          -- mot en cours du cumul
     signal s_en     : std_logic := '0';                           -- écriture en cours (étage après lecture)
     signal s_aw     : natural range 0 to S2_MP - 1 := 0;
     signal s_ab     : natural range 0 to 19 := 0;
@@ -5800,8 +5808,10 @@ begin
             port map (clk, k_we(x), k_wa, k_wd, k_ra(x), k_rd(x));
         u_p : entity work.mem_sdp generic map (G_W => 20, G_D => S2_MP)
             port map (clk, p_we(x), p_wa, p_wd, p_ra(x), p_rd(x));
-        k_ra(x) <= f_ra_k when b_out = sl(x) else e_ra_k;
-        p_ra(x) <= f_ra_p when b_out = sl(x) else e_ra_p;
+        -- l'émetteur ne prend l'adresse de lecture du jeu b_out que lorsqu'il le lit
+        --   (ef /= F_ATT) ; en attente d'un jeu en cours d'encodage, l'encodeur garde ses lectures
+        k_ra(x) <= f_ra_k when b_out = sl(x) and ef /= F_ATT else e_ra_k;
+        p_ra(x) <= f_ra_p when b_out = sl(x) and ef /= F_ATT else e_ra_p;
         k_we(x) <= k_wen when b_enc = sl(x) else '0';
         p_we(x) <= s_en when b_enc = sl(x) else '0';
     end generate;
@@ -5951,7 +5961,7 @@ begin
                             if n = 359 then
                                 n <= 0;
                                 if rang = 44 then
-                                    ee <= E_PRE; report_c <= '0'; e_ra_p <= 0;
+                                    ee <= E_PRE0;
                                 else
                                     rang <= rang + 1;
                                 end if;
@@ -5961,10 +5971,14 @@ begin
                         else
                             c <= c + 1;
                         end if;
+                    when E_PRE0 =>
+                        -- la dernière lecture de l'accumulation est lancée : cumul depuis le mot 0
+                        report_c <= '0'; jp <= 0; ee <= E_PRE;
                     when E_PRE =>
-                        -- cumul p(j) ⊕= p(j − 1) : mot e_ra_p lu, écrit deux cycles plus tard
-                        r1_en <= '1'; r1_aw <= e_ra_p; r1_mode <= 1; r1_val <= '0';
-                        if e_ra_p = S2_MP - 1 then ee <= E_FIN; else e_ra_p <= e_ra_p + 1; end if;
+                        -- cumul p(j) ⊕= p(j − 1) : mot jp, adresse de lecture et d'écriture
+                        --   lancées ensemble (lecture et écriture alignées comme à l'accumulation)
+                        r1_en <= '1'; r1_aw <= jp; r1_mode <= 1; r1_val <= '0'; e_ra_p <= jp;
+                        if jp = S2_MP - 1 then ee <= E_FIN; else jp <= jp + 1; end if;
                     when E_FIN =>
                         -- dernières écritures faites : jeu prêt, jeu suivant
                         if r1_en = '0' and s_en = '0' then
