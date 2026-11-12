@@ -7,16 +7,18 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-12
---  Version    : 2.20
+--  Version    : 2.22
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 38 unités, dans l'ordre d'analyse :
+--  Contenu    : 42 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
 --               mire_pkg      géométrie et palette de la mire (généré par mire.js)
 --               vlc_tab_pkg   tables VLC B.12 à B.14 (généré par gen_vlc.js)
 --               csa_tab_pkg   tables de l'embrouillage DVB-CSA (généré par csa.js)
+--               dvbs2_pkg     constantes DVB-S2 : table LDPC 1/4, polynôme BCH,
+--                             en-tête PL, cadence TS
 --               prbs_disp     dispersion d'énergie (étape 09)
 --               rs_enc        Reed-Solomon (204,188) (étape 10)
 --               interleaver   entrelaceur de Forney I = 12 (étape 11)
@@ -44,9 +46,13 @@
 --               i2c_maitre    maître I²C minimal (étirement, libération du bus)
 --               tvp_ctrl      pilotage du TVP5150AM1 : démarrage, PAL forcé, choix
 --                             automatique ou imposée de l'entrée AIP1A / AIP1B
---               dvbs_sd       émetteur de la mire aux bits sigma-delta (80 MHz)
+--               mem_sdp       mémoire simple double accès (LSRAM)
+--               dvbs2_tx      émetteur DVB-S2 QPSK 1/4 : BBFRAME, BCH, LDPC, trame PL
+--               dvbs_sd       émetteur de la mire aux bits sigma-delta (80 MHz),
+--                             DVB-S ou DVB-S2 selon norme
 --               choix_auto    mode de la carte d'après les entrées verrouillées
 --                             (sondage toutes les minutes, sans microcontrôleur)
+--               tirage_biss   numéro BISS de 4 chiffres tiré à la mise sous tension
 --               horloges      deux PLL (cœurs Libero PF_CCC_SYS et PF_CCC_TVP)
 --               sortie_lvds   sérialiseurs LVDS (cœur Libero PF_IOD_TX_SD)
 --               jpeg2dvb_top  entité de tête de la carte (PLL, LVDS, décodeur,
@@ -144,6 +150,19 @@
 --                                choix_auto : sondage AIP1A / AIP1B toutes les
 --                                minutes, mode (DVB-S, DVB-S2, BISS) ; norme et
 --                                biss à brancher par les chantiers suivants
+--               2.21 2026-11-12  DVB-S2 QPSK 1/4 (trames normales, pilotes, CCM) :
+--                                dvbs2_pkg, mem_sdp, dvbs2_tx ; dvbs_sd : entrée
+--                                norme, chaîne DVB-S ou DVB-S2 vers sigma_delta,
+--                                remise à zéro au changement ; ts_mux : cadence en
+--                                record (G_CAD, G_CAD2, dvbs_pkg 1.5) ; rate_ctrl,
+--                                es_mux, codeur : constantes DVB-S2 (G_T2,
+--                                G_BIT_RATE2) choisies par norme
+--               2.22 2026-11-12  BISS-1 dans la chaîne : csa_enc entre ts_mux et la
+--                                dispersion / dvbs2_tx (PID 0x0101, actif quand biss) ;
+--                                tirage_biss : numéro de 4 chiffres figé au premier
+--                                present, clé = numéro répété trois fois ; mire_gen :
+--                                numéro affiché (entrées aff, num) ; dvbs_sd : entrées
+--                                biss, biss_num ; jpeg2dvb_top : biss branché
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -198,6 +217,21 @@ package dvbs_pkg is
     constant SD_W : natural := 24;                                 -- largeur des mots de la boucle (|Pk| < 2²³)
     constant SD_G : natural := 16;                                 -- largeur des apports (|In|, |U| ≤ 26 966)
     type sd_grp_t is array (0 to 7) of signed(SD_G - 1 downto 0);  -- In3 … In7, U1, U2, U3 d'un groupe
+
+    ----------------------------------------------------------------------------
+    -- Cadence du multiplexeur TS (ts_mux) : t_k ≥ a/b ⇔ k·K ≥ a·U/b (U unités
+    -- par seconde) ; psi, pcr, img : périodes en unités ; PCR par créneau :
+    -- pcr_inc + pcr_fr / pcr_den ticks à 27 MHz, départ pcr_b0 : pcr_e0,
+    -- reste initial pcr_r0 (arrondi compris)
+    ----------------------------------------------------------------------------
+    type ts_cadence_t is record
+        k, psi, pcr, img         : natural;
+        pcr_inc, pcr_fr, pcr_den : natural;
+        pcr_r0, pcr_b0, pcr_e0   : natural;
+    end record;
+    -- DVB-S FEC 1/2 : 10 MS/s (U = 312 500, PCR + 5 508/235 par octet) et 5 MS/s
+    constant CAD_S_10M : ts_cadence_t := (51, 25000, 9375, 12500, 4406, 188, 470, 415, 0, 234);
+    constant CAD_S_5M  : ts_cadence_t := (102, 25000, 9375, 12500, 8812, 376, 470, 125, 1, 169);
 
     ----------------------------------------------------------------------------
     -- Budget de la régulation TM5 (étape 03) en bits par image :
@@ -956,6 +990,161 @@ package csa_tab_pkg is
         "00111001110000101001001111100101");
 end package csa_tab_pkg;
 -- <<< csa_tab_pkg.vhd
+
+--------------------------------------------------------------------------------
+-- dvbs2_pkg : constantes du mode DVB-S2 (EN 302 307-1) QPSK 1/4, trames
+--   normales, pilotes, CCM : table LDPC du taux 1/4 (annexe B, q = 135),
+--   polynôme générateur BCH t = 12 (produit des 12 polynômes de la
+--   table 6a), en-tête PL (SOF, PLS code 5 en Reed-Muller (64, 7),
+--   brouillage, π/2-BPSK), cadences du multiplexeur TS
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.dvbs_pkg.all;
+
+package dvbs2_pkg is
+    constant S2_KBCH  : natural := 16008;      -- bits de la BBFRAME (en-tête 80 + données)
+    constant S2_NBCH  : natural := 16200;      -- BBFRAME + 192 bits de parité BCH
+    constant S2_NPAR  : natural := 48600;      -- bits de parité LDPC
+    constant S2_Q     : natural := 135;
+    constant S2_DFL   : natural := 15928;      -- champ de données (1 991 octets)
+    constant S2_MK    : natural := 810;        -- mots de 20 bits de la BBFRAME codée BCH
+    constant S2_MP    : natural := 2430;       -- mots de 20 bits de la parité LDPC
+    constant S2_SLOTS : natural := 360;        -- créneaux de 90 symboles
+    constant S2_SYMB  : natural := 33282;      -- symboles par trame PL (90 + 32 400 + 22 × 36)
+
+    -- cadence du multiplexeur TS (ts_cadence_t, dvbs_pkg) à 5 MS/s : R_ts =
+    --   15 928 · 5 000 000 / 33 282 = 2 392 885,04 bit/s, créneau de
+    --   782 127 / 1 244 375 000 s ; PCR + 168 939 432 / 9 955 ticks par créneau
+    constant CAD_S2_5M : ts_cadence_t := (782127, 99550000, 37331250, 49775000, 16970, 6164, 19910, 3505, 3, 3);
+    constant S2_RTS    : natural := 2_392_885; -- débit TS (bit/s), partie entière
+    constant S2_BIT_RATE : natural := 5983;    -- ⌈R_ts / 400⌉ (en-tête de séquence MPEG-2)
+
+    -- table B.1 du taux 1/4 : 45 rangées, 12 adresses pour les 15 premières,
+    --   3 pour les 30 suivantes (complétées par 0)
+    type ldpc_tab_t is array (0 to 44, 0 to 11) of natural range 0 to 48599;
+    constant LDPC_1_4 : ldpc_tab_t := (
+         0 => (23606, 36098,  1140, 28859, 18148, 18510,  6226,   540, 42014, 20879, 23802, 47088),
+         1 => (16419, 24928, 16609, 17248,  7693, 24997, 42587, 16858, 34921, 21042, 37024, 20692),
+         2 => ( 1874, 40094, 18704, 14474, 14004, 11519, 13106, 28826, 38669, 22363, 30255, 31105),
+         3 => (22254, 40564, 22645, 22532,  6134,  9176, 39998, 23892,  8937, 15608, 16854, 31009),
+         4 => ( 8037, 40401, 13550, 19526, 41902, 28782, 13304, 32796, 24679, 27140, 45980, 10021),
+         5 => (40540, 44498, 13911, 22435, 32701, 18405, 39929, 25521, 12497,  9851, 39223, 34823),
+         6 => (15233, 45333,  5041, 44979, 45710, 42150, 19416,  1892, 23121, 15860,  8832, 10308),
+         7 => (10468, 44296,  3611,  1480, 37581, 32254, 13817,  6883, 32892, 40258, 46538, 11940),
+         8 => ( 6705, 21634, 28150, 43757,   895,  6547, 20970, 28914, 30117, 25736, 41734, 11392),
+         9 => (22002,  5739, 27210, 27828, 34192, 37992, 10915,  6998,  3824, 42130,  4494, 35739),
+        10 => ( 8515,  1191, 13642, 30950, 25943, 12673, 16726, 34261, 31828,  3340,  8747, 39225),
+        11 => (18979, 17058, 43130,  4246,  4793, 44030, 19454, 29511, 47929, 15174, 24333, 19354),
+        12 => (16694,  8381, 29642, 46516, 32224, 26344,  9405, 18292, 12437, 27316, 35466, 41992),
+        13 => (15642,  5871, 46489, 26723, 23396,  7257,  8974,  3156, 37420, 44823, 35423, 13541),
+        14 => (42858, 32008, 41282, 38773, 26570,  2702, 27260, 46974,  1469, 20887, 27426, 38553),
+        15 => (22152, 24261,  8297,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        16 => (19347,  9978, 27802,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        17 => (34991,  6354, 33561,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        18 => (29782, 30875, 29523,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        19 => ( 9278, 48512, 14349,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        20 => (38061,  4165, 43878,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        21 => ( 8548, 33172, 34410,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        22 => (22535, 28811, 23950,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        23 => (20439,  4027, 24186,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        24 => (38618,  8187, 30947,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        25 => (35538, 43880, 21459,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        26 => ( 7091, 45616, 15063,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        27 => ( 5505,  9315, 21908,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        28 => (36046, 32914, 11836,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        29 => ( 7304, 39782, 33721,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        30 => (16905, 29962, 12980,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        31 => (11171, 23709, 22460,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        32 => (34541,  9937, 44500,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        33 => (14035, 47316,  8815,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        34 => (15057, 45482, 24461,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        35 => (30518, 36877,   879,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        36 => ( 7583, 13364, 24332,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        37 => (  448, 27056,  4682,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        38 => (12083, 31378, 21670,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        39 => ( 1159, 18031,  2221,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        40 => (17028, 38715,  9350,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        41 => (17343, 24530, 29574,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        42 => (46128, 31039, 32818,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        43 => (20373, 36967, 18345,     0,     0,     0,     0,     0,     0,     0,     0,     0),
+        44 => (46685, 20622, 32806,     0,     0,     0,     0,     0,     0,     0,     0,     0)
+    );
+    function ldpc_n(rang : natural) return natural;        -- adresses de la rangée : 12 ou 3
+
+    -- polynôme générateur BCH : coefficient de x^i en bit i, x^192 implicite
+    function bch_gen return std_logic_vector;
+    constant BCH_G : std_logic_vector(191 downto 0) := bch_gen;
+
+    -- en-tête PL : 90 symboles, bits (I, Q) en (1, 0), 1 = −1
+    type plh_t is array (0 to 89) of std_logic_vector(1 downto 0);
+    function plh_calc return plh_t;
+    constant PLH : plh_t := plh_calc;
+end package dvbs2_pkg;
+
+package body dvbs2_pkg is
+    function ldpc_n(rang : natural) return natural is
+    begin
+        if rang < 15 then return 12; else return 3; end if;
+    end function;
+
+    -- bch_gen : E : 12 polynômes de degré 16 (coefficient de x^i en position i)
+    --   → T : produit dans GF(2) → S : 192 coefficients (le terme x^192 vaut 1)
+    function bch_gen return std_logic_vector is
+        type p17_t is array (0 to 16) of std_logic;
+        type p12_t is array (0 to 11) of std_logic_vector(16 downto 0);   -- bit i = coefficient de x^i
+        constant P : p12_t := (
+            "10000000000101101", "10000000101110011", "10000111110111101", "10101101001010101",
+            "10001111100101111", "11111011110110101", "11010111101100101", "10111001101100111",
+            "10000111010100001", "10111010110100111", "10011101000101101", "10001101011100011");
+        variable g : std_logic_vector(192 downto 0) := (0 => '1', others => '0');
+        variable t : std_logic_vector(192 downto 0);
+    begin
+        for k in 0 to 11 loop
+            t := (others => '0');
+            for i in 0 to 16 loop
+                if P(k)(i) = '1' then
+                    for j in 0 to 176 loop
+                        if g(j) = '1' then t(i + j) := not t(i + j); end if;
+                    end loop;
+                end if;
+            end loop;
+            g := t;
+        end loop;
+        return g(191 downto 0);
+    end function;
+
+    -- plh_calc : E : SOF (26 bits), code PLS 5 (MODCOD 1, trame normale,
+    --   pilotes) → T : Reed-Muller (64, 7) : y(2m) = bit m de 0000FFFFh (poids
+    --   fort en tête), y(2m + 1) = y(2m) ⊕ 1 ; brouillage ; π/2-BPSK (symbole
+    --   pair : 0 → (+,+), 1 → (−,−) ; impair : 0 → (−,+), 1 → (+,−)) → S : 90
+    --   symboles
+    function plh_calc return plh_t is
+        constant SOF : std_logic_vector(0 to 25) := "01100011010010111010000010";
+        constant BR  : std_logic_vector(0 to 63) :=
+            "0111000110011101100000111100100101010011010000100010110111111010";
+        variable b   : std_logic_vector(0 to 89);
+        variable y   : std_logic;
+        variable r   : plh_t;
+    begin
+        b(0 to 25) := SOF;
+        for m in 0 to 31 loop
+            if m < 16 then y := '0'; else y := '1'; end if;
+            b(26 + 2 * m)     := y xor BR(2 * m);
+            b(26 + 2 * m + 1) := (not y) xor BR(2 * m + 1);
+        end loop;
+        for i in 0 to 89 loop
+            if i mod 2 = 0 then
+                if b(i) = '0' then r(i) := "00"; else r(i) := "11"; end if;
+            else
+                if b(i) = '0' then r(i) := "10"; else r(i) := "01"; end if;
+            end if;
+        end loop;
+        return r;
+    end function;
+end package body dvbs2_pkg;
+
 
 --------------------------------------------------------------------------------
 -- prbs_disp : dispersion d'énergie DVB-S (EN 300 421 § 4.4.1), un octet par
@@ -2398,6 +2587,7 @@ entity es_mux is
         G_HAUT     : natural := 288;
         G_TRAMES   : boolean := false;        -- chaque demi-trame est une image codée (haute, puis basse)
         G_BIT_RATE : natural := 23040;        -- unités de 400 bit/s (débit TS)
+        G_BIT_RATE2 : natural := 23040;       -- débit quand norme = 1 (DVB-S2)
         G_VBV      : natural := 112;          -- unités de 16 kbit
         G_GOP      : natural := 12;
         G_FPS      : natural := 25;
@@ -2415,7 +2605,8 @@ entity es_mux is
         s_fin_mb   : in  std_logic;
         m_valid    : out std_logic;
         m_ready    : in  std_logic;
-        m_data     : out std_logic_vector(7 downto 0)
+        m_data     : out std_logic_vector(7 downto 0);
+        norme      : in  std_logic := '0'      -- 0 : G_BIT_RATE, 1 : G_BIT_RATE2
     );
 end entity es_mux;
 
@@ -2475,7 +2666,10 @@ begin
                 case i is
                     when 0  => w_code <= x"000001B3"; w_lg <= 32;
                     when 1  => w_code <= slv(G_LARG, 12) & slv(G_HAUT, 12) & "0010" & "0011"; w_lg <= 32;       -- 4:3, 25 im/s
-                    when 2  => w_code <= slv(G_BIT_RATE, 18) & '1' & slv(G_VBV, 10) & "000"; w_lg <= 32;        -- marqueur, VBV, matrices par défaut
+                    when 2  =>
+                        if norme = '1' then w_code <= slv(G_BIT_RATE2, 18) & '1' & slv(G_VBV, 10) & "000";
+                        else w_code <= slv(G_BIT_RATE, 18) & '1' & slv(G_VBV, 10) & "000"; end if;
+                        w_lg <= 32;                                                                       -- marqueur, VBV, matrices par défaut
                     when 3  => w_code <= x"000001B5"; w_lg <= 32;
                     when 4  => w_code <= "0001" & x"48" & PROG & "01" & "00" & "00" & x"000" & '1'; w_lg <= 32;   -- Main@Main, progressif ou entrelacé, 4:2:0
                     when 5  => w_lg <= 16;                                                                      -- vbv ext, low_delay, frame_rate ext
@@ -2604,9 +2798,10 @@ end architecture rtl;
 --              51k ≥ 9 375·m (PCR), 51k ≥ 12 500·(n+1) (images) ; à 5 MS/s,
 --              G_K = 102.
 --              PCR(k) = round((188k + 10)·5 508 / 235), tenu en cumul exact :
---              +4 406 par créneau, +1 tous les 470/188 créneaux (G_PCR_INC,
---              G_PCR_FR / 470, départ G_PCR_B0 : G_PCR_E0, reste G_PCR_R0) ;
---              à 5 MS/s : (188k + 10)·11 016 / 235, +8 812 et +376/470.
+--              +4 406 par créneau, +1 tous les 470/188 créneaux ; à 5 MS/s :
+--              (188k + 10)·11 016 / 235, +8 812 et +376/470. Ces constantes
+--              forment la cadence G_CAD (dvbs_pkg) ; G_CAD2 est la cadence
+--              DVB-S2, choisie par l'entrée norme (fixée avant la remise à zéro).
 --              PES : 00 00 01 E0, longueur, 84 80 05, PTS = 3 600·(n+1) + 9 000.
 --              Sans multiplieur : les écarts 51k − 25 000·m, 51k − 9 375·m et
 --              51k − 12 500·(n+1) sont tenus en registres (+51 par créneau,
@@ -2618,18 +2813,12 @@ end architecture rtl;
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use work.dvbs_pkg.all;
 
 entity ts_mux is
     generic (
-        G_K     : natural := 51;            -- 51 k  ≥  …  (créneau k)
-        G_PSI   : natural := 25000;         -- période PAT/PMT 80 ms
-        G_PCR   : natural := 9375;          -- période PCR 30 ms
-        G_IMG   : natural := 12500;         -- période image 40 ms
-        G_PCR_INC : natural := 4406;        -- PCR : incrément entier par créneau (ticks 27 MHz)
-        G_PCR_FR  : natural := 188;         -- PCR : fraction par créneau, en 470e
-        G_PCR_R0  : natural := 415;         -- PCR : reste initial (arrondi compris), en 470e
-        G_PCR_B0  : natural := 0;           -- PCR : base initiale
-        G_PCR_E0  : natural := 234;         -- PCR : extension initiale
+        G_CAD   : ts_cadence_t := CAD_S_10M;   -- cadence (norme = 0) : 10 MS/s, FEC 1/2
+        G_CAD2  : ts_cadence_t := CAD_S_10M;   -- cadence (norme = 1)
         G_GOP   : natural := 12;
         G_MCPC  : boolean := false;         -- deux programmes (canal 2 sur s2_*)
         G_TRAMES1 : boolean := false;       -- canal 1 : une image = deux demi-trames codées
@@ -2648,7 +2837,8 @@ entity ts_mux is
         m_sop    : out std_logic;
         s2_valid : in  std_logic := '0';
         s2_ready : out std_logic;
-        s2_data  : in  std_logic_vector(7 downto 0) := (others => '0')
+        s2_data  : in  std_logic_vector(7 downto 0) := (others => '0');
+        norme    : in  std_logic := '0'                  -- 0 : G_CAD, 1 : G_CAD2
     );
 end entity ts_mux;
 
@@ -2743,17 +2933,18 @@ architecture rtl of ts_mux is
     signal typ      : type_t := T_NUL;
     signal can      : natural range 0 to 1 := 0;                              -- canal du paquet vidéo en cours
     signal i_pmt    : natural range 0 to 1 := 0;                              -- PMT en cours
-    signal d_psi, d_pcr : signed(31 downto 0) := (others => '0');             -- G_K·k − G_PSI·m, G_K·k − G_PCR·m
+    signal cad      : ts_cadence_t;                                            -- cadence en vigueur
+    signal d_psi, d_pcr : signed(31 downto 0) := (others => '0');             -- K·k − PSI·m, K·k − PCR·m
     type d_img_2_t is array (0 to 1) of signed(39 downto 0);
     type pts_2_t is array (0 to 1) of unsigned(32 downto 0);
-    signal d_img    : d_img_2_t := (others => to_signed(-G_IMG, 40));         -- G_K·k − G_IMG·(n + 1)
+    signal d_img    : d_img_2_t := (others => to_signed(-G_CAD.img, 40));     -- K·k − IMG·(n + 1)
     signal pts_r    : pts_2_t := (others => to_unsigned(12600, 33));          -- 3 600·(n + 1) + 9 000
     signal pmt_du   : natural range 0 to 2 := 0;                              -- PMT restant à émettre
-    constant PCR_B  : natural := G_PCR_INC / 300;                            -- incrément de la base
-    constant PCR_E  : natural := G_PCR_INC mod 300;                          -- incrément de l'extension
-    signal pcr_base : unsigned(32 downto 0) := to_unsigned(G_PCR_B0, 33);
-    signal pcr_ext  : unsigned(8 downto 0) := to_unsigned(G_PCR_E0, 9);
-    signal pcr_r    : natural range 0 to 469 := G_PCR_R0;
+    signal pcr_b    : natural range 0 to 255;                                 -- incrément de la base
+    signal pcr_e    : natural range 0 to 299;                                 -- incrément de l'extension
+    signal pcr_base : unsigned(32 downto 0) := to_unsigned(G_CAD.pcr_b0, 33);
+    signal pcr_ext  : unsigned(8 downto 0) := to_unsigned(G_CAD.pcr_e0, 9);
+    signal pcr_r    : natural range 0 to 65535 := G_CAD.pcr_r0;
     signal p_base   : unsigned(32 downto 0);
     signal p_ext    : unsigned(8 downto 0);
     type cc_2_t is array (0 to 1) of unsigned(3 downto 0);
@@ -2781,6 +2972,9 @@ begin
     m_valid  <= o_valid;
     s_ready  <= place(0) and not rst;
     s2_ready <= place(1) and not rst when G_MCPC else '0';
+    cad   <= G_CAD2 when norme = '1' else G_CAD;
+    pcr_b <= cad.pcr_inc / 300;
+    pcr_e <= cad.pcr_inc mod 300;
     sv(0) <= s_valid;  sd(0) <= s_data;
     sv(1) <= s2_valid when G_MCPC else '0';
     sd(1) <= s2_data;
@@ -2814,16 +3008,16 @@ begin
         variable pts    : unsigned(32 downto 0);
         variable lp     : natural range 0 to 2 ** ABM + 16;
         variable carry  : natural range 0 to 1;
-        variable e2     : natural range 0 to 1023;
+        variable e2     : natural range 0 to 131071;
         variable ni     : natural range 0 to 7;
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 ecr <= (others => (others => '0')); der3 <= (others => (others => '1')); en_tete_seq <= "00"; basse <= "00";
                 nb_deb <= (others => (others => '0')); nb_cpl <= (others => (others => '0'));
-                d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= (others => to_signed(-G_IMG, 40));
+                d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= (others => to_signed(-cad.img, 40));
                 pts_r <= (others => to_unsigned(12600, 33)); pmt_du <= 0;
-                pcr_base <= to_unsigned(G_PCR_B0, 33); pcr_ext <= to_unsigned(G_PCR_E0, 9); pcr_r <= G_PCR_R0;
+                pcr_base <= to_unsigned(cad.pcr_b0, 33); pcr_ext <= to_unsigned(cad.pcr_e0, 9); pcr_r <= cad.pcr_r0;
                 cc_pat <= (others => '0'); cc_pmt <= (others => (others => '0')); cc_vid <= (others => (others => '0'));
                 n_vid <= (others => (others => '0')); n_gop <= (others => 0); pes_ptr <= (others => 0); actif <= '0'; pos <= 0;
                 a_valid <= '0'; o_valid <= '0';
@@ -2892,22 +3086,22 @@ begin
                         elsif G_MCPC and n_vid(1) < nb_cpl(1) and d_img(1) >= 0 and not fire_pcr then
                             pret := true; v := 1;
                         end if;
-                        d_psi <= d_psi + G_K;
-                        d_pcr <= d_pcr + G_K;
+                        d_psi <= d_psi + cad.k;
+                        d_pcr <= d_pcr + cad.k;
                         for c in 0 to 1 loop
                             if d_img(c)(38) = '0' or d_img(c)(39) = '1' then
-                                d_img(c) <= d_img(c) + G_K;
+                                d_img(c) <= d_img(c) + cad.k;
                             end if;
                         end loop;
                         avec_pcr <= '0';
                         if fire_psi then
-                            typ <= T_PAT; d_psi <= d_psi + G_K - G_PSI;
+                            typ <= T_PAT; d_psi <= d_psi + cad.k - cad.psi;
                             if G_MCPC then pmt_du <= 2; else pmt_du <= 1; end if;
                         elsif pmt_du /= 0 then
                             typ <= T_PMT; pmt_du <= pmt_du - 1;
                             if G_MCPC and pmt_du = 1 then i_pmt <= 1; else i_pmt <= 0; end if;
                         else
-                            if fire_pcr then d_pcr <= d_pcr + G_K - G_PCR; avec_pcr <= '1'; end if;
+                            if fire_pcr then d_pcr <= d_pcr + cad.k - cad.pcr; avec_pcr <= '1'; end if;
                             if not pret then
                                 if fire_pcr then typ <= T_PCR; else typ <= T_NUL; end if;
                             else
@@ -2931,15 +3125,15 @@ begin
                         end if;
                         p_base <= pcr_base; p_ext <= pcr_ext;
                         -- PCR du créneau suivant
-                        e2 := pcr_r + G_PCR_FR;
-                        if e2 >= 470 then carry := 1; e2 := e2 - 470; else carry := 0; end if;
+                        e2 := pcr_r + cad.pcr_fr;
+                        if e2 >= cad.pcr_den then carry := 1; e2 := e2 - cad.pcr_den; else carry := 0; end if;
                         pcr_r <= e2;
-                        if to_integer(pcr_ext) + PCR_E + carry >= 300 then
-                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + PCR_E + carry - 300, 9);
-                            pcr_base <= pcr_base + (PCR_B + 1);
+                        if to_integer(pcr_ext) + pcr_e + carry >= 300 then
+                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + pcr_e + carry - 300, 9);
+                            pcr_base <= pcr_base + (pcr_b + 1);
                         else
-                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + PCR_E + carry, 9);
-                            pcr_base <= pcr_base + PCR_B;
+                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + pcr_e + carry, 9);
+                            pcr_base <= pcr_base + pcr_b;
                         end if;
                         actif <= '1';
                         pos   <= 0;
@@ -3016,7 +3210,7 @@ begin
                                         if pes_ptr(can) = pes_lg(can) - 1 then
                                             pes_ptr(can) <= 0;
                                             n_vid(can)   <= n_vid(can) + 1;
-                                            d_img(can)   <= d_img(can) - G_IMG;
+                                            d_img(can)   <= d_img(can) - cad.img;
                                             pts_r(can)   <= pts_r(can) + 3600;
                                             if n_gop(can) = G_GOP - 1 then n_gop(can) <= 0; else n_gop(can) <= n_gop(can) + 1; end if;
                                         else
@@ -3504,11 +3698,13 @@ entity rate_ctrl is
         G_COLS : natural := 22;
         G_ROWS : natural := 18;
         G_T    : natural := 350196;
+        G_T2   : natural := 350196;         -- budget quand norme = 1 (DVB-S2)
         G_GOP  : natural := 12
     );
     port (
         clk     : in  std_logic;
         rst     : in  std_logic;
+        norme   : in  std_logic := '0';     -- 0 : G_T, 1 : G_T2 (fixée avant la remise à zéro)
         -- coefficients DCT → quantification
         s_valid : in  std_logic;
         s_ready : out std_logic;
@@ -3531,10 +3727,14 @@ architecture rtl of rate_ctrl is
     constant W      : natural := 40;                     -- largeur des cumuls (bits)
     constant COEFS  : natural := G_COLS * 384;           -- coefficients par rangée
     constant SB0    : natural := 38 + 2 * G_COLS;        -- en-tête de slice + adresses et types
-    constant T_Q    : natural := G_T / G_ROWS;
-    constant T_R    : natural := G_T mod G_ROWS;
-    constant DEN    : signed(W - 1 downto 0) := to_signed(2 * G_T, W);
-    constant D0_INI : natural := (20 * (G_T / 31)) + (20 * (G_T mod 31)) / 31;   -- ⌊20·T / 31⌋ sans débordement
+    constant D0_INI1 : natural := (20 * (G_T / 31)) + (20 * (G_T mod 31)) / 31;   -- ⌊20·T / 31⌋ sans débordement
+    constant D0_INI2 : natural := (20 * (G_T2 / 31)) + (20 * (G_T2 mod 31)) / 31;
+    -- constantes de la norme en vigueur
+    signal gt      : natural range 0 to 2 ** 30 - 1;
+    signal t_q     : natural range 0 to 2 ** 30 - 1;
+    signal t_r     : natural range 0 to G_ROWS - 1;
+    signal den     : signed(W - 1 downto 0);
+    signal d0_ini  : natural range 0 to 2 ** 30 - 1;
 
     type etat_t is (CALCUL, DIVISION, PRET);
     signal etat    : etat_t := CALCUL;
@@ -3546,7 +3746,7 @@ architecture rtl of rate_ctrl is
     signal rang    : natural range 0 to G_ROWS - 1 := 0;
     signal sb      : unsigned(W - 1 downto 0) := to_unsigned(SB0, W);    -- bits de la slice en cours
     signal b_img   : signed(W - 1 downto 0) := (others => '0');          -- B
-    signal d0      : signed(W - 1 downto 0) := to_signed(D0_INI, W);
+    signal d0      : signed(W - 1 downto 0) := to_signed(D0_INI1, W);
     signal cib_q   : signed(W - 1 downto 0) := (others => '0');          -- ⌊T·s / G_ROWS⌋
     signal cib_r   : natural range 0 to G_ROWS - 1 := 0;
     signal n_gop   : natural range 0 to G_GOP - 1 := 0;
@@ -3563,6 +3763,11 @@ begin
     m_data  <= s_data;
     code    <= code_r;
     code_ok <= '1' when etat = PRET else '0';
+    gt     <= G_T2 when norme = '1' else G_T;
+    t_q    <= G_T2 / G_ROWS when norme = '1' else G_T / G_ROWS;
+    t_r    <= G_T2 mod G_ROWS when norme = '1' else G_T mod G_ROWS;
+    den    <= to_signed(2 * G_T2, W) when norme = '1' else to_signed(2 * G_T, W);
+    d0_ini <= D0_INI2 when norme = '1' else D0_INI1;
 
     -- E : coefficients, mots VLC acceptés → T : vanne de rangée, bits de slice
     --   arrondis à l'octet, B et d0, code par division en 5 pas → S : code,
@@ -3579,7 +3784,7 @@ begin
             if rst = '1' then
                 etat <= CALCUL; ouvert <= '0'; n_coef <= 0;
                 col <= 0; rang <= 0; sb <= to_unsigned(SB0, W);
-                b_img <= (others => '0'); d0 <= to_signed(D0_INI, W);
+                b_img <= (others => '0'); d0 <= to_signed(d0_ini, W);
                 cib_q <= (others => '0'); cib_r <= 0; n_gop <= 0;
                 code_r <= to_unsigned(1, 5);
             else
@@ -3606,7 +3811,7 @@ begin
                             -- fin d'image : en-têtes d'image (et de séquence, GOP)
                             b := b + 136;
                             if n_gop = 0 then b := b + 240; end if;
-                            dn := d0 + b - G_T;
+                            dn := d0 + b - gt;
                             if dn < 0 then d0 <= (others => '0'); else d0 <= dn; end if;
                             b_img <= (others => '0');
                             rang  <= 0;
@@ -3615,12 +3820,12 @@ begin
                         else
                             b_img <= b;
                             rang  <= rang + 1;
-                            if cib_r + T_R >= G_ROWS then
-                                cib_r <= cib_r + T_R - G_ROWS;
-                                cib_q <= cib_q + T_Q + 1;
+                            if cib_r + t_r >= G_ROWS then
+                                cib_r <= cib_r + t_r - G_ROWS;
+                                cib_q <= cib_q + t_q + 1;
                             else
-                                cib_r <= cib_r + T_R;
-                                cib_q <= cib_q + T_Q;
+                                cib_r <= cib_r + t_r;
+                                cib_q <= cib_q + t_q;
                             end if;
                         end if;
                         etat <= CALCUL;                 -- code de la rangée suivante
@@ -3640,8 +3845,8 @@ begin
                                 etat   <= PRET;
                                 ouvert <= '1';
                             else
-                                n31 := shift_left(resize(d, W + 5), 5) - resize(d, W + 5) + G_T;     -- 31·d + T
-                                if n31 >= shift_left(resize(DEN, W + 5), 5) then                     -- quotient ≥ 32
+                                n31 := shift_left(resize(d, W + 5), 5) - resize(d, W + 5) + gt;      -- 31·d + T
+                                if n31 >= shift_left(resize(den, W + 5), 5) then                     -- quotient ≥ 32
                                     code_r <= to_unsigned(31, 5);
                                     etat   <= PRET;
                                     ouvert <= '1';
@@ -3654,7 +3859,7 @@ begin
                             end if;
                         end if;
                     when DIVISION =>
-                        essai := num - shift_left(DEN, k);
+                        essai := num - shift_left(den, k);
                         if essai >= 0 then
                             num <= essai;
                             quot(k) <= '1';
@@ -3707,13 +3912,33 @@ entity mire_gen is
         m_valid : out std_logic;
         m_ready : in  std_logic;
         m_data  : out unsigned(7 downto 0);
-        m_debut : out std_logic
+        m_debut : out std_logic;
+        aff     : in  std_logic := '0';                    -- 1 : numéro affiché (BISS)
+        num     : in  std_logic_vector(15 downto 0) := (others => '0')    -- numéro, 4 chiffres BCD
     );
 end entity mire_gen;
 
 architecture rtl of mire_gen is
     constant COLS : natural := MIRE_L / 16;
     constant ROWS : natural := MIRE_H / 16;
+    -- numéro BISS : chiffres 5 × 7 pavés de 8 pixels, pas 48, premier chiffre en
+    --   x = 84, y = 48 ; cadre noir de x = 76 à 276, y = 40 à 112 ; ligne du haut
+    --   et pavé de gauche en premier ; chiffre c, pavé (j, i) : bit 35·c + 5·j + i
+    constant N_X0  : natural := 84;
+    constant N_Y0  : natural := 48;
+    constant N_PAS : natural := 48;
+    constant N_PAVE : natural := 8;
+    constant CHIFFRES : std_logic_vector(0 to 349) :=
+        "01110100011001110101110011000101110" &    -- 0
+        "00100011000010000100001000010001110" &    -- 1
+        "01110100010000100010001000100011111" &    -- 2
+        "11111000100010000010000011000101110" &    -- 3
+        "00010001100101010010111110001000010" &    -- 4
+        "11111100001111000001000011000101110" &    -- 5
+        "00110010001000011110100011000101110" &    -- 6
+        "11111000010001000100010000100001000" &    -- 7
+        "01110100011000101110100011000101110" &    -- 8
+        "01110100011000101111000010001001100";     -- 9
     signal n       : unsigned(11 downto 0) := (others => '0');   -- rang de l'image
     signal sq_x    : natural range 0 to 319 := 0;                -- abscisse du carré : 8n mod 320
     signal row     : natural range 0 to ROWS - 1 := 0;
@@ -3741,6 +3966,11 @@ architecture rtl of mire_gen is
     signal b_sq, b_sq_in : std_logic := '0';                     -- carré mobile, intérieur
     signal b_cpt   : std_logic := '0';                           -- dans un carré du compteur
     signal b_d     : natural range 0 to 11 := 0;                 -- rang du carré
+    signal b_nbox  : std_logic := '0';                           -- dans le cadre du numéro
+    signal b_ntx   : std_logic := '0';                           -- dans la zone des chiffres
+    signal b_nc    : natural range 0 to 3 := 0;                  -- rang du chiffre
+    signal b_ni    : natural range 0 to 7 := 0;
+    signal b_nj    : natural range 0 to 6 := 0;
     signal b_n     : unsigned(11 downto 0) := (others => '0');
     signal b_comp  : natural range 0 to 2 := 0;
     signal b_debut : std_logic := '0';
@@ -3751,6 +3981,7 @@ architecture rtl of mire_gen is
     signal c_zone  : natural range 0 to 3 := 0;
     signal c_txt   : std_logic := '0';                           -- pavé de lettre allumé
     signal c_sq, c_sq_in, c_cpt, c_bit : std_logic := '0';
+    signal c_nbox, c_nbit : std_logic := '0';                    -- cadre du numéro, pavé de chiffre allumé
     signal c_comp  : natural range 0 to 2 := 0;
     signal c_debut : std_logic := '0';
 begin
@@ -3774,6 +4005,9 @@ begin
         variable allume : boolean;
         variable c      : natural range 0 to 15;
         variable v      : natural range 0 to 255;
+        variable nc     : natural range 0 to 3;
+        variable chf    : natural range 0 to 15;
+        variable ntx    : boolean;
     begin
         if rising_edge(clk) then
             if rst = '1' then
@@ -3863,6 +4097,24 @@ begin
                 end loop;
                 b_cpt   <= '1' when allume else '0';
                 b_d     <= d;
+                -- numéro : cadre et rang du chiffre, pavé (j, i) ; chiffres espacés de N_PAS, larges de 5 pavés
+                b_nbox  <= '1' when aff = '1' and a_y >= N_Y0 - 8 and a_y < N_Y0 + 7 * N_PAVE + 8
+                                    and a_x >= N_X0 - 8 and a_x < N_X0 + 3 * N_PAS + 5 * N_PAVE + 8 else '0';
+                ntx := a_y >= N_Y0 and a_y < N_Y0 + 7 * N_PAVE and a_x >= N_X0;
+                nc := 0;
+                for k in 1 to 3 loop
+                    if a_x >= N_X0 + N_PAS * k then nc := k; end if;
+                end loop;
+                if ntx and a_x >= N_X0 + N_PAS * nc + 5 * N_PAVE then ntx := false; end if;
+                b_ntx   <= '1' when ntx else '0';
+                b_nc    <= nc;
+                if ntx then
+                    b_ni <= (a_x - N_X0 - N_PAS * nc) / N_PAVE;
+                    b_nj <= (a_y - N_Y0) / N_PAVE;
+                else
+                    b_ni <= 0;
+                    b_nj <= 0;
+                end if;
                 b_n     <= a_n;
                 b_comp  <= a_comp;
                 b_debut <= a_debut;
@@ -3877,12 +4129,26 @@ begin
                 c_sq_in <= b_sq_in;
                 c_cpt   <= b_cpt;
                 c_bit   <= b_n(11 - b_d);
+                c_nbox  <= b_nbox;
+                case b_nc is
+                    when 0      => chf := to_integer(unsigned(num(15 downto 12)));
+                    when 1      => chf := to_integer(unsigned(num(11 downto 8)));
+                    when 2      => chf := to_integer(unsigned(num(7 downto 4)));
+                    when others => chf := to_integer(unsigned(num(3 downto 0)));
+                end case;
+                if b_ntx = '1' and chf < 10 and CHIFFRES(35 * chf + 5 * b_nj + b_ni) = '1' then
+                    c_nbit <= '1';
+                else
+                    c_nbit <= '0';
+                end if;
                 c_comp  <= b_comp;
                 c_debut <= b_debut;
                 c_v     <= b_v;
 
                 -- étage D : indice de couleur, palette
-                if c_sq = '1' then
+                if c_nbox = '1' then
+                    if c_nbit = '1' then c := IDX_BLANC; else c := IDX_NOIR; end if;
+                elsif c_sq = '1' then
                     if c_sq_in = '1' then c := IDX_BLANC; else c := IDX_NOIR; end if;
                 elsif c_cpt = '1' then
                     if c_bit = '1' then c := IDX_BLANC; else c := IDX_NOIR; end if;
@@ -3923,8 +4189,10 @@ entity codeur is
         G_HAUT     : natural := 288;
         G_TRAMES   : boolean := false;
         G_T        : natural := 350196;
+        G_T2       : natural := 350196;        -- budget et débit quand norme = 1 (DVB-S2)
         G_GOP      : natural := 12;
         G_BIT_RATE : natural := 23040;
+        G_BIT_RATE2 : natural := 23040;
         G_IMAGES   : natural := 0
     );
     port (
@@ -3935,7 +4203,8 @@ entity codeur is
         s_data  : in  unsigned(7 downto 0);
         m_valid : out std_logic;
         m_ready : in  std_logic;
-        m_data  : out std_logic_vector(7 downto 0)
+        m_data  : out std_logic_vector(7 downto 0);
+        norme   : in  std_logic := '0'
     );
 end entity codeur;
 
@@ -3970,16 +4239,16 @@ architecture rtl of codeur is
 begin
     u_dct : entity work.dct8x8_int
         port map (clk, rst, s_valid, s_ready, s_data, d_valid, d_ready, d_data);
-    u_rc : entity work.rate_ctrl generic map (G_COLS => COLS, G_ROWS => ROWS, G_T => G_T, G_GOP => gop_codees(G_GOP, G_TRAMES))
-        port map (clk, rst, d_valid, d_ready, d_data, g_valid, g_ready, g_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
+    u_rc : entity work.rate_ctrl generic map (G_COLS => COLS, G_ROWS => ROWS, G_T => G_T, G_T2 => G_T2, G_GOP => gop_codees(G_GOP, G_TRAMES))
+        port map (clk, rst, norme, d_valid, d_ready, d_data, g_valid, g_ready, g_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
     u_quant : entity work.quant_intra
         port map (clk, rst, code, g_valid, g_ready, g_data, q_valid, q_ready, q_data);
     u_zz : entity work.zigzag
         port map (clk, rst, q_valid, q_ready, q_data, z_valid, z_ready, z_data);
     u_vlc : entity work.vlc_enc
         port map (clk, rst, z_valid, z_ready, z_data, v_valid, v_ready, v_code, v_lg, v_fin);
-    u_es : entity work.es_mux generic map (G_LARG => G_LARG, G_HAUT => G_HAUT, G_TRAMES => G_TRAMES, G_BIT_RATE => G_BIT_RATE, G_GOP => G_GOP, G_IMAGES => G_IMAGES)
-        port map (clk, rst, code, code_ok, v_valid, v_ready, v_code, v_lg, v_fin, m_valid, m_ready, m_data);
+    u_es : entity work.es_mux generic map (G_LARG => G_LARG, G_HAUT => G_HAUT, G_TRAMES => G_TRAMES, G_BIT_RATE => G_BIT_RATE, G_BIT_RATE2 => G_BIT_RATE2, G_GOP => G_GOP, G_IMAGES => G_IMAGES)
+        port map (clk, rst, code, code_ok, v_valid, v_ready, v_code, v_lg, v_fin, m_valid, m_ready, m_data, norme);
 end architecture rtl;
 
 --------------------------------------------------------------------------------
@@ -5320,10 +5589,525 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
+-- mem_sdp : mémoire simple double accès (une écriture, une lecture synchrone,
+--   un cycle de latence), sans valeur initiale (LSRAM)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity mem_sdp is
+    generic (
+        G_W : natural := 20;
+        G_D : natural := 1024
+    );
+    port (
+        clk : in  std_logic;
+        we  : in  std_logic;
+        wa  : in  natural range 0 to G_D - 1;
+        wd  : in  std_logic_vector(G_W - 1 downto 0);
+        ra  : in  natural range 0 to G_D - 1;
+        rd  : out std_logic_vector(G_W - 1 downto 0)
+    );
+end entity mem_sdp;
+
+architecture rtl of mem_sdp is
+    type mem_t is array (0 to G_D - 1) of std_logic_vector(G_W - 1 downto 0);
+    signal mem : mem_t;
+begin
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            if we = '1' then mem(wa) <= wd; end if;
+            rd <= mem(ra);
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- dvbs2_tx : émetteur DVB-S2 (EN 302 307-1) QPSK 1/4, trames normales
+--   (64 800 bits), pilotes, CCM : du Transport Stream aux symboles QPSK
+--   Interface : entrée : octets TS (s_sop sur la synchro 47h) ; sortie : un
+--               symbole (bits I, Q, 1 = −1) par transfert, vers sigma_delta
+--   Principe : trois étapes par trame, deux jeux de mémoires (b_enc, b_out) :
+--              1) BBFRAME : en-tête 80 bits (MATYPE F0h 00h, UPL 1 504, DFL
+--                 15 928, SYNC 47h, SYNCD, CRC-8), champ de 1 991 octets où
+--                 la synchro de chaque paquet est remplacée par le CRC-8 du
+--                 paquet précédent ; brouillage PRBS x¹⁵ + x¹⁴ + 1 ; BCH
+--                 t = 12 (192 bits) ; 16 200 bits rangés par mots de 20 dans
+--                 la mémoire K (810 mots) ;
+--              2) LDPC : parité de 48 600 bits dans la mémoire P (2 430 mots
+--                 de 20) : pour chaque bit d'information i (rangée r = i / 360,
+--                 n = i mod 360), p(a) ⊕= d(i) aux adresses a = (B.1(r, c) +
+--                 n·135) mod 48 600 (lecture-modification-écriture, un cycle,
+--                 réécriture anticipée), puis p(j) ⊕= p(j − 1) ;
+--              3) trame PL : 90 symboles d'en-tête, 360 créneaux de 90
+--                 symboles (bits 2i, 2i + 1 → I, Q), 36 pilotes (+,+) après
+--                 chaque 16e créneau sauf le dernier, brouillage physique
+--                 (suite de Gold n = 0 : rotation de 0, 90, 180, 270°) ; deux
+--                 symboles d'avance (la sortie sigma-delta ne doit jamais
+--                 attendre). Encodage de la trame suivante pendant l'émission
+--                 (97 200 + 2 × 2 430 + 16 200 cycles pour 532 512 cycles de
+--                 trame à 5 MS/s).
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use work.dvbs_pkg.all;
+use work.dvbs2_pkg.all;
+
+entity dvbs2_tx is
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        s_valid : in  std_logic;
+        s_ready : out std_logic;
+        s_data  : in  octet_t;
+        s_sop   : in  std_logic;
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_i     : out std_logic;
+        m_q     : out std_logic
+    );
+end entity dvbs2_tx;
+
+architecture rtl of dvbs2_tx is
+    subtype mot_t is std_logic_vector(19 downto 0);
+    type mot2_t is array (0 to 1) of mot_t;
+    type ak_t is array (0 to 1) of natural range 0 to S2_MK - 1;
+    type ap_t is array (0 to 1) of natural range 0 to S2_MP - 1;
+
+    -- mémoires K (BBFRAME codée BCH) et P (parité LDPC), un jeu par trame
+    signal k_we, p_we   : std_logic_vector(0 to 1) := "00";
+    signal k_wa, k_mot  : natural range 0 to S2_MK - 1 := 0;
+    signal k_wen        : std_logic := '0';
+    signal k_wd         : mot_t := (others => '0');
+    signal k_ra         : ak_t := (others => 0);
+    signal k_rd         : mot2_t;
+    signal p_wa         : natural range 0 to S2_MP - 1 := 0;
+    signal p_wd         : mot_t;
+    signal p_ra         : ap_t := (others => 0);
+    signal p_rd         : mot2_t;
+    signal b_enc, b_out : std_logic := '0';                       -- jeu encodé, jeu émis
+    signal fait, lu     : std_logic_vector(0 to 1) := "00";       -- bascules : jeu prêt = fait ⊕ lu
+
+    -- encodeur (étapes 1 et 2)
+    type ee_t is (E_ATT, E_ENT, E_DATA, E_BCH, E_RAZ, E_ACC0, E_ACC, E_PRE, E_FIN);
+    signal ee       : ee_t := E_ATT;
+    signal cnt_ts   : natural range 0 to 187 := 0;                -- position dans le paquet TS
+    signal crc_up   : std_logic_vector(7 downto 0) := (others => '0');
+    signal ent      : std_logic_vector(71 downto 0) := (others => '0');
+    signal crc_ent  : std_logic_vector(7 downto 0) := (others => '0');
+    signal prbs     : std_logic_vector(14 downto 0) := (others => '0');
+    signal bch      : std_logic_vector(191 downto 0) := (others => '0');
+    signal ibit     : natural range 0 to 16199 := 0;              -- bit écrit dans la BBFRAME
+    signal acc      : mot_t := (others => '0');
+    signal nacc     : natural range 0 to 19 := 0;
+    signal octet    : std_logic_vector(7 downto 0) := (others => '0');
+    signal a_octet  : std_logic := '0';
+    signal ib       : natural range 0 to 7 := 0;
+    signal ndat     : natural range 0 to 1990 := 0;
+    -- LDPC
+    type aw_t is array (0 to 11) of natural range 0 to S2_MP - 1;
+    type ab_t is array (0 to 11) of natural range 0 to 19;
+    signal a_w      : aw_t := (others => 0);
+    signal a_b      : ab_t := (others => 0);
+    signal rang     : natural range 0 to 44 := 0;
+    signal n        : natural range 0 to 359 := 0;
+    signal c        : natural range 0 to 11 := 0;
+    signal kw       : mot_t := (others => '0');
+    signal nk       : natural range 0 to 20 := 0;
+    signal dbit     : std_logic := '0';
+    signal e_ra_k   : natural range 0 to S2_MK - 1 := 0;
+    signal e_ra_p   : natural range 0 to S2_MP - 1 := 0;
+    signal s_en     : std_logic := '0';                           -- écriture en cours (étage après lecture)
+    signal s_aw     : natural range 0 to S2_MP - 1 := 0;
+    signal s_ab     : natural range 0 to 19 := 0;
+    signal s_val    : std_logic := '0';
+    signal s_mode   : natural range 0 to 2 := 0;                  -- 0 : accumulation, 1 : cumul, 2 : zéro
+    signal r1_en    : std_logic := '0';                           -- étage entre la lecture lancée et l'écriture
+    signal r1_aw    : natural range 0 to S2_MP - 1 := 0;
+    signal r1_ab    : natural range 0 to 19 := 0;
+    signal r1_val   : std_logic := '0';
+    signal r1_mode  : natural range 0 to 2 := 0;
+    signal w_we     : std_logic := '0';                           -- dernière écriture (réécriture anticipée)
+    signal w_wa     : natural range 0 to S2_MP - 1 := 0;
+    signal w_wd     : mot_t := (others => '0');
+    signal report_c : std_logic := '0';                           -- bit 19 du mot précédent (cumul)
+    signal e_rd_k, e_rd_p : mot_t;
+    signal e_wd     : mot_t;                                      -- donnée écrite dans P (combinatoire)
+
+    -- table B.1 en (mot, bit)
+    type lw_t is array (0 to 44, 0 to 11) of natural range 0 to S2_MP - 1;
+    type lb_t is array (0 to 44, 0 to 11) of natural range 0 to 19;
+    function lw_calc return lw_t is
+        variable t : lw_t;
+    begin
+        for r in 0 to 44 loop for k in 0 to 11 loop t(r, k) := LDPC_1_4(r, k) / 20; end loop; end loop;
+        return t;
+    end function;
+    function lb_calc return lb_t is
+        variable t : lb_t;
+    begin
+        for r in 0 to 44 loop for k in 0 to 11 loop t(r, k) := LDPC_1_4(r, k) mod 20; end loop; end loop;
+        return t;
+    end function;
+    constant LW : lw_t := lw_calc;
+    constant LB : lb_t := lb_calc;
+
+    -- émetteur (étape 3)
+    type ef_t is (F_ATT, F_ENT, F_DATA, F_PIL);
+    signal ef       : ef_t := F_ATT;
+    signal ih       : natural range 0 to 89 := 0;
+    signal cren     : natural range 0 to S2_SLOTS := 0;
+    signal isy      : natural range 0 to 89 := 0;
+    signal ip       : natural range 0 to 35 := 0;
+    signal sw       : mot_t := (others => '0');
+    signal nb       : natural range 0 to 20 := 0;
+    signal src_p    : std_logic := '0';                           -- 0 : mot préchargé de K, 1 : de P
+    signal f_ra_k   : natural range 0 to S2_MK - 1 := 0;
+    signal f_ra_p   : natural range 0 to S2_MP - 1 := 0;
+    signal gx, gy   : std_logic_vector(17 downto 0) := (others => '0');
+    signal o_v, n_v : std_logic := '0';
+    signal o_s, n_s : std_logic_vector(1 downto 0) := "00";
+    signal f_rd_k, f_rd_p : mot_t;
+
+    -- sl : E : 0 ou 1 → S : std_logic
+    function sl(x : natural) return std_logic is
+    begin
+        if x = 0 then return '0'; else return '1'; end if;
+    end function;
+    -- crc8 : E : registre, bit (poids fort en tête) → S : registre, polynôme D5h
+    function crc8(r : std_logic_vector(7 downto 0); b : std_logic) return std_logic_vector is
+        variable v : std_logic_vector(7 downto 0);
+    begin
+        v := r(6 downto 0) & '0';
+        if (b xor r(7)) = '1' then v := v xor x"D5"; end if;
+        return v;
+    end function;
+    -- parite18 : E : registre de 18 bits, masque → S : parité des bits retenus
+    function parite18(r, m : std_logic_vector(17 downto 0)) return std_logic is
+        variable p : std_logic := '0';
+    begin
+        for i in 0 to 17 loop p := p xor (r(i) and m(i)); end loop;
+        return p;
+    end function;
+begin
+    -- mémoires : K(x) écrite par l'encodeur, lue par l'encodeur (LDPC) ou
+    --   l'émetteur selon le jeu ; P(x) de même
+    g_mem : for x in 0 to 1 generate
+        u_k : entity work.mem_sdp generic map (G_W => 20, G_D => S2_MK)
+            port map (clk, k_we(x), k_wa, k_wd, k_ra(x), k_rd(x));
+        u_p : entity work.mem_sdp generic map (G_W => 20, G_D => S2_MP)
+            port map (clk, p_we(x), p_wa, p_wd, p_ra(x), p_rd(x));
+        k_ra(x) <= f_ra_k when b_out = sl(x) else e_ra_k;
+        p_ra(x) <= f_ra_p when b_out = sl(x) else e_ra_p;
+        k_we(x) <= k_wen when b_enc = sl(x) else '0';
+        p_we(x) <= s_en when b_enc = sl(x) else '0';
+    end generate;
+    e_rd_k <= k_rd(1) when b_enc = '1' else k_rd(0);
+    e_rd_p <= p_rd(1) when b_enc = '1' else p_rd(0);
+    f_rd_k <= k_rd(1) when b_out = '1' else k_rd(0);
+    f_rd_p <= p_rd(1) when b_out = '1' else p_rd(0);
+    k_wa   <= k_mot;
+    k_wd   <= acc;
+
+    -- écriture dans P : mot lu (ou réécriture anticipée si l'adresse vient
+    --   d'être écrite) modifié : accumulation (bit s_ab inversé si s_val) ou
+    --   cumul des bits (p(j) ⊕= p(j − 1))
+    process (w_we, w_wa, w_wd, s_aw, e_rd_p, s_mode, s_val, s_ab, report_c)
+        variable d, o : mot_t;
+    begin
+        if w_we = '1' and w_wa = s_aw then d := w_wd; else d := e_rd_p; end if;
+        case s_mode is
+            when 0 =>
+                o := d;
+                if s_val = '1' then o(s_ab) := not d(s_ab); end if;
+            when 1 =>
+                o(0) := d(0) xor report_c;
+                for i in 1 to 19 loop o(i) := o(i - 1) xor d(i); end loop;
+            when others =>
+                o := (others => '0');
+        end case;
+        e_wd <= o;
+    end process;
+    p_wa <= s_aw;
+    p_wd <= e_wd;
+
+    s_ready <= '1' when ee = E_DATA and a_octet = '0' and rst = '0' else '0';
+
+    -- E : octets TS, jeu libre → T : BBFRAME brouillée et codée BCH dans K,
+    --   parité LDPC dans P → S : bascule fait(jeu), jeu suivant
+    process (clk)
+        variable brut, val, d : std_logic;
+        variable ecrit : boolean;
+        variable aw : natural range 0 to S2_MP - 1;
+        variable ab : natural range 0 to 19;
+        variable aw2 : natural range 0 to S2_MP + 7;
+        variable ab2 : natural range 0 to 39;
+        variable syncd : natural range 0 to 1504;
+        variable cv : std_logic_vector(7 downto 0);
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                ee <= E_ATT; cnt_ts <= 0; crc_up <= (others => '0'); b_enc <= '0'; fait <= "00";
+                a_octet <= '0'; r1_en <= '0'; s_en <= '0'; w_we <= '0'; k_wen <= '0'; nacc <= 0; ibit <= 0;
+            else
+                ecrit := false; brut := '0';
+                -- étages de l'accès à P : lecture lancée (r1) → écriture (s) → réécriture anticipée (w)
+                r1_en <= '0';
+                s_en <= r1_en; s_aw <= r1_aw; s_ab <= r1_ab; s_val <= r1_val; s_mode <= r1_mode;
+                w_we <= s_en; w_wa <= s_aw; w_wd <= e_wd;
+                if s_en = '1' and s_mode = 1 then report_c <= e_wd(19); end if;
+                k_wen <= '0';
+                if k_wen = '1' then k_mot <= 0 when k_mot = S2_MK - 1 else k_mot + 1; end if;
+                case ee is
+                    when E_ATT =>
+                        if ((fait(0) xor lu(0)) = '0' and b_enc = '0') or ((fait(1) xor lu(1)) = '0' and b_enc = '1') then
+                            if cnt_ts = 0 then syncd := 0; else syncd := (188 - cnt_ts) * 8; end if;
+                            ent <= x"F0" & x"00" & x"05E0" & x"3E38" & x"47" & std_logic_vector(to_unsigned(syncd, 16));
+                            crc_ent <= (others => '0');
+                            prbs <= "100101010000000";
+                            bch <= (others => '0');
+                            ibit <= 0; nacc <= 0; k_mot <= 0; ndat <= 0; ib <= 0; a_octet <= '0';
+                            ee <= E_ENT;
+                        end if;
+                    when E_ENT =>
+                        -- 72 bits d'en-tête puis 8 bits de CRC-8
+                        if ibit < 72 then
+                            brut := ent(71); ent <= ent(70 downto 0) & '0';
+                            crc_ent <= crc8(crc_ent, ent(71));
+                        else
+                            brut := crc_ent(7); crc_ent <= crc_ent(6 downto 0) & '0';
+                        end if;
+                        ecrit := true;
+                        if ibit = 79 then ee <= E_DATA; end if;
+                    when E_DATA =>
+                        if a_octet = '0' then
+                            if s_valid = '1' then
+                                if cnt_ts = 0 then
+                                    if s_sop = '1' then
+                                        octet <= crc_up; crc_up <= (others => '0'); a_octet <= '1'; cnt_ts <= 1;
+                                    end if;                                       -- sinon : octet ignoré (alignement)
+                                else
+                                    octet <= s_data; a_octet <= '1';
+                                    cv := crc_up;
+                                    for i in 7 downto 0 loop cv := crc8(cv, s_data(i)); end loop;
+                                    crc_up <= cv;
+                                    cnt_ts <= 0 when cnt_ts = 187 else cnt_ts + 1;
+                                end if;
+                            end if;
+                        else
+                            brut := octet(7); octet <= octet(6 downto 0) & '0';
+                            ecrit := true;
+                            if ib = 7 then
+                                ib <= 0; a_octet <= '0';
+                                if ndat = 1990 then ee <= E_BCH; else ndat <= ndat + 1; end if;
+                            else
+                                ib <= ib + 1;
+                            end if;
+                        end if;
+                    when E_BCH =>
+                        brut := bch(191); bch <= bch(190 downto 0) & '0';
+                        ecrit := true;
+                        if ibit = 16199 then
+                            ee <= E_RAZ; e_ra_p <= 0;
+                        end if;
+                    when E_RAZ =>
+                        -- parité à zéro : 2 430 mots nuls
+                        r1_en <= '1'; r1_aw <= e_ra_p; r1_mode <= 2; r1_val <= '0';
+                        if e_ra_p = S2_MP - 1 then
+                            ee <= E_ACC0;
+                            rang <= 0; n <= 0; c <= 0; nk <= 0; e_ra_k <= 0;
+                        else
+                            e_ra_p <= e_ra_p + 1;
+                        end if;
+                    when E_ACC0 =>
+                        -- vidage des étages d'écriture ; premier mot de K lu
+                        if r1_en = '0' and s_en = '0' then ee <= E_ACC; end if;
+                    when E_ACC =>
+                        -- bit d'information courant (rangée rang, n), adresse c
+                        if c = 0 then
+                            if nk = 0 then
+                                d := e_rd_k(0); kw <= '0' & e_rd_k(19 downto 1); nk <= 19;
+                                e_ra_k <= 0 when e_ra_k = S2_MK - 1 else e_ra_k + 1;
+                            else
+                                d := kw(0); kw <= '0' & kw(19 downto 1); nk <= nk - 1;
+                            end if;
+                            dbit <= d;
+                        else
+                            d := dbit;
+                        end if;
+                        if n = 0 then aw := LW(rang, c); ab := LB(rang, c); else aw := a_w(c); ab := a_b(c); end if;
+                        e_ra_p <= aw;
+                        r1_en <= '1'; r1_aw <= aw; r1_ab <= ab; r1_val <= d; r1_mode <= 0;
+                        -- adresse suivante de la colonne : + 135 = 6 mots + 15 bits
+                        ab2 := ab + 15; aw2 := aw + 6;
+                        if ab2 >= 20 then ab2 := ab2 - 20; aw2 := aw2 + 1; end if;
+                        if aw2 >= S2_MP then aw2 := aw2 - S2_MP; end if;
+                        a_w(c) <= aw2; a_b(c) <= ab2;
+                        if c = ldpc_n(rang) - 1 then
+                            c <= 0;
+                            if n = 359 then
+                                n <= 0;
+                                if rang = 44 then
+                                    ee <= E_PRE; report_c <= '0'; e_ra_p <= 0;
+                                else
+                                    rang <= rang + 1;
+                                end if;
+                            else
+                                n <= n + 1;
+                            end if;
+                        else
+                            c <= c + 1;
+                        end if;
+                    when E_PRE =>
+                        -- cumul p(j) ⊕= p(j − 1) : mot e_ra_p lu, écrit deux cycles plus tard
+                        r1_en <= '1'; r1_aw <= e_ra_p; r1_mode <= 1; r1_val <= '0';
+                        if e_ra_p = S2_MP - 1 then ee <= E_FIN; else e_ra_p <= e_ra_p + 1; end if;
+                    when E_FIN =>
+                        -- dernières écritures faites : jeu prêt, jeu suivant
+                        if r1_en = '0' and s_en = '0' then
+                            if b_enc = '0' then fait(0) <= not fait(0); else fait(1) <= not fait(1); end if;
+                            b_enc <= not b_enc;
+                            ee <= E_ATT;
+                        end if;
+                end case;
+
+                -- écriture d'un bit dans K : brouillage et BCH sur les 16 008
+                --   premiers bits, parité BCH telle quelle ensuite
+                if ecrit then
+                    if ibit < S2_KBCH then
+                        val := brut xor prbs(0) xor prbs(1);
+                        prbs <= (prbs(0) xor prbs(1)) & prbs(14 downto 1);
+                        if (val xor bch(191)) = '1' then
+                            bch <= (bch(190 downto 0) & '0') xor BCH_G;
+                        else
+                            bch <= bch(190 downto 0) & '0';
+                        end if;
+                    else
+                        val := brut;
+                    end if;
+                    acc(nacc) <= val;
+                    if nacc = 19 then
+                        nacc <= 0; k_wen <= '1';                  -- mot complet écrit au cycle suivant
+                    else
+                        nacc <= nacc + 1;
+                    end if;
+                    ibit <= 0 when ibit = 16199 else ibit + 1;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    -- E : jeu prêt, sortie → T : en-tête PL, créneaux de données, pilotes,
+    --   brouillage physique ; deux symboles d'avance (o : présenté, n : suivant)
+    --   → S : symboles, bascule lu(jeu), jeu suivant
+    m_valid <= o_v;
+    m_i <= o_s(1);
+    m_q <= o_s(0);
+    process (clk)
+        variable libre  : boolean;
+        variable bi, bq : std_logic;
+        variable rn     : std_logic_vector(1 downto 0);
+        variable sym    : std_logic_vector(1 downto 0);
+        variable emis   : boolean;
+        variable pas    : boolean;                      -- avancer le brouilleur
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                ef <= F_ATT; o_v <= '0'; n_v <= '0'; b_out <= '0'; lu <= "00"; nb <= 0;
+            else
+                libre := n_v = '0';
+                if m_ready = '1' and o_v = '1' then
+                    o_v <= n_v; o_s <= n_s; n_v <= '0'; libre := true;
+                end if;
+                emis := false; pas := false;
+                -- rotation du brouilleur pour le symbole courant
+                rn(0) := gx(0) xor gy(0);
+                rn(1) := parite18(gx, "00" & x"8050") xor parite18(gy, "00" & x"FF60");
+                if libre then
+                    case ef is
+                        when F_ATT =>
+                            if ((fait(0) xor lu(0)) = '1' and b_out = '0') or ((fait(1) xor lu(1)) = '1' and b_out = '1') then
+                                ef <= F_ENT; ih <= 0; f_ra_k <= 0; f_ra_p <= 0; src_p <= '0'; nb <= 0;
+                                gx <= (0 => '1', others => '0'); gy <= (others => '1');
+                            end if;
+                        when F_ENT =>
+                            sym := PLH(ih); emis := true;
+                            if ih = 2 then
+                                -- premier mot de K (lecture lancée à l'entrée)
+                                sw <= f_rd_k; nb <= 20; f_ra_k <= 1;
+                            end if;
+                            if ih = 89 then ef <= F_DATA; cren <= 0; isy <= 0; else ih <= ih + 1; end if;
+                        when F_DATA =>
+                            if nb = 0 then
+                                -- chargement du mot préchargé, adresse suivante
+                                if src_p = '0' then
+                                    sw <= f_rd_k;
+                                    if f_ra_k = S2_MK - 1 then src_p <= '1'; f_ra_p <= 0; else f_ra_k <= f_ra_k + 1; end if;
+                                else
+                                    sw <= f_rd_p;
+                                    f_ra_p <= 0 when f_ra_p = S2_MP - 1 else f_ra_p + 1;
+                                end if;
+                                nb <= 20;
+                            else
+                                bi := sw(0); bq := sw(1);
+                                sw <= "00" & sw(19 downto 2); nb <= nb - 2;
+                                case rn is
+                                    when "00"   => sym := bi & bq;
+                                    when "01"   => sym := (not bq) & bi;
+                                    when "10"   => sym := (not bi) & (not bq);
+                                    when others => sym := bq & (not bi);
+                                end case;
+                                emis := true; pas := true;
+                                if isy = 89 then
+                                    isy <= 0;
+                                    if cren = S2_SLOTS - 1 then
+                                        -- fin de trame : jeu rendu, trame suivante
+                                        cren <= 0; ef <= F_ATT;
+                                        if b_out = '0' then lu(0) <= not lu(0); else lu(1) <= not lu(1); end if;
+                                        b_out <= not b_out;
+                                    else
+                                        cren <= cren + 1;
+                                        if (cren + 1) mod 16 = 0 then ef <= F_PIL; ip <= 0; end if;
+                                    end if;
+                                else
+                                    isy <= isy + 1;
+                                end if;
+                            end if;
+                        when F_PIL =>
+                            case rn is
+                                when "00"   => sym := "00";
+                                when "01"   => sym := "10";
+                                when "10"   => sym := "11";
+                                when others => sym := "01";
+                            end case;
+                            emis := true; pas := true;
+                            if ip = 35 then ef <= F_DATA; else ip <= ip + 1; end if;
+                    end case;
+                end if;
+                if emis then
+                    if o_v = '0' or (m_ready = '1' and n_v = '0') then
+                        o_v <= '1'; o_s <= sym;
+                    else
+                        n_v <= '1'; n_s <= sym;
+                    end if;
+                end if;
+                if pas then
+                    gx <= parite18(gx, "00" & x"0081") & gx(17 downto 1);
+                    gy <= parite18(gy, "00" & x"04A1") & gy(17 downto 1);
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
 -- dvbs_sd : émetteur de la mire animée aux bits sigma-delta : video_enc
 --   (étapes 01 à 08) → dispersion → RS(204,188) → entrelaceur → codeur
---   convolutif → sigma_delta ; chaque bloc est vérifié au bit près par son
---   banc (video, chaine, sdm)
+--   convolutif → sigma_delta, ou → dvbs2_tx → sigma_delta (norme = 1) ;
+--   chaque bloc est vérifié au bit près par son banc (video, chaine, sdm)
 --   Interface : horloge 80 MHz ; sortie : 8 bits sigma-delta par cycle et par
 --               voie (m_i, m_q, bit 7 émis en premier), vers les sérialiseurs
 --               LVDS (640 Mbit/s)
@@ -5334,12 +6118,16 @@ end architecture rtl;
 --   Principe : la sortie sigma-delta impose le rythme (un symbole par SDM_CYC
 --              cycles) ; le contrôle de flux remonte jusqu'au multiplexeur TS ;
 --              bit du codeur à 1 → symbole −1 (bit de signe de qpsk_map),
---              convention de l'entrée de sigma_delta
+--              convention de l'entrée de sigma_delta ; norme = 1 : les paquets
+--              TS vont à dvbs2_tx (QPSK 1/4, 5 MS/s), budgets TM5, débit des
+--              en-têtes et cadence TS de DVB-S2 ; tout changement de norme
+--              remet la chaîne à zéro (rst_c)
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
+use work.dvbs2_pkg.all;
 
 entity dvbs_sd is
     generic (
@@ -5351,6 +6139,9 @@ entity dvbs_sd is
     port (
         clk     : in  std_logic;
         rst     : in  std_logic;
+        norme   : in  std_logic := '0';      -- 0 : DVB-S FEC 1/2 ; 1 : DVB-S2 QPSK 1/4 (G_RS = 5 MS/s)
+        biss    : in  std_logic := '0';      -- 1 : programme 1 embrouillé (BISS-1), numéro affiché sur la mire
+        biss_num : in std_logic_vector(15 downto 0) := (others => '0');   -- numéro, 4 chiffres BCD
         m_valid : out std_logic;
         m_ready : in  std_logic;
         m_i     : out std_logic_vector(7 downto 0);
@@ -5373,20 +6164,42 @@ end entity dvbs_sd;
 architecture rtl of dvbs_sd is
     -- débit binaire des en-têtes de séquence : ⌈R_ts / 400⌉, R_ts = Rs·188/204 (FEC 1/2)
     constant BIT_RATE : natural := (G_RS * 188 + 204 * 400 - 1) / (204 * 400);
-    -- multiplexeur TS : constantes exactes de 10 MS/s, ou de 5 MS/s
-    -- selon : E : valeurs à 5 et à 10 MS/s → S : celle de G_RS
-    function selon(v5, v10 : natural) return natural is
+    -- cadence du multiplexeur TS en DVB-S (10 ou 5 MS/s) ; DVB-S2 : CAD_S2_5M
+    function cadence return ts_cadence_t is
     begin
-        if G_RS = 5_000_000 then return v5; else return v10; end if;
+        if G_RS = 5_000_000 then return CAD_S_5M; else return CAD_S_10M; end if;
     end function;
-    constant TS_K    : natural := selon(102, 51);
-    constant PCR_INC : natural := selon(8812, 4406);
-    constant PCR_FR  : natural := selon(376, 188);
-    constant PCR_R0  : natural := selon(125, 415);
-    constant PCR_B0  : natural := selon(1, 0);
-    constant PCR_E0  : natural := selon(169, 234);
+    constant CAD : ts_cadence_t := cadence;
+    -- BISS-1 : clé de session = les 4 chiffres du numéro répétés trois fois (12
+    --   chiffres hexadécimaux S0 … S5), mot de contrôle S0 S1 S2 (S0+S1+S2) S3 S4 S5
+    --   (S3+S4+S5), sommes modulo 256 ; octet 0 en bits 7..0
+    function mot_biss(n : std_logic_vector(15 downto 0)) return std_logic_vector is
+        variable s0, s1, s2, s3, s4, s5 : unsigned(7 downto 0);
+        variable r : std_logic_vector(63 downto 0);
+    begin
+        s0 := unsigned(n(15 downto 8));
+        s1 := unsigned(n(7 downto 0));
+        s2 := s0; s3 := s1; s4 := s0; s5 := s1;
+        r := std_logic_vector(s5 + s4 + s3) & std_logic_vector(s5) & std_logic_vector(s4) & std_logic_vector(s3)
+           & std_logic_vector(s2 + s1 + s0) & std_logic_vector(s2) & std_logic_vector(s1) & std_logic_vector(s0);
+        return r;
+    end function;
+    -- DVB-S2 : budgets TM5 (47 % de R_ts) et débit des en-têtes
+    constant T2_CAM  : natural := (S2_RTS * 47) / (100 * 50);
+    constant T2_MIRE : natural := (S2_RTS * 47) / (100 * 25);
+    -- remise à zéro de la chaîne : rst, ou changement de norme (16 cycles)
+    signal rst_c    : std_logic := '1';
+    signal norme_r  : std_logic := '0';
+    signal n_raz    : natural range 0 to 15 := 0;
     signal t_valid, t_ready, t_sop : std_logic;
+    signal s_valid_s, s_ready_s    : std_logic;                 -- entrée du DVB-S (prbs_disp)
+    signal b_valid, b_ready        : std_logic;                 -- entrée du DVB-S2
+    signal d_valid, d_ready, d_i, d_q : std_logic;              -- symboles DVB-S2
+    signal sd_valid, sd_ready, sd_i, sd_q : std_logic;          -- entrée de sigma_delta
     signal t_data                  : octet_t;
+    signal q_valid, q_ready, q_sop : std_logic;                 -- paquets TS après l'embrouillage BISS
+    signal q_data                  : octet_t;
+    signal cw                      : std_logic_vector(63 downto 0);
     signal p_valid, p_ready, p_sop : std_logic;
     signal p_data                  : octet_t;
     signal r_valid, r_ready, r_sop : std_logic;
@@ -5397,10 +6210,27 @@ architecture rtl of dvbs_sd is
     signal c_data                  : std_logic_vector(1 downto 0);
 begin
     assert G_RS = 10_000_000 or G_RS = 5_000_000 report "dvbs_sd : G_RS doit valoir 10 000 000 ou 5 000 000" severity failure;
+
+    -- E : rst, norme → T : remise à zéro tenue 16 cycles après un changement de
+    --   norme (budgets, cadence TS et chaîne du canal repartent) → S : rst_c
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            norme_r <= norme;
+            if rst = '1' then
+                n_raz <= 15;
+            elsif norme /= norme_r then
+                n_raz <= 15;
+            elsif n_raz /= 0 then
+                n_raz <= n_raz - 1;
+            end if;
+        end if;
+    end process;
+    rst_c <= '1' when rst = '1' or n_raz /= 0 else '0';
     -- un programme : mire animée seule (bancs, 10 MS/s)
     g_un : if not G_MCPC generate
         u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(G_RS, G_FEC, 95, 25))
-            port map (clk, rst, t_valid, t_ready, t_data, t_sop);
+            port map (clk, rst_c, t_valid, t_ready, t_data, t_sop);
     end generate;
 
     -- deux programmes : caméra 720 × 576 par demi-trames sur le canal 1, mire
@@ -5443,7 +6273,7 @@ begin
         process (clk)
         begin
             if rising_edge(clk) then
-                if rst = '1' then
+                if rst_c = '1' then
                     sel_cam <= '0'; pmb <= 0; nmb <= 0; tic <= 0; du <= '1'; att <= 0;
                 else
                     -- cadence des images noires
@@ -5488,34 +6318,53 @@ begin
         u_cam : entity work.cam_mb
             port map (clk_v => clk_v, rst_v => rst_v, v_valid => v_valid, v_cb => v_cb, v_y0 => v_y0, v_cr => v_cr, v_y1 => v_y1,
                       v_trame => v_trame, v_ligne => v_ligne, v_x => v_x, v_dt => v_dt,
-                      clk => clk, rst => rst, m_valid => c_mb_valid, m_ready => c_mb_ready, m_data => c_mb_data,
+                      clk => clk, rst => rst_c, m_valid => c_mb_valid, m_ready => c_mb_ready, m_data => c_mb_data,
                       m_debut => c_debut, m_trame => c_trame, retard => open);
         u_cod1 : entity work.codeur
-            generic map (G_LARG => 720, G_HAUT => 576, G_TRAMES => true, G_BIT_RATE => BIT_RATE, G_T => budget_image(G_RS, G_FEC, 47, 50))
-            port map (clk, rst, x_valid, x_ready, x_data, c_es_valid, c_es_ready, c_es_data);
+            generic map (G_LARG => 720, G_HAUT => 576, G_TRAMES => true, G_BIT_RATE => BIT_RATE, G_BIT_RATE2 => S2_BIT_RATE,
+                         G_T => budget_image(G_RS, G_FEC, 47, 50), G_T2 => T2_CAM)
+            port map (clk, rst_c, x_valid, x_ready, x_data, c_es_valid, c_es_ready, c_es_data, norme);
         u_mire : entity work.mire_gen
-            port map (clk => clk, rst => rst, m_valid => m_mb_valid, m_ready => m_mb_ready, m_data => m_mb_data, m_debut => open);
+            port map (clk => clk, rst => rst_c, aff => biss, num => biss_num, m_valid => m_mb_valid, m_ready => m_mb_ready, m_data => m_mb_data, m_debut => open);
         u_cod2 : entity work.codeur
-            generic map (G_BIT_RATE => BIT_RATE, G_T => budget_image(G_RS, G_FEC, 47, 25), G_IMAGES => G_IMAGES)
-            port map (clk, rst, m_mb_valid, m_mb_ready, m_mb_data, m_es_valid, m_es_ready, m_es_data);
+            generic map (G_BIT_RATE => BIT_RATE, G_BIT_RATE2 => S2_BIT_RATE, G_T => budget_image(G_RS, G_FEC, 47, 25), G_T2 => T2_MIRE, G_IMAGES => G_IMAGES)
+            port map (clk, rst_c, m_mb_valid, m_mb_ready, m_mb_data, m_es_valid, m_es_ready, m_es_data, norme);
         u_ts : entity work.ts_mux
-            generic map (G_K => TS_K, G_PCR_INC => PCR_INC, G_PCR_FR => PCR_FR, G_PCR_R0 => PCR_R0, G_PCR_B0 => PCR_B0, G_PCR_E0 => PCR_E0,
-                         G_MCPC => true, G_TRAMES1 => true, G_AB2 => 16)
-            port map (clk => clk, rst => rst, s_valid => c_es_valid, s_ready => c_es_ready, s_data => c_es_data,
+            generic map (G_CAD => CAD, G_CAD2 => CAD_S2_5M, G_MCPC => true, G_TRAMES1 => true, G_AB2 => 16)
+            port map (clk => clk, rst => rst_c, s_valid => c_es_valid, s_ready => c_es_ready, s_data => c_es_data,
                       m_valid => t_valid, m_ready => t_ready, m_data => t_data, m_sop => t_sop,
-                      s2_valid => m_es_valid, s2_ready => m_es_ready, s2_data => m_es_data);
+                      s2_valid => m_es_valid, s2_ready => m_es_ready, s2_data => m_es_data, norme => norme);
     end generate;
 
+    -- paquets TS vers la chaîne DVB-S (norme = 0) ou DVB-S2 (norme = 1)
+    --   embrouillage BISS-1 du PID vidéo 0x0101 (programme 1) par csa_enc, actif
+    --   quand biss = 1 ; sinon les paquets passent inchangés
+    cw <= mot_biss(biss_num);
+    u_csa : entity work.csa_enc generic map (G_PID => 16#0101#)
+        port map (clk => clk, rst => rst_c, en => biss, cw => cw,
+                  s_valid => t_valid, s_ready => t_ready, s_data => t_data, s_sop => t_sop,
+                  m_valid => q_valid, m_ready => q_ready, m_data => q_data, m_sop => q_sop);
+    s_valid_s <= q_valid and not norme;
+    b_valid   <= q_valid and norme;
+    q_ready   <= b_ready when norme = '1' else s_ready_s;
     u_prbs : entity work.prbs_disp
-        port map (clk, rst, t_valid, t_ready, t_data, t_sop, p_valid, p_ready, p_data, p_sop);
+        port map (clk, rst_c, s_valid_s, s_ready_s, q_data, q_sop, p_valid, p_ready, p_data, p_sop);
     u_rs : entity work.rs_enc
-        port map (clk, rst, p_valid, p_ready, p_data, p_sop, r_valid, r_ready, r_data, r_sop);
+        port map (clk, rst_c, p_valid, p_ready, p_data, p_sop, r_valid, r_ready, r_data, r_sop);
     u_inter : entity work.interleaver
-        port map (clk, rst, r_valid, r_ready, r_data, r_sop, e_valid, e_ready, e_data, e_sop);
+        port map (clk, rst_c, r_valid, r_ready, r_data, r_sop, e_valid, e_ready, e_data, e_sop);
     u_conv : entity work.conv_enc generic map (G_FEC => G_FEC)
-        port map (clk, rst, e_valid, e_ready, e_data, c_valid, c_ready, c_data);
+        port map (clk, rst_c, e_valid, e_ready, e_data, c_valid, c_ready, c_data);
+    u_s2 : entity work.dvbs2_tx
+        port map (clk, rst_c, b_valid, b_ready, q_data, q_sop, d_valid, d_ready, d_i, d_q);
+    -- symboles vers la sortie sigma-delta
+    sd_valid <= d_valid when norme = '1' else c_valid;
+    sd_i     <= d_i when norme = '1' else c_data(1);
+    sd_q     <= d_q when norme = '1' else c_data(0);
+    c_ready  <= sd_ready and not norme;
+    d_ready  <= sd_ready and norme;
     u_sd : entity work.sigma_delta
-        port map (clk, rst, c_valid, c_ready, c_data(1), c_data(0), m_valid, m_ready, m_i, m_q);
+        port map (clk, rst_c, sd_valid, sd_ready, sd_i, sd_q, m_valid, m_ready, m_i, m_q);
 end architecture rtl;
 
 --------------------------------------------------------------------------------
@@ -5623,6 +6472,67 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
+-- tirage_biss : numéro BISS de 4 chiffres (0000 à 9999) tiré à la mise sous
+--   tension
+--   Interface : present : décodeur vidéo identifié (tvp_ctrl) ; num : 4 chiffres
+--               BCD, chiffre des milliers en bits 15..12, tenu après le tirage
+--   Principe : un compteur BCD à 4 chiffres tourne à chaque cycle depuis la
+--              remise à zéro ; sa valeur est figée au premier front montant de
+--              present (l'instant dépend du démarrage du décodeur, de l'ordre
+--              de la microseconde)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity tirage_biss is
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        present : in  std_logic;
+        num     : out std_logic_vector(15 downto 0)
+    );
+end entity tirage_biss;
+
+architecture rtl of tirage_biss is
+    type chiffres_t is array (0 to 3) of unsigned(3 downto 0);
+    signal cpt   : chiffres_t := (others => (others => '0'));    -- 0 : unités
+    signal fige  : std_logic := '0';
+    signal reg   : std_logic_vector(15 downto 0) := (others => '0');
+begin
+    -- E : present → T : compteur BCD, une unité par cycle ; figé au premier
+    --   present → S : num
+    process (clk)
+        variable r : std_logic;
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                cpt  <= (others => (others => '0'));
+                fige <= '0';
+                reg  <= (others => '0');
+            elsif fige = '0' then
+                if present = '1' then
+                    fige <= '1';
+                    reg  <= std_logic_vector(cpt(3)) & std_logic_vector(cpt(2)) & std_logic_vector(cpt(1)) & std_logic_vector(cpt(0));
+                end if;
+                r := '1';
+                for k in 0 to 3 loop
+                    if r = '1' then
+                        if cpt(k) = 9 then
+                            cpt(k) <= (others => '0');
+                        else
+                            cpt(k) <= cpt(k) + 1;
+                            r := '0';
+                        end if;
+                    end if;
+                end loop;
+            end if;
+        end if;
+    end process;
+    num <= reg;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
 -- horloges : deux PLL depuis l'oscillateur 50 MHz ; verrou : les deux PLL
 --   verrouillés ; cœurs PF_CCC_SYS (80 MHz global, 320 MHz HS_IO_CLK) et
 --   PF_CCC_TVP (14,318182 MHz) créés dans le catalogue Libero
@@ -5727,9 +6637,11 @@ end architecture rtl;
 --              relâchée de façon synchrone (8 cycles) ; aucun réglage externe :
 --              choix_auto sonde les entrées AIP1A et AIP1B toutes les minutes
 --              et impose l'entrée de tvp_ctrl ; A seule : DVB-S, B seule :
---              DVB-S2, A et B : DVB-S et BISS, aucune : DVB-S et image noire
---              (norme et biss à brancher par les chantiers DVB-S2 et
---              embrouillage) ; FEC 1/2 et 5 MS/s fixes ; deux programmes
+--              DVB-S2 QPSK 1/4, A et B : DVB-S et BISS, aucune : DVB-S et
+--              image noire ; A et B : programme 1 embrouillé BISS-1 (clé = numéro de 4
+--              chiffres tiré à la mise sous tension, répété trois fois, affiché
+--              sur la mire du programme 2 en clair) ;
+--              FEC 1/2 et 5 MS/s fixes ; deux programmes
 --              (dvbs_sd) : caméra sur le canal 1, mire animée sur le canal 2 ;
 --              sigma-delta au repos (01010101) avant le premier symbole
 --   Paramètres : G_TVP_HZ : horloge vue par tvp_ctrl et choix_auto (80 MHz ;
@@ -5799,6 +6711,7 @@ architecture rtl of jpeg2dvb_top is
     signal present, video_ok, entree   : std_logic;
     signal choix, mode : std_logic_vector(1 downto 0);
     signal norme, biss : std_logic;
+    signal biss_num   : std_logic_vector(15 downto 0);
     signal b_valid, b_trame, b_dt, b_sync : std_logic;
     signal b_cb, b_y0, b_cr, b_y1 : std_logic_vector(7 downto 0);
     signal b_ligne, b_x : unsigned(8 downto 0);
@@ -5831,7 +6744,7 @@ begin
     -- chaîne d'émission et sorties LVDS (repos 01010101 avant le premier symbole)
     u_tx : entity work.dvbs_sd
         generic map (G_MCPC => true, G_RS => 5_000_000)
-        port map (clk => clk_sys, rst => rst, m_valid => sd_valid, m_ready => '1', m_i => sd_i, m_q => sd_q,
+        port map (clk => clk_sys, rst => rst, norme => norme, biss => biss, biss_num => biss_num, m_valid => sd_valid, m_ready => '1', m_i => sd_i, m_q => sd_q,
                   clk_v => tvp_sclk, rst_v => rst_sclk, v_valid => b_valid, v_cb => b_cb, v_y0 => b_y0, v_cr => b_cr, v_y1 => b_y1,
                   v_trame => b_trame, v_ligne => b_ligne, v_x => b_x, v_dt => b_dt);
     s_i <= sd_i when sd_valid = '1' else "01010101";
@@ -5852,6 +6765,7 @@ begin
     -- choix automatique du mode (entrées sondées toutes les minutes)
     u_choix : entity work.choix_auto generic map (G_HZ => G_TVP_HZ)
         port map (clk_sys, rst, present, video_ok, entree, choix, norme, biss, mode);
+    u_tirage : entity work.tirage_biss port map (clk_sys, rst, present, biss_num);
 
     process (clk_sys)
     begin
