@@ -1,91 +1,197 @@
 <!--
   Name     : README.md
-  Purpose  : Overview of JPEG2DVB (step-by-step DVB-S transmission chain)
+  Purpose  : FPGA port of JPEG2DVB (23 cm DVB-S transmitter), VHDL-2008
   Author   : Eric PERRET
-  Date     : 2026-10-27
+  Date     : 2026-11-11
   License  : CC BY-NC 4.0
 -->
 
-# 📡 JPEG2DVB — from image to DVB-S modulation
+# JPEG2DVB — FPGA port in VHDL-2008
 
 🇫🇷 [Version française : LISEZMOI.md](LISEZMOI.md)
 
-▶️ **[Home page of the 16 steps](https://ericperret.github.io/JPEG2DVB/index2.html)**
+VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF100TC FPGA, specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
 
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interfaces (flow control exercised with random gaps in every testbench).
 
-![Page 02: 8×8 DCT](captures/page02-dct.png)
+## Modules
 
-Interactive tutorial of the digital satellite TV chain: from capturing an image to shaping the QPSK signal, following MPEG-2 and DVB-S (EN 300 421). Each step is a standalone HTML page doing the real computations: it loads the file produced by the previous step (JSON or binary), processes it step by step with visualisation, and saves its result for the next step.
-
-No library, no installation. User interfaces in French.
-
-## The steps
-
-| Step | Launch | Processing | Input → output | Screenshot |
+| Module | Function | JPEG2DVB step | Testbench | Status |
 |---|---|---|---|---|
-| 00 | ▶️ [Camera](https://ericperret.github.io/JPEG2DVB/page00-camera.html) | Image capture from the webcam | webcam → image | [view](captures/page00-camera.png) |
-| 01 | ▶️ [Macroblocks](https://ericperret.github.io/JPEG2DVB/page01-image-to-macroblocs.html) | RGB → YCbCr 4:2:0, 16×16 macroblocks (4 Y + 1 Cb + 1 Cr) | image → macroblock JSON | [view](captures/page01-image-to-macroblocs.png) |
-| 02 | ▶️ [DCT](https://ericperret.github.io/JPEG2DVB/page02-dct.html) | 8×8 2D DCT, MPEG-2 intra (no centring, DC = 8 × mean), natural order F[v][u]; integer DCT, identical bit for bit to the FPGA | macroblocks → coefficients | [view](captures/page02-dct.png) |
-| 03 | ▶️ [Quantisation](https://ericperret.github.io/JPEG2DVB/page03-quantification.html) | MPEG-2 quantisation with TM5 rate control: one quantiser_scale_code per macroblock row, chosen from the channel budget (Rs, FEC, video share); integers only; scale codes passed on to step 06 | coefficients → quantised integers | [view](captures/page03-quantification.png) |
-| 04 | ▶️ [Zigzag](https://ericperret.github.io/JPEG2DVB/page04-zigzag.html) | Zigzag scan of the 64 coefficients | blocks → 64-value vectors | [view](captures/page04-zigzag.png) |
-| 05 | ▶️ [RLE + Huffman](https://ericperret.github.io/JPEG2DVB/page05-rle-huffman.html) | (run, level) pairs, MPEG-2 tables B.12 / B.13 (DC) and B.14 (AC), escape, per-component DC predictors | vectors → bitstreams | [view](captures/page05-rle-huffman.png) |
-| 06 | ▶️ [Elementary Stream](https://ericperret.github.io/JPEG2DVB/page06-elementary-stream.html) | MPEG-2 sequence, GOP, picture headers, slices; quantiser matrix and per-slice scale codes from step 03; decodable by ffmpeg / VLC | bitstreams → .es file | [view](captures/page06-elementary-stream.png) |
-| 07 | ▶️ [PES](https://ericperret.github.io/JPEG2DVB/page07-pes.html) | PES packets, PTS = initial PCR + 0.7 s (no DTS for an I picture), data alignment | ES → PES | [view](captures/page07-pes.png) |
-| 08 | ▶️ [Transport Stream](https://ericperret.github.io/JPEG2DVB/page08-ts.html) | 188-byte packets, PAT and PMT tables, PCR in the first video packet | PES → .ts file, plays in VLC and ffplay | [view](captures/page08-ts.png) |
-| 09 | ▶️ [PRBS](https://ericperret.github.io/JPEG2DVB/page09-prbs.html) | Energy dispersal, polynomial 1 + X¹⁴ + X¹⁵, 8-packet super-frame | TS → randomised TS | [view](captures/page09-prbs.png) |
-| 10 | ▶️ [Reed-Solomon](https://ericperret.github.io/JPEG2DVB/page10-reed-solomon.html) | RS(204,188) shortened from RS(255,239), GF(2⁸) 0x11D, 8 correctable bytes | 188 → 204 bytes | [view](captures/page10-reed-solomon.png) |
-| 11 | ▶️ [Interleaving](https://ericperret.github.io/JPEG2DVB/page11-interleaving.html) | Forney convolutional interleaver, I = 12, M = 17 | RS blocks → interleaved stream | [view](captures/page11-interleaving.png) |
-| 12 | ▶️ [Convolutional coder](https://ericperret.github.io/JPEG2DVB/page12-convolutional_1.html) | K = 7, rate 1/2, G1 = 171₈, G2 = 133₈, optional puncturing | stream → coded bits | [view](captures/page12-convolutional_1.png) |
-| 13 | ▶️ [QPSK](https://ericperret.github.io/JPEG2DVB/page13-qpsk.html) | 2 bits → I/Q symbol, Gray coding | bits → I/Q symbols | [view](captures/page13-qpsk.png) |
-| 14 | ▶️ [SRRC filter](https://ericperret.github.io/JPEG2DVB/page14-srrc-v2.html) | Square-root raised-cosine pulse shaping | symbols → shaped signal | [view](captures/page14-srrc-v2.png) |
-| 15 | ▶️ [Reception](https://ericperret.github.io/JPEG2DVB/page15-reception.html) | Reverse path: matched filter, Viterbi, deinterleaving, Reed-Solomon, derandomisation; byte-by-byte comparison with the step-08 TS | .cs16 signal → TS | [view](captures/page15-reception.png) |
+| `dct8x8_int` | Integer 8 × 8 DCT: 2 passes, 4 multipliers per pass (coefficient symmetry), row pass while loading, intermediate results and output in memory | 02 (integer DCT) | `tb_bloc` | ✔ identical |
+| `quant_intra` | Intra quantisation, default matrix, exact division through reciprocals read from a synchronous ROM (2,048 × 26 bits), three stages; scale code read with each coefficient (one code per row) | 03 | `tb_bloc` | ✔ per-row codes, codes 1 and 31 |
+| `rate_ctrl` | TM5 rate control in integers: one quantiser_scale_code per macroblock row, row gate between DCT and quantisation, exact count of the VLC bits, 5-step division | 03 (TM5) | `tb_rc` | ✔ 54 codes, gate checked |
+| `zigzag` | Zigzag scan, two ping-pong banks | 04 | `tb_bloc` | ✔ identical |
+| `vlc_enc` + `vlc_tab_pkg` | MPEG-2 VLC: differential DC, B.14, escape, end of block | 05 | `tb_vlc` | ✔ bits and lengths |
+| `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices with their own scale code, sequence end | 06 | `tb_es` | ✔ 3 pictures |
+| `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets; scheduling and PTS by running sums, no multiplier | 07, 08 | `tb_octets` | ✔ 976 packets |
+| `csa_enc` + `csa_tab_pkg` | DVB-CSA scrambling of the packets of one PID, fixed key (BISS-1): chained block cipher from the end of the packet, then stream cipher; stand-alone module, not yet in the chain | — (`fpga_test/csa.js`) | `tb_octets` | ✔ 177 packets, boundary cases |
+| `prbs_disp` | Energy dispersal | 09 | `tb_octets` | ✔ identical |
+| `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identical |
+| `interleaver` | Forney interleaver I = 12, M = 17, synchronous-read memory | 11 | `tb_octets` | ✔ identical |
+| `conv_enc` | Convolutional encoder K = 7, 171/133, puncturing 1/2 to 7/8 | 12 | `tb_conv` | ✔ all 5 rates |
+| `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identical |
+| `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0.35, 8 phases × 13 16-bit coefficients, no multiplier | 14 (`.cs16`) | `tb_srrc` | ✔ 160,000 samples |
+| `tx_backend` | Back-end chain: TS → I/Q (steps 09 to 14 assembled) | 08 → 14 | `tb_backend` | ✔ 160,000 samples, one per clock |
+| `mire_gen` + `mire_pkg` | Animated 16-colour test pattern computed from its geometry (no image memory), moving square and counter, 4:2:0 macroblocks | 01 (`fpga_test/mire.png`, moving option) | `tb_mire` | ✔ 2 pictures |
+| `video_enc` | Front end: test pattern → DCT → TM5 rate control → quantisation → zigzag → VLC → ES → TS | 01 → 08 | `tb_dvbs` | ✔ 791 TS packets |
+| `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
+| `bt656_rx` | BT.656 receiver for the TVP5150AM1 decoder: SAV / EAV codes, field, line, Cb Y Cr Y pairs, 27 MHz SCLK clock | PAL input | `tb_bt656` | ✔ 414,720 pairs (4 fields, colour and black and white) |
+| `i2c_maitre` + `tvp_ctrl` | TVP5150AM1 control: start-up, identification, forced PAL, VBI off, automatic or forced AIP1A / AIP1B selection, I²C watchdog and bus recovery | PAL input | `tb_tvp` (`tb_tvp5150` model) | ✔ 4 scenarios |
+| `dvbs_sd` | Transmitter from the test pattern to the sigma-delta bits (`video_enc` → channel → `sigma_delta`) | 01 → 14 | blocks verified by `video`, `chaine`, `sdm` | ✔ composed |
+| `regs_i2c` + `jpeg2dvb_top` | Top level: PLLs, reset, LVDS, decoder, microcontroller registers, LEDs | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | ✔ registers, LEDs, 45,262 LVDS groups |
 
-## Usage
+Every module passes `ghdl --synth` without latches (synthesisability check; the real synthesis is done in Libero SoC).
 
-1. Open step 00 (webcam) or 01 (image file).
-2. At each step, run the processing (at once or step by step), then click **next ▶**: the output is handed over to the next step, which loads it automatically (banner at the top of the page). Processing always stays a click.
-3. The **Save** / **Load** buttons remain to keep every intermediate file or to resume from a file.
+## PAL video input (TVP5150AM1)
 
-## Multi-picture stream (2.0)
+Wiring required by `tvp_ctrl`:
 
-To harden the algorithm before the FPGA port, the whole chain also processes a sequence of pictures.
+- RESETB and PDN driven by the FPGA (`tvp_resetb`, `tvp_pdn`), no RC network: reset must follow the XTAL1 clock, generated by the FPGA PLL (14.31818 MHz);
+- SCL and SDA to two FPGA pins (open drain: `scl_oe`, `sda_oe`), 4.7 kΩ pull-ups to 3.3 V;
+- YOUT7/I2CSEL: 10 kΩ pull-down (address B8h); INTREQ/GPCL/VBLK: 10 kΩ pull-down;
+- SCLK (27 MHz): `bt656_rx` clock; YOUT[7:0]: its `d` input;
+- AIP1A and AIP1B: two PAL composite inputs (colour or black and white), the first locked one is used.
 
-1. **Step 01**: **Images** defaults to 25 (1 s of stream, adjustable from 1 to 1500), then ⚙️ Convert. The picture (or test pattern) is repeated with a moving square (+8 pixels per picture) and a 12-bit binary counter. Beyond one picture, outputs are binary `.j2d` containers (JSON header + typed arrays), loaded by the next steps like the JSON files.
-2. **Step 02**: **fixed-point** option, integer DCT (13-bit coefficients, two passes, 32 bits are enough), bit-exact reference for the FPGA, within ±1 of the rounded floating-point DCT.
-3. **Step 03**: TM5 rate control per slice (row of macroblocks). Symbol rate, FEC and video share of the multiplex give the target per picture; bits are counted exactly (VLC tables, headers, alignment); each slice's quantiser_scale_code is written in the stream.
-4. **Steps 06 to 08**: sequence of I pictures (closed GOP of 12, repeated sequence header), one PES per picture, PTS = ((n+1)/25 + 0.1 s) × 90,000, constant-rate multiplex at the channel's useful bit rate (9.216 Mbit/s at 10 MS/s, FEC 1/2): PAT and PMT every 80 ms, PCR every 30 ms, null packets. Displayed checks: decoder buffer, arrival of each picture before its PTS, PCR and PSI intervals.
-5. **Steps 09 to 14**: whole stream processed in blocks. Step 13: integer ±1 symbols. Step 14: SRRC filter (α = 0.35), optional 16-bit fixed-point coefficients, 16-bit integer I/Q (cs16 format) written to disk on the fly (Chrome, Edge) or downloaded at the end.
+`video_ok` flags a decoder locked on lines and fields; otherwise the test pattern is sent.
 
-**Validation**: ffmpeg and ffprobe without warnings; bit rate measured on the PCRs is constant (9.215686 Mbit/s, error below one 27 MHz period); no continuity counter error. The step-14 baseband, demodulated by an independent DVB-S receiver (leandvb), gives back every received TS packet unchanged (6,351 of 6,367 for one second of stream, the others are lost while the receiver locks). File-by-file chain and next ▶ chain give identical outputs.
+## Board top-level entity (`jpeg2dvb_top`)
+
+Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz for the serialisers) and PLL `PF_CCC_TVP` (exact 14.318182 MHz: VCO 1,575 MHz / 110) to the decoder XTAL1. Reset held until both PLLs are locked. I and Q LVDS outputs at 640 Mbit/s (8:1 serialisers). Active-high LEDs: PLLs locked, decoder present, video locked.
+
+Microcontroller registers (separate I²C bus, FPGA slave at address 2Ah, `regs_i2c`):
+
+| Address | Name | Access | Default | Role |
+|---|---|---|---|---|
+| 00h | ID | read | 4Ah | FPGA identifier |
+| 01h | VERSION | read | 01h | register-map version |
+| 02h | MODE | read / write | 00h | standard, FEC, symbol rate |
+| 03h | INPUT | read / write | 00h | video source |
+| 04h | STATUS | read | — | board status |
+| 05h to FFh | — | — | 00h | read as 00h, writes ignored |
+
+MODE (02h):
+
+| Bits | Field | Values |
+|---|---|---|
+| 7..5 | — | ignored on write, read as 0 |
+| 4 | RATE | 0: 10 MS/s; 1: 2.5 MS/s |
+| 3..1 | FEC | DVB-S: 000 = 1/2, 001 = 2/3, 010 = 3/4, 011 = 5/6, 100 = 7/8, 101 to 111 reserved; DVB-S2: ignored (QPSK 1/4) |
+| 0 | STANDARD | 0: DVB-S; 1: DVB-S2 (QPSK 1/4, normal frames, pilots, CCM) |
+
+| MODE | Standard | FEC | Symbol rate |
+|---|---|---|---|
+| 00h | DVB-S | 1/2 | 10 MS/s |
+| 02h | DVB-S | 2/3 | 10 MS/s |
+| 04h | DVB-S | 3/4 | 10 MS/s |
+| 06h | DVB-S | 5/6 | 10 MS/s |
+| 08h | DVB-S | 7/8 | 10 MS/s |
+| 10h | DVB-S | 1/2 | 2.5 MS/s |
+| 12h | DVB-S | 2/3 | 2.5 MS/s |
+| 14h | DVB-S | 3/4 | 2.5 MS/s |
+| 16h | DVB-S | 5/6 | 2.5 MS/s |
+| 18h | DVB-S | 7/8 | 2.5 MS/s |
+| 01h | DVB-S2 | 1/4 | 10 MS/s |
+| 11h | DVB-S2 | 1/4 | 2.5 MS/s |
+
+INPUT (03h):
+
+| Bits | Field | Values |
+|---|---|---|
+| 7..2 | — | ignored on write, read as 0 |
+| 1..0 | SOURCE | 00: automatic (AIP1A, then AIP1B if A is not locked); 01: AIP1A forced; 10: AIP1B forced; 11: test pattern |
+
+STATUS (04h, read only):
+
+| Bit | Field | Values |
+|---|---|---|
+| 7..4 | — | 0 |
+| 3 | INPUT | current decoder input: 0 = AIP1A, 1 = AIP1B |
+| 2 | VIDEO | 1: decoder locked on lines and fields |
+| 1 | DECODER | 1: TVP5150AM1 identified |
+| 0 | PLL | 1: both PLLs locked |
+
+Write: start, 54h, register, data…, stop. Read: start, 54h, register, repeated start, 55h, data… (NACK on the last byte), stop. The pointer advances after each byte. Without a microcontroller the defaults apply. MODE is stored; it will be wired to the chain by the FEC, symbol-rate and DVB-S2 work items. INPUT 3 (test pattern) is for work item 3b; the source is currently the test pattern.
+
+Files: `jpeg2dvb_ip_libero.vhd` (Libero blocks, synthesis) and `jpeg2dvb_ip_sim.vhd` (models, GHDL) declare the same `horloges` and `sortie_lvds` entities; `jpeg2dvb_top.sdc` (constraints).
+
+### In Libero
+
+1. Import `jpeg2dvb_fpga.vhd` and `jpeg2dvb_ip_libero.vhd` as HDL sources (not `jpeg2dvb_ip_sim.vhd` nor `jpeg2dvb_fpga_tb.vhd`).
+2. Catalog ▸ Clock & Management ▸ PF_CCC, name `PF_CCC_SYS`: one PLL, 50 MHz reference; output 0: 80 MHz to the global network; output 1: 320 MHz as HS_IO_CLK.
+3. PF_CCC, name `PF_CCC_TVP`: one PLL, 50 MHz reference; output 0: 14.318182 MHz.
+4. Catalog ▸ I/O ▸ PF_IOD_GENERIC_TX, name `PF_IOD_TX_SD`: TX_DDRX_B_G_FA interface (8 bits per cycle), 2 data lanes, no forwarded clock, LVDS standard.
+5. Compare the generated component ports (`component/work/<name>/<name>.vhd`) with those in `jpeg2dvb_ip_libero.vhd`; check the TX_DATA bit transmit order in the PF_IOD guide (the file assumes TX_DATA(0) first).
+6. Design Hierarchy ▸ `jpeg2dvb_top` ▸ Set As Root.
+7. Constraint Manager ▸ Timing: import `jpeg2dvb_top.sdc`, then Derive Constraints (PLL clocks).
+8. Pin assignment (I/O Editor) with the PCB: LVDS outputs in a GPIO bank (HSIO banks do not transmit LVDS); `osc_50` and `tvp_sclk` on clock inputs.
+
+## Running the tests
+
+```
+sudo apt-get install ghdl        # GHDL 4.x
+cd fpga_test
+./run_tests.sh                   # all testbenches + synthesis check
+./run_tests.sh conv              # testbenches whose name contains "conv"
+```
+
+Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first mismatches reported).
+
+## References
+
+`fpga_test/` holds the test tools (`run_tests.sh`, Node scripts) and excerpts of JPEG2DVB 2.x outputs:
+
+- back end: 64 TS packets of a one-second stream (photo, 25 pictures, FEC 1/2, α = 0.35) and their outputs at steps 09 to 14; `node refs.js FOLDER` extracts them and rewrites the `srrc_coef_pkg` package in `jpeg2dvb_fpga.vhd`; the 2/3 to 7/8 references come from page 12 set to those rates;
+- video: 3 pictures of `dur.png`, integer DCT, TM5 rate control; `node refs_video.js FOLDER`; codes 1 and 31 come from page 03;
+- `node gen_vlc.js` regenerates the VLC tables from page 05.
+
+## Throughput
+
+- Clock: 80 MHz = 8 × symbol rate (10 MS/s). One 1,504-bit TS slot lasts exactly 13,056 clocks.
+- The SRRC filter outputs one sample per clock; once the stream is running the back end follows without gaps (1,136 start-up clocks, including the interleaver memory clear).
+- DCT: about 140 clocks per block (36.6 million coefficients per second at 80 MHz, 15.6 million needed for 720 × 576 at 25 pictures/s).
+
+## Area (MPF050T target)
+
+Reductions of 2026-11-11, all bit-identical to the references:
+
+| Module | Before | After |
+|---|---|---|
+| `sdm3`, `sd_entree` | 25-bit comparators, 24-bit registers and candidates | thresholds and corrections are multiples of FS: high-order bits only (15-bit comparators, 14-bit `Pk` and candidates), 17-, 20- and 22-bit states, 16-bit input contributions |
+| `quant_intra` | combinational reciprocal table (1,984 × 25 bits), 22 × 24 and 22 × 14 products | synchronous ROM, 17 × 14 and 13 × 13 products |
+| `dct8x8_int` | 16 multipliers, 1,664 data flip-flops | 8 multipliers, 414 flip-flops, 64 × 18 and 64 × 12 memories |
+| `ts_mux` | four products per slot, 32-bit counters | running differences; no more wrap of the slot counter (8 days) or of the PTS at 2²¹ pictures |
+| `interleaver` | asynchronous memory read | synchronous read |
+| `mire_gen` | image of 101,376 4-bit words | colour computed by comparisons |
+
+To check in the Libero resource report: `quant_intra` 3 LSRAM (ROM), `interleaver` 1 LSRAM, `dct8x8_int` memories in µSRAM. `quant_intra` assumes |F| ≤ 4,095 (the DCT gives |F| ≤ 2,040).
+
+## To do
+
+1. ✔ Done (2026-10-19): TM5 rate control in integer arithmetic, in JPEG2DVB page 03 (specification item P7), then in VHDL (`rate_ctrl`), bit for bit.
+2. Sigma-delta output (item P3): ✔ third-order 1-bit modulator and interpolation (`sd_entree`, `sdm3`, `sigma_delta`, `sdm` testbench); ✔ LVDS serialisers (PF_IOD, top level), to be validated in Libero.
+3. LSRAM mapping: ✔ synchronous read of the interleaver memory (1,122 bytes) and three-stage quantisation (2026-11-11); remaining: inferences to check in Libero, pipelining of the VLC.
+4. 720 × 576 PAL video input: ✔ 3a, TVP5150AM1 control and BT.656 reception (2026-11-04); 3b, crossing to the 80 MHz clock, merging both fields, 4:2:0 macroblock formatting; 720 × 576 mode of the chain (45 macroblocks per slice) at 10 MS/s.
+5. DVB-S2 QPSK 1/4, normal frames, pilots, CCM, alongside DVB-S, selected by a DIP switch.
+6. ✔ Board top-level entity (2026-11-10); remaining: pin assignment with the PCB, wiring of the MODE register (FEC, symbol rate, DVB-S2 at run time).
+7. Video scrambling (BISS-1): ✔ `csa_enc` module (2026-11-11); remaining: insertion between `ts_mux` and energy dispersal, identifier 0000 to 9999 drawn at power-up and the key derived from it, programme 2 in clear (fixed test pattern and identifier), black picture on programme 1 without a camera.
+
+Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
 ## History
 
-| Version | Change |
+| Date | Change |
 |---|---|
-| 2026-10-17 | Old SRRC filter removed (only v2 kept), pages renamed without copy suffix, header blocks, home page fixed, README / LISEZMOI rewritten, screenshot of every step |
-| 2026-10-18 | AZS visual identity on the 15 steps and the home page (slate / amber / cyan palette, AZS mark linking back to www.azs.fr, system fonts); outputs checked identical along the whole chain; screenshots refreshed |
-| 2026-10-18 | Pages 1.3: automatic hand-over between steps — next ▶ keeps the output in the browser (current session) and the next step loads it itself; processing stays manual; outputs identical to the file-by-file chain |
-| 2026-10-18 | Pages 03, 04, 06 (1.4): boxed notes on the differences with MPEG-2 (separate DC quantisation, AC formula and quantiser_scale, alternate scan, matrices sent in zigzag order in the sequence header) |
-| 2026-10-18 | MPEG-2 conformance (pages 02, 03, 05, 06 → 1.5): DCT without centring and in natural order (coefficients were transposed), normative quantisation, complete VLC tables B.12 / B.13 / B.14 with per-component DC predictors, quantiser matrix and scale code written in the stream. The elementary stream and the transport stream now decode with ffmpeg (35.7 dB PSNR at quality 50; 30.7 to 48.4 dB from quality 10 to 100). Pages 07–12 (1.4): JSON export of large streams fixed |
-| 2026-10-18 | Pages 07 and 08 (1.5): ISO 13818-1 timing — PCR in the adaptation field of the first video packet (PID announced by the PMT), PTS = PCR + 0.7 s, data_alignment and random_access indicators, 33-bit PTS without 32-bit overflow |
-| 2026-10-19 | Pages 2.0: multi-picture stream (.j2d container, fixed-point DCT, TM5 rate control, constant-rate multiplex, block processing, fixed-point SRRC written to disk on the fly). EN 300 421 conformance fixed in three steps: PRBS generator (initialisation and output), Reed-Solomon parity byte order, convolutional encoder register. Checked by demodulation with an independent DVB-S receiver |
-| 2026-10-19 | Pages 2.1: version number shown in the navigation bar (read from the header block); step 14: 💾 Export I/Q .cs16 button (16-bit integers), for streams as for a single picture, direct write to disk as an option |
-| 2026-10-19 | Step 15 (1.0): DVB-S reception in HTML/JS; the step-14 .cs16 gives back the step-08 TS byte for byte (6,367 packets out of 6,367 for 1 s of stream) |
-| 2026-10-19 | [vhdl/](vhdl/README.md) folder: FPGA port in VHDL-2008, steps 02 to 14 reproduced bit for bit (19 GHDL testbenches); page 08 at 2.4: multiplexer timing in exact integers |
-| 2026-10-19 | Pages 01, 12, 14 (2.2): project presets — 25 pictures (1 s of stream), FEC 1/2, α = 0.35; the chain runs without touching any setting |
-| 2026-10-19 | Step 02 (3.0): integer DCT only (fixed-point checkbox removed). Step 03 (3.0): TM5 rate control only, in integers, budget from the channel (Rs, FEC, video share), one code per row, ready for 720 × 576. Step 06 (2.4): per-slice quantiser_scale_code |
-| 2026-10-19 | Step 03 (3.1): step-by-step view of the rate control — picture and row selectors, graph for every picture (scale codes, virtual buffer d, cumulated bits against cumulated budget), selected row highlighted, divisor matrix at the code of that row, « simple picture » note; computation and exports unchanged |
+| 2026-10-19 | Back end (09 to 14) and video side (02 to 08) bit-exact, 19 testbenches; JPEG2DVB page 08 at 2.4 (multiplexer timing in exact integers) |
+| 2026-10-19 | Animated test pattern (`mire.js`: PNG for page 01 and `mire_pkg` package), `video_enc` front end and `dvbs_tx` complete transmitter: from the test pattern to I/Q samples, identical to JPEG2DVB; 22 testbenches |
+| 2026-10-19 | TM5 rate control (`rate_ctrl`, references regenerated; testbenches to be adapted). Sources merged into `jpeg2dvb_fpga.vhd` and `jpeg2dvb_fpga_tb.vhd`; references, scripts and `run_tests.sh` moved to `fpga_test/` |
+| 2026-10-19 | Clean merge (2.0): one header per file, common VHDL-2008 context `jpeg2dvb_ctx`, every function and process commented; `fpga_test/README.md` lists the role of each test file |
+| 2026-10-19 | TM5 rate control bit for bit in VHDL: testbenches adapted (per-row codes, per-slice codes, `slice_ok`), new `tb_rc` testbench, `run_tests.sh` 1.2; 23 testbenches OK, 11 modules synthesisable without latches |
+| 2026-11-04 | PAL video input, work item 3a: `bt656_rx`, `i2c_maitre`, `tvp_ctrl` (TVP5150AM1 without a microcontroller); `bt656.js`, `tb_bt656` and `tb_tvp` testbenches (`tb_tvp5150` I²C model, standard-mode timing); `run_tests.sh` 1.5; 28 testbenches OK, 16 modules synthesisable without latches |
+| 2026-11-10 | Libero: explicit `library` / `use` clauses instead of the VHDL-2008 `context`, interleaver pointers without initial value (Synplify MF682); first error-free synthesis of `dvbs_tx`. Top level (work item 6): `jpeg2dvb_top`, `dvbs_sd`, `regs_i2c` (I²C slave 2Ah), forced input in `tvp_ctrl`, `jpeg2dvb_ip_libero.vhd` / `jpeg2dvb_ip_sim.vhd`, `jpeg2dvb_top.sdc`; `tvp_force` and `top` testbenches; `run_tests.sh` 1.6 |
+| 2026-11-11 | Area reduction for the MPF050T, output bit-identical (`jpeg2dvb_fpga.vhd` 2.6 to 2.11): `sdm3` and `sd_entree` on the useful bits, `quant_intra` with a synchronous ROM, `dct8x8_int` with 4 multipliers per pass and memories, `ts_mux` without multipliers, `interleaver` with synchronous read, computed test pattern (`mire.js` 1.2, `fusion.js` 1.1) |
+| 2026-11-11 | Fixed-key DVB-CSA scrambling (BISS-1): `csa_enc`, `csa_tab_pkg`, `csa.js` reference (self-test on two public vectors), `csa` testbench; `jpeg2dvb_fpga.vhd` 2.12, `jpeg2dvb_fpga_tb.vhd` 2.7, `run_tests.sh` 1.7 |
 
 ## License
 
-**Free for non-commercial use** — [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/), with mandatory credit of the source and the author:
-
-> JPEG2DVB — Eric PERRET — https://github.com/ericperret/JPEG2DVB
-
-Any commercial use is forbidden without the author's written permission, requested by e-mail: **eperret@azs.fr**.
-Full terms (French / English): [LICENSE](LICENSE).
-
-## Author
-
-**Eric PERRET** — [GitHub](https://github.com/ericperret)
+CC BY-NC 4.0 — **Eric PERRET**
