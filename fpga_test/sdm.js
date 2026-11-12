@@ -4,12 +4,12 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : référence au bit près de la sortie sigma-delta (cahier des charges
                § 5.4, point P3) : symboles QPSK (étape 13) → filtre SRRC calculé
-               directement à 640 MS/s (64 phases) → modulateur sigma-delta 1 bit
+               directement à 640 MS/s (SPS phases, 128 à 5 MS/s) → modulateur sigma-delta 1 bit
                d'ordre 3 par voie, 8 bits par cycle de 80 MHz ; écrit le flux de
                référence, le paquetage sdm_coef_pkg et contrôle le spectre
   Auteur     : Eric PERRET
-  Date       : 2026-10-19
-  Version    : 2.0
+  Date       : 2026-11-12
+  Version    : 2.1
   Plateforme : Node.js, modules intégrés seulement
   Usage      : node sdm.js                     → qpsk.bin, 20 000 symboles → sd_iq.bin
                node sdm.js ENTREE.bin N SORTIE.bin
@@ -21,14 +21,16 @@
                      décision des 8 bits d'un cycle par anticipation (formulation
                      du VHDL, vérifiée égale à la boucle pas à pas) ; garde de
                      débordement par remise à zéro ; génère sdm_coef_pkg
+               2.1  2026-11-12  débit symbole RS en constante (5 MS/s : 128 phases,
+                     16 cycles par symbole) ; SDM_SPS et SDM_CYC dans le paquetage
 
   Arithmétique (entière, identique au VHDL) :
     Symboles : bit 0 → +1, bit 1 → −1 ; fenêtre des 13 derniers symboles reçus
       (positions d = 0 à 12, d = 12 le plus récent ; avant le premier symbole,
-      la fenêtre est remplie de +1). Chaque symbole reçu produit 64 instants
-      (8 cycles q de 8 instants r) : u(8q + r) = Σ_d H(8q + r)(d) · sym(d).
+      la fenêtre est remplie de +1). Chaque symbole reçu produit SPS instants
+      (SPS/8 cycles q de 8 instants r) : u(8q + r) = Σ_d H(8q + r)(d) · sym(d).
     H : filtre SRRC de la page 14 (α = 0,35, 12 symboles, fenêtre de Kaiser
-      β = 5,65) échantillonné à 64 phases, mis à l'échelle pour une crête de
+      β = 5,65) échantillonné à SPS phases, mis à l'échelle pour une crête de
       0,47 FS et arrondi à l'entier ; FS = 2¹⁰.
     Sigma-delta CIFB d'ordre 3 (coefficients 1/16, 3/8, 1, états multipliés
       par 16) : s = +1 si x3 ≥ 0, sinon −1 ;
@@ -51,17 +53,18 @@ const fs = require('fs'), path = require('path');
 const { section } = require('./fusion.js');
 
 const F = 10, FS = 1 << F;                    // pleine échelle
-const SPS = 64, SPAN = 12, AL = 0.35, NT = SPAN * SPS + 1;
+const RS = 5e6, FH = 640e6, SPS = FH / RS;        // débit symbole, 128 phases
+const SPAN = 12, AL = 0.35, NT = SPAN * SPS + 1;
 const BETA = 0.1102 * (60 - 8.7);             // Kaiser, comme la page 14
 const GARDE = 1 << 15;                        // garde de débordement des états
 const A1 = FS, A2 = 6 * FS, A3 = 16 * FS;     // retours (états × 16)
-const FH = 640e6, BANDE = 6.75e6;
+const BANDE = (1 + AL) * RS / 2;              // ±3,375 MHz à 5 MS/s
 
 const entree = process.argv[2] || path.join(__dirname, 'qpsk.bin');
 const NSYM = +(process.argv[3] || 20000);
 const sortie = process.argv[4] || path.join(__dirname, 'sd_iq.bin');
 
-/* coefficients — E : — → T : SRRC fenêtré à 64 phases, échelle 0,47 FS →
+/* coefficients — E : — → T : SRRC fenêtré à SPS phases, échelle 0,47 FS →
    S : H flottant et H entier [phase][d] */
 function coefficients() {
     const I0 = x => { let s = 1, t = 1; const q = (x / 2) * (x / 2); for (let k = 1; k < 25; k++) { t *= q / (k * k); s += t; if (t < 1e-12 * s) { break; } } return s; };
@@ -80,7 +83,7 @@ function coefficients() {
     for (let p = 0; p < SPS; p++) {
         const r = [];
         let s = 0;
-        for (let d = 0; d < 13; d++) { const i = p + 768 - 64 * d; const v = (i >= 0 && i < NT) ? h[i] : 0; r.push(v); s += Math.abs(v); }
+        for (let d = 0; d < 13; d++) { const i = p + SPAN * SPS - SPS * d; const v = (i >= 0 && i < NT) ? h[i] : 0; r.push(v); s += Math.abs(v); }
         Hf.push(r); mx = Math.max(mx, s);
     }
     const K = 0.47 * FS / mx;
@@ -96,7 +99,7 @@ function lireSymboles(f, n) {
 }
 
 /* onde — E : symboles, H → T : fenêtre glissante de 13 symboles (+1 avant le
-   premier), 64 instants par symbole reçu → S : entrée du sigma-delta */
+   premier), SPS instants par symbole reçu → S : entrée du sigma-delta */
 function onde(sym, H) {
     const u = new Float64Array(sym.length * SPS), w = new Int8Array(13).fill(1);
     for (let m = 0; m < sym.length; m++) {
@@ -210,7 +213,7 @@ function fft(re, im) {
 }
 
 /* spectre — E : bits I/Q, onde idéale I/Q (H flottant) → T : FFT de 2²⁰
-   points de I + jQ, gain complexe et retard ajustés dans ±6,75 MHz → S :
+   points de I + jQ, gain complexe et retard ajustés dans ±BANDE → S :
    rapport signal sur bruit en bande, densité hors bande relative */
 function spectre(vi, vq, ui, uq) {
     const L = 1 << 20, o = 13 * SPS, kb = Math.floor(BANDE / FH * L);
@@ -245,7 +248,7 @@ function paquetage(H) {
         '--  Nom        : sdm_coef_pkg.vhd\n' +
         '--  Objet      : coefficients du filtre SRRC à 640 MS/s pour la sortie\n' +
         '--               sigma-delta (fichier généré par fpga_test/sdm.js)\n' +
-        '--  Paramètres : α = 0,35, 12 symboles, 64 phases × 13 symboles, fenêtre de\n' +
+        '--  Paramètres : α = 0,35, 12 symboles, ' + SPS + ' phases × 13 symboles (' + (RS / 1e6) + ' MS/s), fenêtre de\n' +
         '--               Kaiser β = 5,65, crête 0,47 FS, FS = 2^' + F + '\n' +
         '--  Principe   : u(8q + r) = somme sur d de SDM_H(8q + r)(d) · sym(d), d = 12\n' +
         '--               le symbole le plus récent, sym = ±1\n' +
@@ -253,8 +256,10 @@ function paquetage(H) {
         'library ieee;\nuse ieee.std_logic_1164.all;\nuse ieee.numeric_std.all;\n\n' +
         'package sdm_coef_pkg is\n' +
         '    constant SDM_F   : natural := ' + F + ';\n' +
+        '    constant SDM_SPS : natural := ' + SPS + ';                 -- instants par symbole (640 MS/s / ' + (RS / 1e6) + ' MS/s)\n' +
+        '    constant SDM_CYC : natural := SDM_SPS / 8;           -- cycles de 8 instants par symbole\n' +
         '    type sdm_phase_t is array (0 to 12) of integer range -32768 to 32767;\n' +
-        '    type sdm_coef_t  is array (0 to 63) of sdm_phase_t;\n' +
+        '    type sdm_coef_t  is array (0 to SDM_SPS - 1) of sdm_phase_t;\n' +
         '    constant SDM_H : sdm_coef_t := (\n';
     t += H.map((r, p) => '        ' + String(p).padStart(2) + ' => (' + r.map(v => String(v).padStart(5)).join(', ') + ')').join(',\n') + '\n    );\nend package sdm_coef_pkg;\n';
     return t;
@@ -277,11 +282,11 @@ const fr = (v, d) => v.toFixed(d).replace('.', ',');
 const bits = v => Math.ceil(Math.log2(v + 1)) + 1;
 
 console.log('entrée     : ' + path.basename(entree) + ', ' + sy.I.length + ' symboles I/Q → ' + ui.length + ' instants à 640 MS/s par voie');
-console.log('SRRC       : 64 phases × 13 symboles, crête de u ' + pk + ' (' + fr(pk / FS, 3) + ' FS), FS = 2^' + F);
+console.log('SRRC       : ' + SPS + ' phases × 13 symboles, crête de u ' + pk + ' (' + fr(pk / FS, 3) + ' FS), FS = 2^' + F);
 console.log('états      : max ' + Math.max(bi.m, bq.m) + ' (' + bits(Math.max(bi.m, bq.m)) + ' bits signés), garde ±' + GARDE + ', remises à zéro : ' + (bi.raz + bq.raz));
 console.log('anticipation : ' + (ecarts ? ecarts + ' bits DIFFÉRENTS de la boucle' : 'flux identique à la boucle pas à pas') +
     ' ; |P| ≤ ' + Math.max(ai.mp, aq.mp) + ' (' + bits(Math.max(ai.mp, aq.mp)) + ' bits), |Q| ≤ ' + Math.max(ai.mq, aq.mq) + ' (' + bits(Math.max(ai.mq, aq.mq)) + ' bits)');
-console.log('spectre    : signal sur bruit dans ±6,75 MHz ' + fr(sp.snr, 1) + ' dB (contre le SRRC idéal)');
+console.log('spectre    : signal sur bruit dans ±' + fr(BANDE / 1e6, 3) + ' MHz ' + fr(sp.snr, 1) + ' dB (contre le SRRC idéal)');
 console.log('hors bande : ' + sp.hb.map(h => fr(h[0] / 1e6, 0) + ' MHz ' + fr(h[1], 1) + ' dB').join(', '));
 console.log('sortie     : ' + path.basename(sortie) + ', ' + fs.statSync(sortie).size + ' octets ; paquetage sdm_coef_pkg réécrit');
 if (ecarts) { process.exit(1); }
