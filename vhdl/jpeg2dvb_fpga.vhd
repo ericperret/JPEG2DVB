@@ -7,7 +7,7 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-12
---  Version    : 2.18
+--  Version    : 2.20
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 38 unités, dans l'ordre d'analyse :
@@ -45,11 +45,12 @@
 --               tvp_ctrl      pilotage du TVP5150AM1 : démarrage, PAL forcé, choix
 --                             automatique ou imposée de l'entrée AIP1A / AIP1B
 --               dvbs_sd       émetteur de la mire aux bits sigma-delta (80 MHz)
---               regs_i2c      esclave I²C 2Ah du microcontrôleur et registres
+--               choix_auto    mode de la carte d'après les entrées verrouillées
+--                             (sondage toutes les minutes, sans microcontrôleur)
 --               horloges      deux PLL (cœurs Libero PF_CCC_SYS et PF_CCC_TVP)
 --               sortie_lvds   sérialiseurs LVDS (cœur Libero PF_IOD_TX_SD)
 --               jpeg2dvb_top  entité de tête de la carte (PLL, LVDS, décodeur,
---                             microcontrôleur, LED) ; les trois cœurs Libero
+--                             choix automatique, LED) ; les trois cœurs Libero
 --                             sont créés à la main dans le catalogue
 --                             (jpeg2dvb_ip_sim.vhd : modèles GHDL des cœurs)
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (clauses
@@ -131,6 +132,18 @@
 --                                (jpeg2dvb_ip_libero.vhd supprimé) ; seuls les
 --                                cœurs PF_CCC_SYS, PF_CCC_TVP et PF_IOD_TX_SD
 --                                restent à créer dans le catalogue Libero
+--               2.19 2026-11-12  timing à 80 MHz, sortie inchangée au bit près :
+--                                mire_gen en quatre étages (coordonnées, prédicats,
+--                                bits des incrustations, couleur et palette) ;
+--                                vlc_enc en trois étages (différence DC et run,
+--                                tables B.12 à B.14, assemblage du mot)
+--               2.20 2026-11-12  réglages fixes et automatiques : 5 MS/s (sdm_coef_pkg
+--                                128 phases, SDM_CYC = 16 ; dvbs_sd G_RS : budgets,
+--                                bit_rate, ts_mux G_K = 102 et PCR paramétré), FEC
+--                                1/2 ; regs_i2c et bus du microcontrôleur supprimés ;
+--                                choix_auto : sondage AIP1A / AIP1B toutes les
+--                                minutes, mode (DVB-S, DVB-S2, BISS) ; norme et
+--                                biss à brancher par les chantiers suivants
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -307,7 +320,7 @@ end package srrc_coef_pkg;
 --------------------------------------------------------------------------------
 -- sdm_coef_pkg : coefficients du filtre SRRC à 640 MS/s pour la sortie
 --   sigma-delta (fichier généré par fpga_test/sdm.js)
---   Paramètres : α = 0,35, 12 symboles, 64 phases × 13 symboles, fenêtre de
+--   Paramètres : α = 0,35, 12 symboles, 128 phases × 13 symboles (5 MS/s), fenêtre de
 --                Kaiser β = 5,65, crête 0,47 FS, FS = 2^10
 --   Principe : u(8q + r) = somme sur d de SDM_H(8q + r)(d) · sym(d), d = 12
 --              le symbole le plus récent, sym = ±1
@@ -318,73 +331,139 @@ use ieee.numeric_std.all;
 
 package sdm_coef_pkg is
     constant SDM_F   : natural := 10;
+    constant SDM_SPS : natural := 128;                 -- instants par symbole (640 MS/s / 5 MS/s)
+    constant SDM_CYC : natural := SDM_SPS / 8;           -- cycles de 8 instants par symbole
     type sdm_phase_t is array (0 to 12) of integer range -32768 to 32767;
-    type sdm_coef_t  is array (0 to 63) of sdm_phase_t;
+    type sdm_coef_t  is array (0 to SDM_SPS - 1) of sdm_phase_t;
     constant SDM_H : sdm_coef_t := (
          0 => (    0,     0,     0,    -4,    14,   -26,   359,   -26,    14,    -4,     0,     0,     0),
-         1 => (    0,     0,     0,    -4,    15,   -30,   359,   -22,    13,    -4,     0,     0,     0),
-         2 => (    0,     0,     0,    -4,    15,   -33,   358,   -18,    13,    -4,     0,     0,     0),
-         3 => (    0,     0,     0,    -4,    15,   -36,   357,   -13,    12,    -4,     0,     0,     0),
-         4 => (    0,     0,     0,    -4,    16,   -39,   356,    -9,    11,    -4,     1,     0,     0),
-         5 => (    0,     0,     0,    -4,    16,   -42,   354,    -4,    10,    -4,     1,     0,     0),
-         6 => (    0,     0,     0,    -3,    16,   -44,   352,     1,     9,    -4,     1,     0,     0),
-         7 => (    0,     0,     0,    -3,    16,   -46,   350,     7,     8,    -4,     1,     0,     0),
-         8 => (    0,     0,     0,    -3,    16,   -48,   347,    12,     7,    -4,     1,     0,     0),
-         9 => (    0,     0,     0,    -3,    16,   -50,   344,    18,     5,    -4,     1,     0,     0),
-        10 => (    0,     0,    -1,    -3,    16,   -51,   340,    24,     4,    -4,     1,     0,     0),
-        11 => (    0,     0,    -1,    -2,    16,   -52,   337,    31,     2,    -4,     1,     0,     0),
-        12 => (    0,     0,    -1,    -2,    16,   -53,   332,    37,     1,    -4,     1,     0,     0),
-        13 => (    0,     0,    -1,    -2,    16,   -54,   328,    44,    -1,    -4,     1,     0,     0),
-        14 => (    0,     0,    -1,    -2,    15,   -55,   323,    51,    -2,    -3,     1,     0,     0),
-        15 => (    0,     0,    -1,    -2,    15,   -55,   318,    58,    -4,    -3,     1,     0,     0),
-        16 => (    0,     0,    -1,    -1,    15,   -55,   312,    65,    -6,    -3,     1,     0,     0),
-        17 => (    0,     0,    -1,    -1,    14,   -55,   307,    73,    -8,    -2,     1,     0,     0),
-        18 => (    0,     0,    -1,    -1,    14,   -55,   301,    80,    -9,    -2,     2,     0,     0),
-        19 => (    0,     0,    -1,    -1,    13,   -55,   294,    88,   -11,    -2,     2,     0,     0),
-        20 => (    0,     0,    -1,    -1,    13,   -54,   288,    96,   -13,    -1,     2,     0,     0),
-        21 => (    0,     0,    -1,     0,    12,   -53,   281,   104,   -15,    -1,     2,     0,     0),
-        22 => (    0,     0,    -1,     0,    12,   -53,   274,   112,   -17,     0,     2,     0,     0),
-        23 => (    0,     0,    -1,     0,    11,   -52,   267,   120,   -19,     0,     2,     0,     0),
-        24 => (    0,     0,    -1,     0,    10,   -50,   260,   128,   -21,     1,     2,     0,     0),
-        25 => (    0,     0,    -1,     0,    10,   -49,   252,   137,   -24,     1,     2,     0,     0),
-        26 => (    0,     0,    -1,     0,     9,   -48,   244,   145,   -26,     2,     2,     0,     0),
-        27 => (    0,     0,    -1,     1,     9,   -46,   237,   154,   -28,     2,     2,    -1,     0),
-        28 => (    0,     0,    -1,     1,     8,   -45,   229,   162,   -30,     3,     1,    -1,     0),
-        29 => (    0,     0,    -1,     1,     7,   -43,   221,   170,   -32,     3,     1,    -1,     0),
-        30 => (    0,     0,    -1,     1,     7,   -41,   212,   179,   -34,     4,     1,    -1,     0),
-        31 => (    0,     0,    -1,     1,     6,   -40,   204,   187,   -36,     5,     1,    -1,     0),
-        32 => (    0,     0,    -1,     1,     5,   -38,   196,   196,   -38,     5,     1,    -1,     0),
-        33 => (    0,     0,    -1,     1,     5,   -36,   187,   204,   -40,     6,     1,    -1,     0),
-        34 => (    0,     0,    -1,     1,     4,   -34,   179,   212,   -41,     7,     1,    -1,     0),
-        35 => (    0,     0,    -1,     1,     3,   -32,   170,   221,   -43,     7,     1,    -1,     0),
-        36 => (    0,     0,    -1,     1,     3,   -30,   162,   229,   -45,     8,     1,    -1,     0),
-        37 => (    0,     0,    -1,     2,     2,   -28,   154,   237,   -46,     9,     1,    -1,     0),
-        38 => (    0,     0,     0,     2,     2,   -26,   145,   244,   -48,     9,     0,    -1,     0),
-        39 => (    0,     0,     0,     2,     1,   -24,   137,   252,   -49,    10,     0,    -1,     0),
-        40 => (    0,     0,     0,     2,     1,   -21,   128,   260,   -50,    10,     0,    -1,     0),
-        41 => (    0,     0,     0,     2,     0,   -19,   120,   267,   -52,    11,     0,    -1,     0),
-        42 => (    0,     0,     0,     2,     0,   -17,   112,   274,   -53,    12,     0,    -1,     0),
-        43 => (    0,     0,     0,     2,    -1,   -15,   104,   281,   -53,    12,     0,    -1,     0),
-        44 => (    0,     0,     0,     2,    -1,   -13,    96,   288,   -54,    13,    -1,    -1,     0),
-        45 => (    0,     0,     0,     2,    -2,   -11,    88,   294,   -55,    13,    -1,    -1,     0),
-        46 => (    0,     0,     0,     2,    -2,    -9,    80,   301,   -55,    14,    -1,    -1,     0),
-        47 => (    0,     0,     0,     1,    -2,    -8,    73,   307,   -55,    14,    -1,    -1,     0),
-        48 => (    0,     0,     0,     1,    -3,    -6,    65,   312,   -55,    15,    -1,    -1,     0),
-        49 => (    0,     0,     0,     1,    -3,    -4,    58,   318,   -55,    15,    -2,    -1,     0),
-        50 => (    0,     0,     0,     1,    -3,    -2,    51,   323,   -55,    15,    -2,    -1,     0),
-        51 => (    0,     0,     0,     1,    -4,    -1,    44,   328,   -54,    16,    -2,    -1,     0),
-        52 => (    0,     0,     0,     1,    -4,     1,    37,   332,   -53,    16,    -2,    -1,     0),
-        53 => (    0,     0,     0,     1,    -4,     2,    31,   337,   -52,    16,    -2,    -1,     0),
-        54 => (    0,     0,     0,     1,    -4,     4,    24,   340,   -51,    16,    -3,    -1,     0),
-        55 => (    0,     0,     0,     1,    -4,     5,    18,   344,   -50,    16,    -3,     0,     0),
-        56 => (    0,     0,     0,     1,    -4,     7,    12,   347,   -48,    16,    -3,     0,     0),
-        57 => (    0,     0,     0,     1,    -4,     8,     7,   350,   -46,    16,    -3,     0,     0),
-        58 => (    0,     0,     0,     1,    -4,     9,     1,   352,   -44,    16,    -3,     0,     0),
-        59 => (    0,     0,     0,     1,    -4,    10,    -4,   354,   -42,    16,    -4,     0,     0),
-        60 => (    0,     0,     0,     1,    -4,    11,    -9,   356,   -39,    16,    -4,     0,     0),
-        61 => (    0,     0,     0,     0,    -4,    12,   -13,   357,   -36,    15,    -4,     0,     0),
-        62 => (    0,     0,     0,     0,    -4,    13,   -18,   358,   -33,    15,    -4,     0,     0),
-        63 => (    0,     0,     0,     0,    -4,    13,   -22,   359,   -30,    15,    -4,     0,     0)
+         1 => (    0,     0,     0,    -4,    14,   -28,   359,   -24,    14,    -4,     0,     0,     0),
+         2 => (    0,     0,     0,    -4,    15,   -30,   359,   -22,    13,    -4,     0,     0,     0),
+         3 => (    0,     0,     0,    -4,    15,   -31,   359,   -20,    13,    -4,     0,     0,     0),
+         4 => (    0,     0,     0,    -4,    15,   -33,   358,   -18,    13,    -4,     0,     0,     0),
+         5 => (    0,     0,     0,    -4,    15,   -35,   358,   -16,    12,    -4,     0,     0,     0),
+         6 => (    0,     0,     0,    -4,    15,   -36,   357,   -13,    12,    -4,     0,     0,     0),
+         7 => (    0,     0,     0,    -4,    16,   -38,   357,   -11,    11,    -4,     0,     0,     0),
+         8 => (    0,     0,     0,    -4,    16,   -39,   356,    -9,    11,    -4,     1,     0,     0),
+         9 => (    0,     0,     0,    -4,    16,   -40,   355,    -6,    10,    -4,     1,     0,     0),
+        10 => (    0,     0,     0,    -4,    16,   -42,   354,    -4,    10,    -4,     1,     0,     0),
+        11 => (    0,     0,     0,    -3,    16,   -43,   353,    -1,     9,    -4,     1,     0,     0),
+        12 => (    0,     0,     0,    -3,    16,   -44,   352,     1,     9,    -4,     1,     0,     0),
+        13 => (    0,     0,     0,    -3,    16,   -45,   351,     4,     8,    -4,     1,     0,     0),
+        14 => (    0,     0,     0,    -3,    16,   -46,   350,     7,     8,    -4,     1,     0,     0),
+        15 => (    0,     0,     0,    -3,    16,   -47,   349,    10,     7,    -4,     1,     0,     0),
+        16 => (    0,     0,     0,    -3,    16,   -48,   347,    12,     7,    -4,     1,     0,     0),
+        17 => (    0,     0,     0,    -3,    16,   -49,   346,    15,     6,    -4,     1,     0,     0),
+        18 => (    0,     0,     0,    -3,    16,   -50,   344,    18,     5,    -4,     1,     0,     0),
+        19 => (    0,     0,     0,    -3,    16,   -50,   342,    21,     5,    -4,     1,     0,     0),
+        20 => (    0,     0,    -1,    -3,    16,   -51,   340,    24,     4,    -4,     1,     0,     0),
+        21 => (    0,     0,    -1,    -3,    16,   -52,   338,    27,     3,    -4,     1,     0,     0),
+        22 => (    0,     0,    -1,    -2,    16,   -52,   337,    31,     2,    -4,     1,     0,     0),
+        23 => (    0,     0,    -1,    -2,    16,   -53,   334,    34,     2,    -4,     1,     0,     0),
+        24 => (    0,     0,    -1,    -2,    16,   -53,   332,    37,     1,    -4,     1,     0,     0),
+        25 => (    0,     0,    -1,    -2,    16,   -54,   330,    40,     0,    -4,     1,     0,     0),
+        26 => (    0,     0,    -1,    -2,    16,   -54,   328,    44,    -1,    -4,     1,     0,     0),
+        27 => (    0,     0,    -1,    -2,    16,   -54,   325,    47,    -1,    -3,     1,     0,     0),
+        28 => (    0,     0,    -1,    -2,    15,   -55,   323,    51,    -2,    -3,     1,     0,     0),
+        29 => (    0,     0,    -1,    -2,    15,   -55,   320,    54,    -3,    -3,     1,     0,     0),
+        30 => (    0,     0,    -1,    -2,    15,   -55,   318,    58,    -4,    -3,     1,     0,     0),
+        31 => (    0,     0,    -1,    -1,    15,   -55,   315,    61,    -5,    -3,     1,     0,     0),
+        32 => (    0,     0,    -1,    -1,    15,   -55,   312,    65,    -6,    -3,     1,     0,     0),
+        33 => (    0,     0,    -1,    -1,    15,   -55,   310,    69,    -7,    -3,     1,     0,     0),
+        34 => (    0,     0,    -1,    -1,    14,   -55,   307,    73,    -8,    -2,     1,     0,     0),
+        35 => (    0,     0,    -1,    -1,    14,   -55,   304,    76,    -9,    -2,     2,     0,     0),
+        36 => (    0,     0,    -1,    -1,    14,   -55,   301,    80,    -9,    -2,     2,     0,     0),
+        37 => (    0,     0,    -1,    -1,    14,   -55,   298,    84,   -10,    -2,     2,     0,     0),
+        38 => (    0,     0,    -1,    -1,    13,   -55,   294,    88,   -11,    -2,     2,     0,     0),
+        39 => (    0,     0,    -1,    -1,    13,   -54,   291,    92,   -12,    -2,     2,     0,     0),
+        40 => (    0,     0,    -1,    -1,    13,   -54,   288,    96,   -13,    -1,     2,     0,     0),
+        41 => (    0,     0,    -1,     0,    13,   -54,   285,   100,   -14,    -1,     2,     0,     0),
+        42 => (    0,     0,    -1,     0,    12,   -53,   281,   104,   -15,    -1,     2,     0,     0),
+        43 => (    0,     0,    -1,     0,    12,   -53,   278,   108,   -16,    -1,     2,     0,     0),
+        44 => (    0,     0,    -1,     0,    12,   -53,   274,   112,   -17,     0,     2,     0,     0),
+        45 => (    0,     0,    -1,     0,    11,   -52,   271,   116,   -18,     0,     2,     0,     0),
+        46 => (    0,     0,    -1,     0,    11,   -52,   267,   120,   -19,     0,     2,     0,     0),
+        47 => (    0,     0,    -1,     0,    11,   -51,   263,   124,   -20,     0,     2,     0,     0),
+        48 => (    0,     0,    -1,     0,    10,   -50,   260,   128,   -21,     1,     2,     0,     0),
+        49 => (    0,     0,    -1,     0,    10,   -50,   256,   133,   -23,     1,     2,     0,     0),
+        50 => (    0,     0,    -1,     0,    10,   -49,   252,   137,   -24,     1,     2,     0,     0),
+        51 => (    0,     0,    -1,     0,    10,   -48,   248,   141,   -25,     1,     2,     0,     0),
+        52 => (    0,     0,    -1,     0,     9,   -48,   244,   145,   -26,     2,     2,     0,     0),
+        53 => (    0,     0,    -1,     1,     9,   -47,   241,   149,   -27,     2,     2,    -1,     0),
+        54 => (    0,     0,    -1,     1,     9,   -46,   237,   154,   -28,     2,     2,    -1,     0),
+        55 => (    0,     0,    -1,     1,     8,   -46,   233,   158,   -29,     2,     2,    -1,     0),
+        56 => (    0,     0,    -1,     1,     8,   -45,   229,   162,   -30,     3,     1,    -1,     0),
+        57 => (    0,     0,    -1,     1,     8,   -44,   225,   166,   -31,     3,     1,    -1,     0),
+        58 => (    0,     0,    -1,     1,     7,   -43,   221,   170,   -32,     3,     1,    -1,     0),
+        59 => (    0,     0,    -1,     1,     7,   -42,   216,   175,   -33,     4,     1,    -1,     0),
+        60 => (    0,     0,    -1,     1,     7,   -41,   212,   179,   -34,     4,     1,    -1,     0),
+        61 => (    0,     0,    -1,     1,     6,   -40,   208,   183,   -35,     4,     1,    -1,     0),
+        62 => (    0,     0,    -1,     1,     6,   -40,   204,   187,   -36,     5,     1,    -1,     0),
+        63 => (    0,     0,    -1,     1,     6,   -39,   200,   192,   -37,     5,     1,    -1,     0),
+        64 => (    0,     0,    -1,     1,     5,   -38,   196,   196,   -38,     5,     1,    -1,     0),
+        65 => (    0,     0,    -1,     1,     5,   -37,   192,   200,   -39,     6,     1,    -1,     0),
+        66 => (    0,     0,    -1,     1,     5,   -36,   187,   204,   -40,     6,     1,    -1,     0),
+        67 => (    0,     0,    -1,     1,     4,   -35,   183,   208,   -40,     6,     1,    -1,     0),
+        68 => (    0,     0,    -1,     1,     4,   -34,   179,   212,   -41,     7,     1,    -1,     0),
+        69 => (    0,     0,    -1,     1,     4,   -33,   175,   216,   -42,     7,     1,    -1,     0),
+        70 => (    0,     0,    -1,     1,     3,   -32,   170,   221,   -43,     7,     1,    -1,     0),
+        71 => (    0,     0,    -1,     1,     3,   -31,   166,   225,   -44,     8,     1,    -1,     0),
+        72 => (    0,     0,    -1,     1,     3,   -30,   162,   229,   -45,     8,     1,    -1,     0),
+        73 => (    0,     0,    -1,     2,     2,   -29,   158,   233,   -46,     8,     1,    -1,     0),
+        74 => (    0,     0,    -1,     2,     2,   -28,   154,   237,   -46,     9,     1,    -1,     0),
+        75 => (    0,     0,    -1,     2,     2,   -27,   149,   241,   -47,     9,     1,    -1,     0),
+        76 => (    0,     0,     0,     2,     2,   -26,   145,   244,   -48,     9,     0,    -1,     0),
+        77 => (    0,     0,     0,     2,     1,   -25,   141,   248,   -48,    10,     0,    -1,     0),
+        78 => (    0,     0,     0,     2,     1,   -24,   137,   252,   -49,    10,     0,    -1,     0),
+        79 => (    0,     0,     0,     2,     1,   -23,   133,   256,   -50,    10,     0,    -1,     0),
+        80 => (    0,     0,     0,     2,     1,   -21,   128,   260,   -50,    10,     0,    -1,     0),
+        81 => (    0,     0,     0,     2,     0,   -20,   124,   263,   -51,    11,     0,    -1,     0),
+        82 => (    0,     0,     0,     2,     0,   -19,   120,   267,   -52,    11,     0,    -1,     0),
+        83 => (    0,     0,     0,     2,     0,   -18,   116,   271,   -52,    11,     0,    -1,     0),
+        84 => (    0,     0,     0,     2,     0,   -17,   112,   274,   -53,    12,     0,    -1,     0),
+        85 => (    0,     0,     0,     2,    -1,   -16,   108,   278,   -53,    12,     0,    -1,     0),
+        86 => (    0,     0,     0,     2,    -1,   -15,   104,   281,   -53,    12,     0,    -1,     0),
+        87 => (    0,     0,     0,     2,    -1,   -14,   100,   285,   -54,    13,     0,    -1,     0),
+        88 => (    0,     0,     0,     2,    -1,   -13,    96,   288,   -54,    13,    -1,    -1,     0),
+        89 => (    0,     0,     0,     2,    -2,   -12,    92,   291,   -54,    13,    -1,    -1,     0),
+        90 => (    0,     0,     0,     2,    -2,   -11,    88,   294,   -55,    13,    -1,    -1,     0),
+        91 => (    0,     0,     0,     2,    -2,   -10,    84,   298,   -55,    14,    -1,    -1,     0),
+        92 => (    0,     0,     0,     2,    -2,    -9,    80,   301,   -55,    14,    -1,    -1,     0),
+        93 => (    0,     0,     0,     2,    -2,    -9,    76,   304,   -55,    14,    -1,    -1,     0),
+        94 => (    0,     0,     0,     1,    -2,    -8,    73,   307,   -55,    14,    -1,    -1,     0),
+        95 => (    0,     0,     0,     1,    -3,    -7,    69,   310,   -55,    15,    -1,    -1,     0),
+        96 => (    0,     0,     0,     1,    -3,    -6,    65,   312,   -55,    15,    -1,    -1,     0),
+        97 => (    0,     0,     0,     1,    -3,    -5,    61,   315,   -55,    15,    -1,    -1,     0),
+        98 => (    0,     0,     0,     1,    -3,    -4,    58,   318,   -55,    15,    -2,    -1,     0),
+        99 => (    0,     0,     0,     1,    -3,    -3,    54,   320,   -55,    15,    -2,    -1,     0),
+        100 => (    0,     0,     0,     1,    -3,    -2,    51,   323,   -55,    15,    -2,    -1,     0),
+        101 => (    0,     0,     0,     1,    -3,    -1,    47,   325,   -54,    16,    -2,    -1,     0),
+        102 => (    0,     0,     0,     1,    -4,    -1,    44,   328,   -54,    16,    -2,    -1,     0),
+        103 => (    0,     0,     0,     1,    -4,     0,    40,   330,   -54,    16,    -2,    -1,     0),
+        104 => (    0,     0,     0,     1,    -4,     1,    37,   332,   -53,    16,    -2,    -1,     0),
+        105 => (    0,     0,     0,     1,    -4,     2,    34,   334,   -53,    16,    -2,    -1,     0),
+        106 => (    0,     0,     0,     1,    -4,     2,    31,   337,   -52,    16,    -2,    -1,     0),
+        107 => (    0,     0,     0,     1,    -4,     3,    27,   338,   -52,    16,    -3,    -1,     0),
+        108 => (    0,     0,     0,     1,    -4,     4,    24,   340,   -51,    16,    -3,    -1,     0),
+        109 => (    0,     0,     0,     1,    -4,     5,    21,   342,   -50,    16,    -3,     0,     0),
+        110 => (    0,     0,     0,     1,    -4,     5,    18,   344,   -50,    16,    -3,     0,     0),
+        111 => (    0,     0,     0,     1,    -4,     6,    15,   346,   -49,    16,    -3,     0,     0),
+        112 => (    0,     0,     0,     1,    -4,     7,    12,   347,   -48,    16,    -3,     0,     0),
+        113 => (    0,     0,     0,     1,    -4,     7,    10,   349,   -47,    16,    -3,     0,     0),
+        114 => (    0,     0,     0,     1,    -4,     8,     7,   350,   -46,    16,    -3,     0,     0),
+        115 => (    0,     0,     0,     1,    -4,     8,     4,   351,   -45,    16,    -3,     0,     0),
+        116 => (    0,     0,     0,     1,    -4,     9,     1,   352,   -44,    16,    -3,     0,     0),
+        117 => (    0,     0,     0,     1,    -4,     9,    -1,   353,   -43,    16,    -3,     0,     0),
+        118 => (    0,     0,     0,     1,    -4,    10,    -4,   354,   -42,    16,    -4,     0,     0),
+        119 => (    0,     0,     0,     1,    -4,    10,    -6,   355,   -40,    16,    -4,     0,     0),
+        120 => (    0,     0,     0,     1,    -4,    11,    -9,   356,   -39,    16,    -4,     0,     0),
+        121 => (    0,     0,     0,     0,    -4,    11,   -11,   357,   -38,    16,    -4,     0,     0),
+        122 => (    0,     0,     0,     0,    -4,    12,   -13,   357,   -36,    15,    -4,     0,     0),
+        123 => (    0,     0,     0,     0,    -4,    12,   -16,   358,   -35,    15,    -4,     0,     0),
+        124 => (    0,     0,     0,     0,    -4,    13,   -18,   358,   -33,    15,    -4,     0,     0),
+        125 => (    0,     0,     0,     0,    -4,    13,   -20,   359,   -31,    15,    -4,     0,     0),
+        126 => (    0,     0,     0,     0,    -4,    13,   -22,   359,   -30,    15,    -4,     0,     0),
+        127 => (    0,     0,     0,     0,    -4,    14,   -24,   359,   -28,    14,    -4,     0,     0)
     );
 end package sdm_coef_pkg;
 -- <<< sdm_coef_pkg.vhd
@@ -2035,6 +2114,32 @@ architecture rtl of vlc_enc is
     signal o_valid : std_logic := '0';
     signal libre   : std_logic;
 
+    -- étage 1 : coefficient, différence DC, run
+    signal p1_w     : std_logic := '0';                          -- un mot sortira
+    signal p1_dc    : std_logic := '0';                          -- coefficient DC
+    signal p1_eob   : std_logic := '0';                          -- dernier coefficient du bloc
+    signal p1_fin   : std_logic := '0';                          -- dernier mot du macrobloc
+    signal p1_luma  : std_logic := '0';
+    signal p1_nz    : std_logic := '0';                          -- coefficient non nul
+    signal p1_neg   : std_logic := '0';
+    signal p1_niv   : natural range 0 to 32768 := 0;             -- |v|
+    signal p1_v12   : unsigned(11 downto 0) := (others => '0');  -- v en complément à 2 sur 12 bits
+    signal p1_run   : natural range 0 to 63 := 0;
+    signal p1_dpos  : std_logic := '0';                          -- diff > 0
+    signal p1_adiff : natural range 0 to 4096 := 0;              -- |diff|
+    -- étage 2 : tables
+    signal p2_w, p2_dc, p2_eob, p2_fin, p2_nz, p2_neg : std_logic := '0';
+    signal p2_v12   : unsigned(11 downto 0) := (others => '0');
+    signal p2_run   : natural range 0 to 63 := 0;
+    signal p2_dpos  : std_logic := '0';
+    signal p2_adiff : natural range 0 to 4096 := 0;
+    signal p2_sz    : natural range 0 to 12 := 0;
+    signal p2_dcc   : std_logic_vector(9 downto 0) := (others => '0');
+    signal p2_dcl   : natural range 0 to 10 := 0;
+    signal p2_tr    : std_logic := '0';                          -- code B.14 trouvé
+    signal p2_acc   : std_logic_vector(15 downto 0) := (others => '0');
+    signal p2_acl   : natural range 0 to 16 := 0;
+
     -- nombre de bits de |d| (taille DC)
     function taille(a : natural) return natural is
         variable t : natural := 0;
@@ -2049,38 +2154,38 @@ begin
     s_ready <= libre and not rst;
     m_valid <= o_valid;
 
-    -- E : vecteurs zigzag, 6 blocs par macrobloc → T : DC différentiel par
-    --   composante, couples (run, niveau) en B.14 ou échappement 24 bits, fin
-    --   de bloc → S : mots (code, longueur), m_fin sur le dernier mot du
-    --   macrobloc
+    -- E : vecteurs zigzag, 6 blocs par macrobloc → T : trois étages avançant
+    --   ensemble quand la sortie est libre : 1 DC différentiel par composante
+    --   et run ; 2 tables B.12 à B.14 ; 3 assemblage du mot (code, longueur),
+    --   échappement 24 bits, fin de bloc → S : mots, m_fin sur le dernier mot
+    --   du macrobloc
     process (clk)
         variable v      : integer range -32768 to 32767;
         variable pred   : integer range -2048 to 2047;
         variable diff   : integer range -4096 to 4096;
+        variable niv    : natural range 0 to 32768;
+        variable nrun   : natural range 0 to 63;
+        variable py, pcb, pcr : integer range -2048 to 2047;
         variable sz     : natural range 0 to 12;
         variable dct    : dc_vlc_t;
         variable ac     : ac_vlc_t;
         variable code   : unsigned(31 downto 0);
         variable lg     : natural range 0 to 32;
-        variable niv    : natural range 0 to 32767;
-        variable nrun   : natural range 0 to 63;
-        variable py, pcb, pcr : integer range -2048 to 2047;
+        variable masque : unsigned(12 downto 0);
     begin
         if rising_edge(clk) then
             if rst = '1' then
                 pos <= 0; blk <= 0; col <= 0; run <= 0;
                 pred_y <= 128; pred_cb <= 128; pred_cr <= 128;
-                o_valid <= '0';
-            else
-                if libre = '1' then
-                    o_valid <= '0';
-                end if;
-                if s_valid = '1' and libre = '1' then
+                p1_w <= '0'; p2_w <= '0'; o_valid <= '0';
+            elsif libre = '1' then
+                -- étage 1 : différence DC, run
+                p1_w <= '0';
+                if s_valid = '1' then
                     v := to_integer(s_data);
-                    code := (others => '0');
-                    lg := 0;
                     nrun := run;
                     py := pred_y; pcb := pred_cb; pcr := pred_cr;
+                    diff := 0;
                     if pos = 0 then
                         -- nouvelle slice : prédicteurs remis à 128
                         if blk = 0 and col = 0 then
@@ -2089,55 +2194,27 @@ begin
                         if blk < 4 then pred := py; elsif blk = 4 then pred := pcb; else pred := pcr; end if;
                         diff := v - pred;
                         if blk < 4 then py := v; elsif blk = 4 then pcb := v; else pcr := v; end if;
-                        if diff < 0 then sz := taille(-diff); else sz := taille(diff); end if;
-                        if blk < 4 then dct := DC_LUMA(sz); else dct := DC_CHROMA(sz); end if;
-                        code := resize(unsigned(dct.code), 32);
-                        lg := dct.lg;
-                        if sz > 0 then
-                            code := shift_left(code, sz);
-                            if diff > 0 then
-                                code := code or to_unsigned(diff, 32);
-                            else
-                                code := code or to_unsigned(diff + 2 ** sz - 1, 32);
-                            end if;
-                            lg := lg + sz;
-                        end if;
                         nrun := 0;
+                    elsif v = 0 then
+                        if nrun < 63 then nrun := nrun + 1; end if;
                     else
-                        if v = 0 then
-                            if nrun < 63 then nrun := nrun + 1; end if;
-                        else
-                            if v < 0 then niv := -v; else niv := v; end if;
-                            ac := ac_code(nrun, niv mod 2048);
-                            if ac.trouve and niv < 2048 then
-                                code := shift_left(resize(unsigned(ac.code), 32), 1);
-                                if v < 0 then code(0) := '1'; end if;
-                                lg := ac.lg + 1;
-                            else
-                                code := resize(unsigned(AC_ESCAPE), 32);
-                                code := shift_left(code, 6) or to_unsigned(nrun, 32);
-                                if v < 0 then
-                                    code := shift_left(code, 12) or to_unsigned((4096 + v) mod 4096, 32);
-                                else
-                                    code := shift_left(code, 12) or to_unsigned(v mod 4096, 32);
-                                end if;
-                                lg := 24;
-                            end if;
-                            nrun := 0;
-                        end if;
+                        nrun := 0;
                     end if;
-                    if pos = 63 then
-                        code := shift_left(code, 2) or resize(unsigned(AC_EOB), 32);
-                        lg := lg + 2;
-                    end if;
+                    if v < 0 then niv := -v; else niv := v; end if;
+                    p1_dc    <= '1' when pos = 0 else '0';
+                    p1_eob   <= '1' when pos = 63 else '0';
+                    p1_fin   <= '1' when pos = 63 and blk = 5 else '0';
+                    p1_luma  <= '1' when blk < 4 else '0';
+                    p1_nz    <= '0' when v = 0 else '1';
+                    p1_neg   <= '1' when v < 0 else '0';
+                    p1_niv   <= niv;
+                    p1_v12   <= unsigned(s_data(11 downto 0));
+                    p1_run   <= run;
+                    p1_dpos  <= '1' when diff > 0 else '0';
+                    p1_adiff <= diff when diff >= 0 else -diff;
+                    p1_w     <= '1' when pos = 0 or pos = 63 or v /= 0 else '0';
                     pred_y <= py; pred_cb <= pcb; pred_cr <= pcr;
                     run <= nrun;
-                    if lg > 0 then
-                        m_code   <= std_logic_vector(code);
-                        m_lg     <= to_unsigned(lg, 6);
-                        m_fin_mb <= '1' when pos = 63 and blk = 5 else '0';
-                        o_valid  <= '1';
-                    end if;
                     if pos = 63 then
                         pos <= 0;
                         run <= 0;
@@ -2151,6 +2228,64 @@ begin
                         pos <= pos + 1;
                     end if;
                 end if;
+
+                -- étage 2 : tables B.12 / B.13 (taille DC) et B.14 (run, niveau)
+                sz := taille(p1_adiff);
+                if p1_luma = '1' then dct := DC_LUMA(sz); else dct := DC_CHROMA(sz); end if;
+                ac := ac_code(p1_run, p1_niv mod 2048);
+                p2_sz    <= sz;
+                p2_dcc   <= dct.code;
+                p2_dcl   <= dct.lg;
+                p2_tr    <= '1' when ac.trouve and p1_niv < 2048 else '0';
+                p2_acc   <= ac.code;
+                p2_acl   <= ac.lg;
+                p2_w     <= p1_w;
+                p2_dc    <= p1_dc;
+                p2_eob   <= p1_eob;
+                p2_fin   <= p1_fin;
+                p2_nz    <= p1_nz;
+                p2_neg   <= p1_neg;
+                p2_v12   <= p1_v12;
+                p2_run   <= p1_run;
+                p2_dpos  <= p1_dpos;
+                p2_adiff <= p1_adiff;
+
+                -- étage 3 : assemblage du mot
+                code := (others => '0');
+                lg := 0;
+                if p2_dc = '1' then
+                    code := resize(unsigned(p2_dcc), 32);
+                    lg := p2_dcl;
+                    if p2_sz > 0 then
+                        code := shift_left(code, p2_sz);
+                        masque := shift_left(to_unsigned(1, 13), p2_sz) - 1;      -- 2^sz − 1
+                        if p2_dpos = '1' then
+                            code := code or to_unsigned(p2_adiff, 32);
+                        else
+                            code := code or resize(masque - p2_adiff, 32);
+                        end if;
+                        lg := lg + p2_sz;
+                    end if;
+                elsif p2_nz = '1' then
+                    if p2_tr = '1' then
+                        code := shift_left(resize(unsigned(p2_acc), 32), 1);
+                        code(0) := p2_neg;
+                        lg := p2_acl + 1;
+                    else
+                        code := resize(unsigned(AC_ESCAPE), 32);
+                        code := shift_left(code, 6) or to_unsigned(p2_run, 32);
+                        code := shift_left(code, 12) or resize(p2_v12, 32);
+                        lg := 24;
+                    end if;
+                end if;
+                if p2_eob = '1' then
+                    code := shift_left(code, 2) or resize(unsigned(AC_EOB), 32);
+                    lg := lg + 2;
+                end if;
+                m_code   <= std_logic_vector(code);
+                m_lg     <= to_unsigned(lg, 6);
+                m_fin_mb <= p2_fin;
+                o_valid  <= p2_w;
             end if;
         end if;
     end process;
@@ -2466,9 +2601,12 @@ end architecture rtl;
 --              disponible (instant ≥ (n+1)/25) ; sinon PCR seul ou paquet nul.
 --              Instants exacts pour 10 MS/s, FEC 1/2 (R_ts = 9 215 686,27 bit/s) :
 --              t_k ≥ a/b ⇔ 51·k ≥ a·12 500·25/b, soit 51k ≥ 25 000·m (PSI),
---              51k ≥ 9 375·m (PCR), 51k ≥ 12 500·(n+1) (images).
+--              51k ≥ 9 375·m (PCR), 51k ≥ 12 500·(n+1) (images) ; à 5 MS/s,
+--              G_K = 102.
 --              PCR(k) = round((188k + 10)·5 508 / 235), tenu en cumul exact :
---              +4 406 par créneau, +1 tous les 470/188 créneaux.
+--              +4 406 par créneau, +1 tous les 470/188 créneaux (G_PCR_INC,
+--              G_PCR_FR / 470, départ G_PCR_B0 : G_PCR_E0, reste G_PCR_R0) ;
+--              à 5 MS/s : (188k + 10)·11 016 / 235, +8 812 et +376/470.
 --              PES : 00 00 01 E0, longueur, 84 80 05, PTS = 3 600·(n+1) + 9 000.
 --              Sans multiplieur : les écarts 51k − 25 000·m, 51k − 9 375·m et
 --              51k − 12 500·(n+1) sont tenus en registres (+51 par créneau,
@@ -2487,6 +2625,11 @@ entity ts_mux is
         G_PSI   : natural := 25000;         -- période PAT/PMT 80 ms
         G_PCR   : natural := 9375;          -- période PCR 30 ms
         G_IMG   : natural := 12500;         -- période image 40 ms
+        G_PCR_INC : natural := 4406;        -- PCR : incrément entier par créneau (ticks 27 MHz)
+        G_PCR_FR  : natural := 188;         -- PCR : fraction par créneau, en 470e
+        G_PCR_R0  : natural := 415;         -- PCR : reste initial (arrondi compris), en 470e
+        G_PCR_B0  : natural := 0;           -- PCR : base initiale
+        G_PCR_E0  : natural := 234;         -- PCR : extension initiale
         G_GOP   : natural := 12;
         G_MCPC  : boolean := false;         -- deux programmes (canal 2 sur s2_*)
         G_TRAMES1 : boolean := false;       -- canal 1 : une image = deux demi-trames codées
@@ -2606,9 +2749,11 @@ architecture rtl of ts_mux is
     signal d_img    : d_img_2_t := (others => to_signed(-G_IMG, 40));         -- G_K·k − G_IMG·(n + 1)
     signal pts_r    : pts_2_t := (others => to_unsigned(12600, 33));          -- 3 600·(n + 1) + 9 000
     signal pmt_du   : natural range 0 to 2 := 0;                              -- PMT restant à émettre
-    signal pcr_base : unsigned(32 downto 0) := (others => '0');
-    signal pcr_ext  : unsigned(8 downto 0) := to_unsigned(234, 9);
-    signal pcr_r    : natural range 0 to 469 := 415;
+    constant PCR_B  : natural := G_PCR_INC / 300;                            -- incrément de la base
+    constant PCR_E  : natural := G_PCR_INC mod 300;                          -- incrément de l'extension
+    signal pcr_base : unsigned(32 downto 0) := to_unsigned(G_PCR_B0, 33);
+    signal pcr_ext  : unsigned(8 downto 0) := to_unsigned(G_PCR_E0, 9);
+    signal pcr_r    : natural range 0 to 469 := G_PCR_R0;
     signal p_base   : unsigned(32 downto 0);
     signal p_ext    : unsigned(8 downto 0);
     type cc_2_t is array (0 to 1) of unsigned(3 downto 0);
@@ -2678,7 +2823,7 @@ begin
                 nb_deb <= (others => (others => '0')); nb_cpl <= (others => (others => '0'));
                 d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= (others => to_signed(-G_IMG, 40));
                 pts_r <= (others => to_unsigned(12600, 33)); pmt_du <= 0;
-                pcr_base <= (others => '0'); pcr_ext <= to_unsigned(234, 9); pcr_r <= 415;
+                pcr_base <= to_unsigned(G_PCR_B0, 33); pcr_ext <= to_unsigned(G_PCR_E0, 9); pcr_r <= G_PCR_R0;
                 cc_pat <= (others => '0'); cc_pmt <= (others => (others => '0')); cc_vid <= (others => (others => '0'));
                 n_vid <= (others => (others => '0')); n_gop <= (others => 0); pes_ptr <= (others => 0); actif <= '0'; pos <= 0;
                 a_valid <= '0'; o_valid <= '0';
@@ -2786,15 +2931,15 @@ begin
                         end if;
                         p_base <= pcr_base; p_ext <= pcr_ext;
                         -- PCR du créneau suivant
-                        e2 := pcr_r + 188;
+                        e2 := pcr_r + G_PCR_FR;
                         if e2 >= 470 then carry := 1; e2 := e2 - 470; else carry := 0; end if;
                         pcr_r <= e2;
-                        if to_integer(pcr_ext) + 206 + carry >= 300 then
-                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + 206 + carry - 300, 9);
-                            pcr_base <= pcr_base + 15;
+                        if to_integer(pcr_ext) + PCR_E + carry >= 300 then
+                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + PCR_E + carry - 300, 9);
+                            pcr_base <= pcr_base + (PCR_B + 1);
                         else
-                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + 206 + carry, 9);
-                            pcr_base <= pcr_base + 14;
+                            pcr_ext  <= to_unsigned(to_integer(pcr_ext) + PCR_E + carry, 9);
+                            pcr_base <= pcr_base + PCR_B;
                         end if;
                         actif <= '1';
                         pos   <= 0;
@@ -3578,38 +3723,64 @@ architecture rtl of mire_gen is
     signal o_valid : std_logic := '0';
     signal libre   : std_logic;
 
-    -- couleur du pixel (x, y) de l'image n, incrustations comprises
-    function couleur(x, y : natural; img : unsigned(11 downto 0); x0 : natural) return natural is
-        variable b  : natural range 0 to 11;
-    begin
-        if y >= 176 and y < 208 and x >= x0 and x < x0 + 32 then
-            if y >= 178 and y < 206 and x >= x0 + 2 and x < x0 + 30 then
-                return IDX_BLANC;
-            else
-                return IDX_NOIR;
-            end if;
-        end if;
-        if y >= 280 and x >= 8 and x < 8 + 10 * 11 + 8 and (x - 8) mod 10 < 8 then
-            b := (x - 8) / 10;
-            if img(11 - b) = '1' then return IDX_BLANC; else return IDX_NOIR; end if;
-        end if;
-        return mire_idx(x, y);
-    end function;
+    -- étage A : coordonnées du pixel
+    signal a_v     : std_logic := '0';
+    signal a_x, a_y : natural range 0 to 511 := 0;
+    signal a_n     : unsigned(11 downto 0) := (others => '0');
+    signal a_sqx   : natural range 0 to 319 := 0;
+    signal a_comp  : natural range 0 to 2 := 0;                  -- 0 : Y, 1 : Cb, 2 : Cr
+    signal a_debut : std_logic := '0';
+    -- étage B : prédicats de la géométrie
+    signal b_v     : std_logic := '0';
+    signal b_barre : natural range 0 to 7 := 0;
+    signal b_zone  : natural range 0 to 3 := 0;                  -- 0 barres, 1 gris, 2 bas, 3 bandeau
+    signal b_txt   : std_logic := '0';                           -- dans le cadre des lettres
+    signal b_l     : natural range 0 to MIRE_NL - 1 := 0;
+    signal b_i     : natural range 0 to 7 := 0;
+    signal b_j     : natural range 0 to 6 := 0;
+    signal b_sq, b_sq_in : std_logic := '0';                     -- carré mobile, intérieur
+    signal b_cpt   : std_logic := '0';                           -- dans un carré du compteur
+    signal b_d     : natural range 0 to 11 := 0;                 -- rang du carré
+    signal b_n     : unsigned(11 downto 0) := (others => '0');
+    signal b_comp  : natural range 0 to 2 := 0;
+    signal b_debut : std_logic := '0';
+    -- étage C : bits des incrustations
+    signal c_v     : std_logic := '0';
+    signal c_barre : natural range 0 to 7 := 0;
+    signal c_gris  : natural range 0 to 15 := 0;
+    signal c_zone  : natural range 0 to 3 := 0;
+    signal c_txt   : std_logic := '0';                           -- pavé de lettre allumé
+    signal c_sq, c_sq_in, c_cpt, c_bit : std_logic := '0';
+    signal c_comp  : natural range 0 to 2 := 0;
+    signal c_debut : std_logic := '0';
 begin
     libre   <= (not o_valid) or m_ready;
     m_valid <= o_valid;
 
-    -- E : — → T : balayage des macroblocs de l'image n (4 blocs Y, Cb, Cr),
-    --   carré mobile et compteur → S : pixels 4:2:0, m_debut en tête d'image
+    -- E : — → T : balayage des macroblocs de l'image n (4 blocs Y, Cb, Cr) ;
+    --   quatre étages avançant ensemble quand la sortie est libre : A coordonnées,
+    --   B prédicats (barre, zone, lettres, carré mobile, compteur), C bits des
+    --   incrustations, D couleur et palette → S : pixels 4:2:0, m_debut en tête
+    --   d'image
     process (clk)
         variable px, py : natural range 0 to 511;
+        variable barre  : natural range 0 to 7;
+        variable zone   : natural range 0 to 3;
+        variable txt    : boolean;
+        variable l      : natural range 0 to MIRE_NL - 1;
+        variable i      : natural range 0 to 7;
+        variable j      : natural range 0 to 6;
+        variable d      : natural range 0 to 11;
+        variable allume : boolean;
         variable c      : natural range 0 to 15;
         variable v      : natural range 0 to 255;
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                n <= (others => '0'); sq_x <= 0; row <= 0; col <= 0; blk <= 0; yy <= 0; xx <= 0; o_valid <= '0';
+                n <= (others => '0'); sq_x <= 0; row <= 0; col <= 0; blk <= 0; yy <= 0; xx <= 0;
+                a_v <= '0'; b_v <= '0'; c_v <= '0'; o_valid <= '0';
             elsif libre = '1' then
+                -- étage A : coordonnées du pixel courant
                 if blk < 4 then
                     px := col * 16 + (blk mod 2) * 8 + xx;
                     py := row * 16 + (blk / 2) * 8 + yy;
@@ -3617,11 +3788,13 @@ begin
                     px := 2 * (col * 8 + xx);
                     py := 2 * (row * 8 + yy);
                 end if;
-                c := couleur(px, py, n, sq_x);
-                if blk < 4 then v := PALETTE(c)(0); elsif blk = 4 then v := PALETTE(c)(1); else v := PALETTE(c)(2); end if;
-                m_data  <= to_unsigned(v, 8);
-                m_debut <= '1' when row = 0 and col = 0 and blk = 0 and yy = 0 and xx = 0 else '0';
-                o_valid <= '1';
+                a_x     <= px;
+                a_y     <= py;
+                a_n     <= n;
+                a_sqx   <= sq_x;
+                a_comp  <= 0 when blk < 4 else 1 when blk = 4 else 2;
+                a_debut <= '1' when row = 0 and col = 0 and blk = 0 and yy = 0 and xx = 0 else '0';
+                a_v     <= '1';
                 -- pixel suivant
                 if xx < 7 then
                     xx <= xx + 1;
@@ -3650,6 +3823,81 @@ begin
                         end if;
                     end if;
                 end if;
+
+                -- étage B : prédicats de la géométrie (mire_idx, carré, compteur)
+                barre := 0;
+                for k in 1 to 7 loop
+                    if a_x >= MIRE_BARRE * k then barre := k; end if;
+                end loop;
+                if a_y < MIRE_Y_GRIS then zone := 0;
+                elsif a_y < MIRE_Y_BANDEAU then zone := 1;
+                elsif a_y >= MIRE_Y_CPT then zone := 2;
+                else zone := 3;
+                end if;
+                txt := a_y >= MIRE_Y_TXT and a_y < MIRE_Y_TXT + 7 * MIRE_PAVE
+                       and a_x >= MIRE_X_TXT and a_x < MIRE_X_TXT + MIRE_NL * MIRE_PAS;
+                l := 0; i := 0; j := 0;
+                if txt then
+                    for k in 1 to MIRE_NL - 1 loop
+                        if a_x >= MIRE_X_TXT + MIRE_PAS * k then l := k; end if;
+                    end loop;
+                    i := (a_x - MIRE_X_TXT - MIRE_PAS * l) / MIRE_PAVE;
+                    j := (a_y - MIRE_Y_TXT) / MIRE_PAVE;
+                end if;
+                b_barre <= barre;
+                b_zone  <= zone;
+                b_txt   <= '1' when txt else '0';
+                b_l     <= l;
+                b_i     <= i;
+                b_j     <= j;
+                b_sq    <= '1' when a_y >= 176 and a_y < 208 and a_x >= a_sqx and a_x < a_sqx + 32 else '0';
+                b_sq_in <= '1' when a_y >= 178 and a_y < 206 and a_x >= a_sqx + 2 and a_x < a_sqx + 30 else '0';
+                -- compteur : carrés 8 × 8 au pas de 10 depuis x = 8 ; (x − 8) mod 10 < 8
+                allume := a_y >= 280 and a_x >= 8 and a_x < 8 + 10 * 11 + 8;
+                for k in 0 to 11 loop
+                    if a_x >= 10 * k + 16 and a_x < 10 * k + 18 then allume := false; end if;
+                end loop;
+                d := 0;
+                for k in 1 to 11 loop
+                    if a_x >= 8 + 10 * k then d := k; end if;
+                end loop;
+                b_cpt   <= '1' when allume else '0';
+                b_d     <= d;
+                b_n     <= a_n;
+                b_comp  <= a_comp;
+                b_debut <= a_debut;
+                b_v     <= a_v;
+
+                -- étage C : bits des incrustations (pavé de lettre, bit du compteur)
+                c_barre <= b_barre;
+                c_gris  <= MIRE_GRIS(b_barre);
+                c_zone  <= b_zone;
+                c_txt   <= '1' when b_txt = '1' and b_i < 5 and MIRE_TXT(35 * b_l + 5 * b_j + b_i) = '1' else '0';
+                c_sq    <= b_sq;
+                c_sq_in <= b_sq_in;
+                c_cpt   <= b_cpt;
+                c_bit   <= b_n(11 - b_d);
+                c_comp  <= b_comp;
+                c_debut <= b_debut;
+                c_v     <= b_v;
+
+                -- étage D : indice de couleur, palette
+                if c_sq = '1' then
+                    if c_sq_in = '1' then c := IDX_BLANC; else c := IDX_NOIR; end if;
+                elsif c_cpt = '1' then
+                    if c_bit = '1' then c := IDX_BLANC; else c := IDX_NOIR; end if;
+                else
+                    case c_zone is
+                        when 0      => c := c_barre;
+                        when 1      => c := c_gris;
+                        when 2      => c := IDX_NOIR;
+                        when others => if c_txt = '1' then c := IDX_AMBRE; else c := IDX_ARDOISE; end if;
+                    end case;
+                end if;
+                v := PALETTE(c)(c_comp);
+                m_data  <= to_unsigned(v, 8);
+                m_debut <= c_debut;
+                o_valid <= c_v;
             end if;
         end if;
     end process;
@@ -3824,13 +4072,13 @@ end architecture rtl;
 -- sd_entree : apport des entrées à la boucle sigma-delta pour un cycle de 8
 --   instants (une voie) : le filtre SRRC à 640 MS/s est intégré aux tables ;
 --   référence bit à bit : fpga_test/sdm.js
---   Interface : en : un groupe (fenêtre de 13 symboles, cycle q de 0 à 7)
+--   Interface : en : un groupe (fenêtre de 13 symboles, cycle q de 0 à SDM_CYC − 1)
 --               consommé ; sorties registrées : in_k (k = 3 à 7) et u1, u2, u3
 --   Principe : avec u(j) = Σd SDM_H(8q + j)(d)·sym(d), les grandeurs utiles sont
 --              linéaires en sym : Ink = Σ(j<k) C(k−1−j, 2)·u(j) (In0 = In1 =
 --              In2 = 0), U1 = Σ u(j), U2 = Σ (7−j)·u(j), U3 = Σ C(7−j, 2)·u(j).
---              Leurs coefficients par symbole sont précalculés (8 cycles × 13
---              symboles) : chaque grandeur est une somme de 13 constantes
+--              Leurs coefficients par symbole sont précalculés (SDM_CYC cycles
+--              × 13 symboles) : chaque grandeur est une somme de 13 constantes
 --              signées par les bits de la fenêtre.
 --------------------------------------------------------------------------------
 library ieee;
@@ -3845,7 +4093,7 @@ entity sd_entree is
         rst : in  std_logic;
         en  : in  std_logic;
         fen : in  std_logic_vector(12 downto 0);   -- bit d = symbole d (1 → −1), d = 12 le plus récent
-        q   : in  natural range 0 to 7;
+        q   : in  natural range 0 to SDM_CYC - 1;
         g   : out sd_grp_t                         -- In3 … In7, U1, U2, U3
     );
 end entity sd_entree;
@@ -3863,13 +4111,13 @@ architecture rtl of sd_entree is
         else m := 7 - j; return m * (m - 1) / 2;
         end if;
     end function;
-    type coef_t is array (0 to 7, 0 to 7, 0 to 12) of integer;   -- [q][grandeur][d]
+    type coef_t is array (0 to SDM_CYC - 1, 0 to 7, 0 to 12) of integer;   -- [q][grandeur][d]
     -- tables : E : SDM_H → S : coefficient de chaque grandeur par cycle et symbole
     function tables return coef_t is
         variable t : coef_t;
         variable s : integer;
     begin
-        for qq in 0 to 7 loop
+        for qq in 0 to SDM_CYC - 1 loop
             for i in 0 to 7 loop
                 for d in 0 to 12 loop
                     s := 0;
@@ -4178,8 +4426,8 @@ end architecture rtl;
 --   cycle et par voie (640 Mbit/s à 80 MHz) vers les sérialiseurs LVDS (à
 --   venir) ; référence bit à bit : fpga_test/sd_iq.bin
 --   Interface : entrée : un symbole (bits I et Q, 0 → +1) par transfert ;
---               chaque symbole donne 8 cycles de sortie ; sortie : m_i, m_q,
---               8 bits chacun, bit 7 émis en premier
+--               chaque symbole donne SDM_CYC cycles de sortie (16 à 5 MS/s) ;
+--               sortie : m_i, m_q, 8 bits chacun, bit 7 émis en premier
 --   Principe : trois étages avancés ensemble : groupes (fenêtre, cycle q),
 --              apport des entrées (registré), boucle. La boucle traite le
 --              groupe g quand le groupe g + 1 est prêt (son In sert à l'état
@@ -4189,6 +4437,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use work.dvbs_pkg.all;
+use work.sdm_coef_pkg.all;
 
 entity sigma_delta is
     port (
@@ -4207,7 +4456,7 @@ end entity sigma_delta;
 
 architecture rtl of sigma_delta is
     signal fen_i, fen_q : std_logic_vector(12 downto 0) := (others => '0');
-    signal q            : natural range 0 to 7 := 0;
+    signal q            : natural range 0 to SDM_CYC - 1 := 0;
     signal a_ok         : std_logic := '0';     -- fenêtre chargée : groupes à produire
     signal b_ok         : std_logic := '0';     -- apport des entrées registré
     signal l_ok         : std_logic := '0';     -- boucle chargée
@@ -4222,7 +4471,7 @@ begin
     -- groupes : un par cycle si l'étage B est libre ou se vide
     produit <= a_ok and ((not b_ok) or prend_b);
     -- symbole : accepté quand aucun groupe n'est en attente ou au dernier cycle
-    q7      <= '1' when q = 7 else '0';
+    q7      <= '1' when q = SDM_CYC - 1 else '0';
     prend_s <= s_valid and ((not a_ok) or (produit and q7));
     s_ready <= (not a_ok) or (produit and q7);
     m_valid <= o_ok;
@@ -4242,8 +4491,8 @@ begin
                 q <= 0; a_ok <= '0'; b_ok <= '0'; l_ok <= '0'; o_ok <= '0';
             else
                 if produit = '1' then
-                    q <= (q + 1) mod 8;
-                    if q = 7 then a_ok <= '0'; end if;
+                    q <= (q + 1) mod SDM_CYC;
+                    if q = SDM_CYC - 1 then a_ok <= '0'; end if;
                 end if;
                 if prend_s = '1' then
                     fen_i <= s_i & fen_i(12 downto 1);
@@ -5075,10 +5324,14 @@ end architecture rtl;
 --   (étapes 01 à 08) → dispersion → RS(204,188) → entrelaceur → codeur
 --   convolutif → sigma_delta ; chaque bloc est vérifié au bit près par son
 --   banc (video, chaine, sdm)
---   Interface : horloge 80 MHz (10 MS/s) ; sortie : 8 bits sigma-delta par
---               cycle et par voie (m_i, m_q, bit 7 émis en premier), vers les
---               sérialiseurs LVDS (640 Mbit/s)
---   Principe : la sortie sigma-delta impose le rythme (un symbole par 8
+--   Interface : horloge 80 MHz ; sortie : 8 bits sigma-delta par cycle et par
+--               voie (m_i, m_q, bit 7 émis en premier), vers les sérialiseurs
+--               LVDS (640 Mbit/s)
+--   Paramètres : G_RS : débit symbole, 10 000 000 (bancs) ou 5 000 000 (carte) ;
+--                budgets TM5, débit binaire des en-têtes et instants du
+--                multiplexeur TS en découlent ; la sortie sigma-delta suit
+--                SDM_CYC (sdm_coef_pkg, généré par sdm.js au même débit)
+--   Principe : la sortie sigma-delta impose le rythme (un symbole par SDM_CYC
 --              cycles) ; le contrôle de flux remonte jusqu'au multiplexeur TS ;
 --              bit du codeur à 1 → symbole −1 (bit de signe de qpsk_map),
 --              convention de l'entrée de sigma_delta
@@ -5092,7 +5345,8 @@ entity dvbs_sd is
     generic (
         G_IMAGES : natural := 0;
         G_FEC    : natural range 0 to 4 := 0;
-        G_MCPC   : boolean := false          -- caméra sur le canal 1, mire sur le canal 2
+        G_MCPC   : boolean := false;         -- caméra sur le canal 1, mire sur le canal 2
+        G_RS     : natural := 10_000_000     -- débit symbole (10 ou 5 MS/s)
     );
     port (
         clk     : in  std_logic;
@@ -5117,6 +5371,20 @@ entity dvbs_sd is
 end entity dvbs_sd;
 
 architecture rtl of dvbs_sd is
+    -- débit binaire des en-têtes de séquence : ⌈R_ts / 400⌉, R_ts = Rs·188/204 (FEC 1/2)
+    constant BIT_RATE : natural := (G_RS * 188 + 204 * 400 - 1) / (204 * 400);
+    -- multiplexeur TS : constantes exactes de 10 MS/s, ou de 5 MS/s
+    -- selon : E : valeurs à 5 et à 10 MS/s → S : celle de G_RS
+    function selon(v5, v10 : natural) return natural is
+    begin
+        if G_RS = 5_000_000 then return v5; else return v10; end if;
+    end function;
+    constant TS_K    : natural := selon(102, 51);
+    constant PCR_INC : natural := selon(8812, 4406);
+    constant PCR_FR  : natural := selon(376, 188);
+    constant PCR_R0  : natural := selon(125, 415);
+    constant PCR_B0  : natural := selon(1, 0);
+    constant PCR_E0  : natural := selon(169, 234);
     signal t_valid, t_ready, t_sop : std_logic;
     signal t_data                  : octet_t;
     signal p_valid, p_ready, p_sop : std_logic;
@@ -5128,9 +5396,10 @@ architecture rtl of dvbs_sd is
     signal c_valid, c_ready        : std_logic;
     signal c_data                  : std_logic_vector(1 downto 0);
 begin
-    -- un programme : mire animée seule (bancs)
+    assert G_RS = 10_000_000 or G_RS = 5_000_000 report "dvbs_sd : G_RS doit valoir 10 000 000 ou 5 000 000" severity failure;
+    -- un programme : mire animée seule (bancs, 10 MS/s)
     g_un : if not G_MCPC generate
-        u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(10_000_000, G_FEC, 95, 25))
+        u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(G_RS, G_FEC, 95, 25))
             port map (clk, rst, t_valid, t_ready, t_data, t_sop);
     end generate;
 
@@ -5222,15 +5491,16 @@ begin
                       clk => clk, rst => rst, m_valid => c_mb_valid, m_ready => c_mb_ready, m_data => c_mb_data,
                       m_debut => c_debut, m_trame => c_trame, retard => open);
         u_cod1 : entity work.codeur
-            generic map (G_LARG => 720, G_HAUT => 576, G_TRAMES => true, G_T => budget_image(10_000_000, G_FEC, 47, 50))
+            generic map (G_LARG => 720, G_HAUT => 576, G_TRAMES => true, G_BIT_RATE => BIT_RATE, G_T => budget_image(G_RS, G_FEC, 47, 50))
             port map (clk, rst, x_valid, x_ready, x_data, c_es_valid, c_es_ready, c_es_data);
         u_mire : entity work.mire_gen
             port map (clk => clk, rst => rst, m_valid => m_mb_valid, m_ready => m_mb_ready, m_data => m_mb_data, m_debut => open);
         u_cod2 : entity work.codeur
-            generic map (G_T => budget_image(10_000_000, G_FEC, 47, 25), G_IMAGES => G_IMAGES)
+            generic map (G_BIT_RATE => BIT_RATE, G_T => budget_image(G_RS, G_FEC, 47, 25), G_IMAGES => G_IMAGES)
             port map (clk, rst, m_mb_valid, m_mb_ready, m_mb_data, m_es_valid, m_es_ready, m_es_data);
         u_ts : entity work.ts_mux
-            generic map (G_MCPC => true, G_TRAMES1 => true, G_AB2 => 16)
+            generic map (G_K => TS_K, G_PCR_INC => PCR_INC, G_PCR_FR => PCR_FR, G_PCR_R0 => PCR_R0, G_PCR_B0 => PCR_B0, G_PCR_E0 => PCR_E0,
+                         G_MCPC => true, G_TRAMES1 => true, G_AB2 => 16)
             port map (clk => clk, rst => rst, s_valid => c_es_valid, s_ready => c_es_ready, s_data => c_es_data,
                       m_valid => t_valid, m_ready => t_ready, m_data => t_data, m_sop => t_sop,
                       s2_valid => m_es_valid, s2_ready => m_es_ready, s2_data => m_es_data);
@@ -5249,143 +5519,104 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- regs_i2c : esclave I²C (adresse 7 bits G_ADR, 2Ah par défaut) et banc de
---   registres de réglage, écrits par le microcontrôleur de la carte ;
---   banc : tb_top
---   Registres : 00h identifiant 4Ah (lecture seule) ; 01h version 01h
---               (lecture seule) ; 02h MODE : bit 0 DVB-S2, bits 3..1 FEC
---               (0 = 1/2 … 4 = 7/8), bit 4 débit 2,5 MS/s (sinon 10 MS/s),
---               défaut 00h ; 03h ENTREE : bits 1..0 : 0 automatique, 1 AIP1A,
---               2 AIP1B, 3 mire, défaut 00h ; 04h ETAT (lecture seule) :
---               entrée etat ; autres adresses : lues 00h, écritures ignorées
---   Protocole : écriture : S, adresse + 0, registre, données… (pointeur
---               incrémenté après chaque octet), P ; lecture : S, adresse + 0,
---               registre, Sr, adresse + 1, données… jusqu'au NACK, P
---   Principe : SCL et SDA synchronisés et filtrés (3 échantillons égaux) ;
---              SDA retardé de 4 cycles de plus que SCL (début et fin jamais
---              confondus avec un bit, même sans temps de maintien) ; bits lus
---              au front montant de SCL, SDA posé au front descendant ; pas
---              d'étirement de SCL (SCL en entrée seule)
+-- choix_auto : choix automatique du mode de la carte d'après les entrées du
+--   décodeur verrouillées, sans microcontrôleur ni registre
+--   Interface : present, video_ok, entree : de tvp_ctrl ; choix : vers tvp_ctrl
+--               (01 : AIP1A imposée, 10 : AIP1B imposée) ; norme : 0 = DVB-S,
+--               1 = DVB-S2 ; biss : embrouillage du programme 1 ; mode : 0 =
+--               aucune entrée, 1 = AIP1A seule, 2 = AIP1B seule, 3 = les deux
+--   Principe : sondage dès que le décodeur est identifié, puis toutes les
+--              minutes : AIP1A imposée pendant T_SONDE puis état relevé, AIP1B
+--              imposée pendant T_SONDE puis état relevé ; mode : A seule →
+--              DVB-S, caméra A ; B seule → DVB-S2, caméra B ; A et B → DVB-S,
+--              caméra A, BISS ; aucune → DVB-S, AIP1A (image noire) ; mire sur
+--              le programme 2 dans tous les cas. Le mode précédent est tenu
+--              pendant le sondage. T_SONDE = 600 ms (acquisition de tvp_ctrl :
+--              15 lectures espacées de 20 ms). La minute est comptée en
+--              secondes (compteur de 60 × G_HZ cycles en deux étages).
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
-entity regs_i2c is
+entity choix_auto is
     generic (
-        G_ADR : std_logic_vector(6 downto 0) := "0101010"     -- 2Ah
+        G_HZ : positive := 80_000_000
     );
     port (
-        clk    : in  std_logic;
-        rst    : in  std_logic;
-        scl_i  : in  std_logic;
-        sda_i  : in  std_logic;
-        sda_oe : out std_logic;
-        etat   : in  std_logic_vector(7 downto 0);
-        mode   : out std_logic_vector(7 downto 0);
-        entree : out std_logic_vector(7 downto 0)
+        clk      : in  std_logic;
+        rst      : in  std_logic;
+        present  : in  std_logic;
+        video_ok : in  std_logic;
+        entree   : in  std_logic;
+        choix    : out std_logic_vector(1 downto 0);
+        norme    : out std_logic;
+        biss     : out std_logic;
+        mode     : out std_logic_vector(1 downto 0)
     );
-end entity regs_i2c;
+end entity choix_auto;
 
-architecture rtl of regs_i2c is
-    type st_t is (S_LIBRE, S_ADR, S_REG, S_ECR, S_LEC);
-    signal st          : st_t := S_LIBRE;
-    signal scl_s       : std_logic_vector(4 downto 0) := (others => '1');   -- 2 synchronisation + 3 filtre
-    signal sda_s       : std_logic_vector(8 downto 0) := (others => '1');   -- 2 + 4 de retard + 3 filtre
-    signal scl, sda    : std_logic := '1';                                  -- lignes filtrées
-    signal scl_d, sda_d : std_logic := '1';                                 -- valeurs filtrées précédentes
-    signal nb          : natural range 0 to 9 := 0;                         -- fronts montants dans l'octet
-    signal sh          : std_logic_vector(7 downto 0) := (others => '0');
-    signal tx          : std_logic_vector(7 downto 0) := (others => '0');
-    signal ptr         : unsigned(7 downto 0) := (others => '0');
-    signal m_ack, prem : std_logic := '0';
-    signal oe          : std_logic := '0';
-    signal r_mode      : std_logic_vector(7 downto 0) := x"00";
-    signal r_entree    : std_logic_vector(7 downto 0) := x"00";
-
-    -- lire : E : adresse, registres → S : octet lu
-    function lire(a : unsigned(7 downto 0); m, e, et : std_logic_vector(7 downto 0)) return std_logic_vector is
-    begin
-        case to_integer(a) is
-            when 0      => return x"4A";
-            when 1      => return x"01";
-            when 2      => return m;
-            when 3      => return e;
-            when 4      => return et;
-            when others => return x"00";
-        end case;
-    end function;
+architecture rtl of choix_auto is
+    constant T_SONDE : positive := 600 * (G_HZ / 1000);
+    constant T_SEC   : positive := G_HZ;
+    constant N_MIN   : positive := 60;
+    type etat_t is (E_ATTENTE, E_A, E_B);
+    signal etat    : etat_t := E_ATTENTE;
+    signal premier : std_logic := '1';
+    signal tempo   : natural range 0 to T_SONDE - 1 := 0;
+    signal cyc     : natural range 0 to T_SEC - 1 := 0;
+    signal sec     : natural range 0 to N_MIN := 0;
+    signal ok_a    : std_logic := '0';
+    signal ch      : std_logic_vector(1 downto 0) := "01";
+    signal m       : std_logic_vector(1 downto 0) := "00";
 begin
-    sda_oe <= oe;
-    mode   <= r_mode;
-    entree <= r_entree;
+    choix <= ch;
+    mode  <= m;
+    norme <= '1' when m = "10" else '0';
+    biss  <= '1' when m = "11" else '0';
 
-    -- E : SCL, SDA, état → T : filtrage, début / fin, octets reçus et émis,
-    --   acquittements, registres → S : SDA tiré, registres
+    -- E : état du décodeur, temps → T : sondage de A puis de B, décision →
+    --   S : entrée imposée, mode
     process (clk)
-        variable scl_m : std_logic;
-        variable b                   : std_logic_vector(7 downto 0);
+        variable ok_b : std_logic;
     begin
         if rising_edge(clk) then
-            scl_s <= scl_s(3 downto 0) & scl_i;
-            sda_s <= sda_s(7 downto 0) & sda_i;
-            scl_d <= scl;
-            sda_d <= sda;
-            if scl_s(4 downto 2) = "111" then scl_m := '1'; elsif scl_s(4 downto 2) = "000" then scl_m := '0'; else scl_m := scl; end if;
-            scl <= scl_m;
-            if sda_s(8 downto 6) = "111" then sda <= '1'; elsif sda_s(8 downto 6) = "000" then sda <= '0'; end if;
             if rst = '1' then
-                st <= S_LIBRE; oe <= '0'; nb <= 0; ptr <= (others => '0');
-                r_mode <= x"00"; r_entree <= x"00";
-            elsif scl = '1' and scl_d = '1' and sda_d = '1' and sda = '0' then
-                st <= S_ADR; nb <= 0; oe <= '0';                    -- début (ou début répété)
-            elsif scl = '1' and scl_d = '1' and sda_d = '0' and sda = '1' then
-                st <= S_LIBRE; oe <= '0';                           -- fin
-            elsif st /= S_LIBRE then
-                if scl_d = '0' and scl = '1' then
-                    -- front montant : bit reçu ou acquittement du maître
-                    if nb < 8 then sh <= sh(6 downto 0) & sda; end if;
-                    if nb = 8 then m_ack <= not sda; end if;
-                    nb <= nb + 1;
-                elsif scl_d = '1' and scl = '0' then
-                    -- front descendant : SDA pour la tranche suivante
-                    if nb = 8 then
-                        if st = S_LEC then
-                            oe <= '0';                              -- acquittement du maître
-                        else
-                            case st is
-                                when S_ADR =>
-                                    if sh(7 downto 1) = G_ADR then
-                                        oe <= '1';
-                                        if sh(0) = '1' then st <= S_LEC; prem <= '1'; else st <= S_REG; end if;
-                                    else
-                                        st <= S_LIBRE;
-                                    end if;
-                                when S_REG =>
-                                    ptr <= unsigned(sh); oe <= '1'; st <= S_ECR;
-                                when others =>
-                                    case to_integer(ptr) is
-                                        when 2      => r_mode   <= sh and x"1F";
-                                        when 3      => r_entree <= sh and x"03";
-                                        when others => null;
-                                    end case;
-                                    ptr <= ptr + 1; oe <= '1';
-                            end case;
-                        end if;
-                    elsif nb = 9 then
-                        nb <= 0; oe <= '0';
-                        if st = S_LEC then
-                            if prem = '1' or m_ack = '1' then
-                                b := lire(ptr, r_mode, r_entree, etat);
-                                tx <= b; oe <= not b(7); ptr <= ptr + 1; prem <= '0';
+                etat <= E_ATTENTE; premier <= '1'; tempo <= 0; cyc <= 0; sec <= 0;
+                ok_a <= '0'; ch <= "01"; m <= "00";
+            else
+                case etat is
+                    when E_ATTENTE =>
+                        if present = '1' then
+                            if premier = '1' or sec = N_MIN then
+                                premier <= '0'; sec <= 0; cyc <= 0;
+                                ch <= "01"; tempo <= T_SONDE - 1; etat <= E_A;
+                            elsif cyc = T_SEC - 1 then
+                                cyc <= 0; sec <= sec + 1;
                             else
-                                st <= S_LIBRE;                      -- NACK du maître : fin de lecture
+                                cyc <= cyc + 1;
                             end if;
                         end if;
-                    elsif st = S_LEC and nb >= 1 and nb <= 7 then
-                        oe <= not tx(7 - nb);
-                    end if;
-                end if;
+                    when E_A =>
+                        if tempo = 0 then
+                            ok_a <= video_ok and not entree;
+                            ch <= "10"; tempo <= T_SONDE - 1; etat <= E_B;
+                        else
+                            tempo <= tempo - 1;
+                        end if;
+                    when E_B =>
+                        if tempo = 0 then
+                            ok_b := video_ok and entree;
+                            if ok_a = '1' and ok_b = '1' then m <= "11"; ch <= "01";
+                            elsif ok_a = '1' then m <= "01"; ch <= "01";
+                            elsif ok_b = '1' then m <= "10"; ch <= "10";
+                            else m <= "00"; ch <= "01";
+                            end if;
+                            etat <= E_ATTENTE;
+                        else
+                            tempo <= tempo - 1;
+                        end if;
+                end case;
             end if;
         end if;
     end process;
@@ -5484,26 +5715,25 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- jpeg2dvb_top : entité de tête de la carte (MPF100T-FCG484I) ; banc : tb_top
+-- jpeg2dvb_top : entité de tête de la carte (MPF050T-FCVG484I) ; banc : tb_top
 --   Horloges : oscillateur MEMS 50 MHz → horloges (PLL) : clk_sys 80 MHz,
 --              clk_hs 320 MHz (sérialiseurs), clk_tvp 14,31818 MHz (XTAL1 du
 --              décodeur) ; tvp_sclk 27 MHz (décodeur) pour bt656_rx
 --   Ports : osc_50 ; tvp_* : décodeur TVP5150AM1 (XTAL1, RESETB, PDN, bus
---           I²C maître, SCLK, YOUT) ; mcu_scl, mcu_sda : bus I²C du
---           microcontrôleur (FPGA esclave 2Ah, regs_i2c) ; sd_i_p/n, sd_q_p/n :
---           sorties LVDS sigma-delta 640 Mbit/s ; led_pll, led_tvp, led_video :
---           PLL verrouillés, décodeur présent, vidéo verrouillée (actives à 1)
+--           I²C maître, SCLK, YOUT) ; sd_i_p/n, sd_q_p/n : sorties LVDS
+--           sigma-delta 640 Mbit/s ; led_pll, led_tvp, led_video : PLL
+--           verrouillés, décodeur présent, vidéo verrouillée (actives à 1)
 --   Principe : remise à zéro tenue tant que les PLL ne sont pas verrouillés,
---              relâchée de façon synchrone (8 cycles) ; registre ENTREE →
---              choix de tvp_ctrl (1 : AIP1A, 2 : AIP1B, 0 et 3 : automatique ;
---              3 : mire imposée, réservé à la sélection de source du chantier
---              3b) ; registre MODE rangé, branché aux chantiers FEC, débit et
---              DVB-S2 ; deux programmes (dvbs_sd, DVB-S, FEC 1/2, 10 MS/s) :
---              caméra sur le canal 1 (image noire si elle est absente), mire
---              animée sur le canal 2 ;
+--              relâchée de façon synchrone (8 cycles) ; aucun réglage externe :
+--              choix_auto sonde les entrées AIP1A et AIP1B toutes les minutes
+--              et impose l'entrée de tvp_ctrl ; A seule : DVB-S, B seule :
+--              DVB-S2, A et B : DVB-S et BISS, aucune : DVB-S et image noire
+--              (norme et biss à brancher par les chantiers DVB-S2 et
+--              embrouillage) ; FEC 1/2 et 5 MS/s fixes ; deux programmes
+--              (dvbs_sd) : caméra sur le canal 1, mire animée sur le canal 2 ;
 --              sigma-delta au repos (01010101) avant le premier symbole
---   Paramètres : G_TVP_HZ : horloge vue par tvp_ctrl (80 MHz ; réduite en
---                simulation pour raccourcir les délais du décodeur)
+--   Paramètres : G_TVP_HZ : horloge vue par tvp_ctrl et choix_auto (80 MHz ;
+--                réduite en simulation pour raccourcir les délais)
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
@@ -5522,8 +5752,6 @@ entity jpeg2dvb_top is
         tvp_sda    : inout std_logic;
         tvp_sclk   : in    std_logic;
         tvp_d      : in    std_logic_vector(7 downto 0);
-        mcu_scl    : in    std_logic;
-        mcu_sda    : inout std_logic;
         sd_i_p     : out   std_logic;
         sd_i_n     : out   std_logic;
         sd_q_p     : out   std_logic;
@@ -5566,12 +5794,11 @@ architecture rtl of jpeg2dvb_top is
     signal sd_valid   : std_logic;
     signal sd_i, sd_q : std_logic_vector(7 downto 0);
     signal s_i, s_q   : std_logic_vector(7 downto 0);
-    signal t_scl_oe, t_sda_oe, m_sda_oe : std_logic;
-    signal t_scl_i, t_sda_i, m_scl_i, m_sda_i : std_logic;
+    signal t_scl_oe, t_sda_oe : std_logic;
+    signal t_scl_i, t_sda_i   : std_logic;
     signal present, video_ok, entree   : std_logic;
-    signal r_mode, r_entree, etat      : std_logic_vector(7 downto 0);
-    signal choix      : std_logic_vector(1 downto 0);
-    signal mire_imposee : std_logic;
+    signal choix, mode : std_logic_vector(1 downto 0);
+    signal norme, biss : std_logic;
     signal b_valid, b_trame, b_dt, b_sync : std_logic;
     signal b_cb, b_y0, b_cr, b_y1 : std_logic_vector(7 downto 0);
     signal b_ligne, b_x : unsigned(8 downto 0);
@@ -5603,7 +5830,7 @@ begin
 
     -- chaîne d'émission et sorties LVDS (repos 01010101 avant le premier symbole)
     u_tx : entity work.dvbs_sd
-        generic map (G_MCPC => true)
+        generic map (G_MCPC => true, G_RS => 5_000_000)
         port map (clk => clk_sys, rst => rst, m_valid => sd_valid, m_ready => '1', m_i => sd_i, m_q => sd_q,
                   clk_v => tvp_sclk, rst_v => rst_sclk, v_valid => b_valid, v_cb => b_cb, v_y0 => b_y0, v_cr => b_cr, v_y1 => b_y1,
                   v_trame => b_trame, v_ligne => b_ligne, v_x => b_x, v_dt => b_dt);
@@ -5622,21 +5849,16 @@ begin
     u_bt656 : entity work.bt656_rx
         port map (tvp_sclk, rst_sclk, tvp_d, b_valid, b_cb, b_y0, b_cr, b_y1, b_trame, b_ligne, b_x, b_dt, b_sync);
 
-    -- registres du microcontrôleur
+    -- choix automatique du mode (entrées sondées toutes les minutes)
+    u_choix : entity work.choix_auto generic map (G_HZ => G_TVP_HZ)
+        port map (clk_sys, rst, present, video_ok, entree, choix, norme, biss, mode);
+
     process (clk_sys)
     begin
         if rising_edge(clk_sys) then
             pll_s <= pll_s(0) & verrou;
         end if;
     end process;
-    etat <= "0000" & entree & video_ok & present & pll_s(1);
-    u_regs : entity work.regs_i2c port map (clk_sys, rst, m_scl_i, m_sda_i, m_sda_oe, etat, r_mode, r_entree);
-    m_scl_i <= to_x01(mcu_scl);
-    m_sda_i <= to_x01(mcu_sda);
-    mcu_sda <= '0' when m_sda_oe = '1' else 'Z';
-    choix <= "01" when r_entree(1 downto 0) = "01" else
-             "10" when r_entree(1 downto 0) = "10" else "00";
-    mire_imposee <= '1' when r_entree(1 downto 0) = "11" else '0';
 
     led_pll   <= pll_s(1);
     led_tvp   <= present;
