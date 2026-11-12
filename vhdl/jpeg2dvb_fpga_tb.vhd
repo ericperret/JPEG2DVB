@@ -1169,7 +1169,7 @@ architecture sim of tb_rc is
 begin
     clk <= not clk after 5 ns;
     dut : entity work.rate_ctrl generic map (G_COLS => G_COLS, G_ROWS => G_ROWS, G_T => G_T, G_GOP => 12)
-        port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
+        port map (clk => clk, rst => rst, s_valid => s_valid, s_ready => s_ready, s_data => s_data, m_valid => m_valid, m_ready => m_ready, m_data => m_data, v_valid => v_valid, v_ready => v_ready, v_lg => v_lg, v_fin => v_fin, code => code, code_ok => code_ok);
 
     -- source : E : — → T : compteur, un coefficient par acceptation, trous
     --   aléatoires → S : flux vers la vanne
@@ -2355,8 +2355,7 @@ architecture sim of tb_top is
     constant TQ : time := 250 ns;                       -- quart de période SCL (1 MHz)
     constant ADR : std_logic_vector(6 downto 0) := "0101010";
     signal osc, sclk : std_logic := '0';
-    signal tvp_scl, tvp_sda, mcu_sda : std_logic;
-    signal mcu_scl : std_logic := '1';
+    signal tvp_scl, tvp_sda : std_logic;
     signal tvp_xtal1, tvp_resetb, tvp_pdn : std_logic;
     signal sd_i_p, sd_i_n, sd_q_p, sd_q_n : std_logic;
     signal led_pll, led_tvp, led_video : std_logic;
@@ -2368,107 +2367,25 @@ begin
     sclk <= not sclk after 18.5 ns;
     tvp_scl <= 'H';
     tvp_sda <= 'H';
-    mcu_sda <= 'H';
 
     dut : entity work.jpeg2dvb_top generic map (G_TVP_HZ => 2_000_000)
-        port map (osc, tvp_xtal1, tvp_resetb, tvp_pdn, tvp_scl, tvp_sda, sclk, x"10", mcu_scl, mcu_sda,
+        port map (osc, tvp_xtal1, tvp_resetb, tvp_pdn, tvp_scl, tvp_sda, sclk, x"10",
                   sd_i_p, sd_i_n, sd_q_p, sd_q_n, led_pll, led_tvp, led_video);
 
-    -- microcontrôleur : E : scénario → T : transactions I²C, comparaisons
-    --   → S : err_i2c, fin_i2c
-    mcu : process
+    -- scénario : E : — → T : LED PLL avant et après verrouillage, RESETB et PDN du
+    --   décodeur à 600 µs, décodeur absent (bus sans réponse) → S : err_i2c, fin_i2c
+    scen : process
         variable err : natural := 0;
-        variable ok  : boolean;
-        variable v   : std_logic_vector(7 downto 0);
-        procedure bas is begin mcu_sda <= '0'; end procedure;
-        procedure haut is begin mcu_sda <= 'Z'; end procedure;
-        procedure debut is
-        begin
-            haut; wait for TQ; mcu_scl <= '1'; wait for TQ; bas; wait for TQ; mcu_scl <= '0'; wait for TQ;
-        end procedure;
-        procedure fin is
-        begin
-            bas; wait for TQ; mcu_scl <= '1'; wait for TQ; haut; wait for 2 * TQ;
-        end procedure;
-        -- emet : E : octet → T : 8 bits puis acquittement lu → S : ack
-        procedure emet(o : std_logic_vector(7 downto 0); ack : out boolean) is
-        begin
-            for i in 7 downto 0 loop
-                if o(i) = '0' then bas; else haut; end if;
-                wait for TQ; mcu_scl <= '1'; wait for 2 * TQ; mcu_scl <= '0'; wait for TQ;
-            end loop;
-            haut; wait for TQ; mcu_scl <= '1'; wait for TQ;
-            ack := to_x01(mcu_sda) = '0';
-            wait for TQ; mcu_scl <= '0'; wait for TQ;
-        end procedure;
-        -- recoit : E : dernier octet → T : 8 bits lus, ACK ou NACK → S : octet
-        procedure recoit(dernier : boolean; o : out std_logic_vector(7 downto 0)) is
-        begin
-            haut;
-            for i in 7 downto 0 loop
-                wait for TQ; mcu_scl <= '1'; wait for TQ;
-                o(i) := to_x01(mcu_sda);
-                wait for TQ; mcu_scl <= '0'; wait for TQ;
-            end loop;
-            if dernier then haut; else bas; end if;
-            wait for TQ; mcu_scl <= '1'; wait for 2 * TQ; mcu_scl <= '0'; wait for TQ;
-            haut;
-        end procedure;
         procedure erreur(m : string) is
         begin
             report "tb_top : " & m severity warning;
             err := err + 1;
         end procedure;
-        procedure ecrire(r, d : std_logic_vector(7 downto 0)) is
-            variable a1, a2, a3 : boolean;
-        begin
-            debut; emet(ADR & '0', a1); emet(r, a2); emet(d, a3); fin;
-            if not (a1 and a2 and a3) then erreur("ecriture du registre " & to_hstring(r) & " non acquittee"); end if;
-        end procedure;
-        procedure lire(r : std_logic_vector(7 downto 0); n : positive; o : out std_logic_vector) is
-            variable a1, a2, a3 : boolean;
-            variable x          : std_logic_vector(7 downto 0);
-        begin
-            debut; emet(ADR & '0', a1); emet(r, a2);
-            debut; emet(ADR & '1', a3);
-            for k in 0 to n - 1 loop
-                recoit(k = n - 1, x);
-                o(o'left - 8 * k downto o'left - 8 * k - 7) := x;
-            end loop;
-            fin;
-            if not (a1 and a2 and a3) then erreur("lecture du registre " & to_hstring(r) & " non acquittee"); end if;
-        end procedure;
-        procedure attendu(r, att : std_logic_vector(7 downto 0); m : string) is
-            variable x : std_logic_vector(7 downto 0);
-        begin
-            lire(r, 1, x);
-            if x /= att then erreur(m & " : " & to_hstring(x) & " lu, " & to_hstring(att) & " attendu"); end if;
-        end procedure;
-        variable bloc : std_logic_vector(39 downto 0);
     begin
         wait for 15 us;
         if led_pll /= '0' then erreur("LED PLL allumee avant verrouillage"); end if;
         wait for 15 us;
         if led_pll /= '1' then erreur("LED PLL eteinte apres verrouillage"); end if;
-        -- lecture groupée des 5 registres (pointeur incrémenté)
-        lire(x"00", 5, bloc);
-        if bloc /= x"4A01000001" then erreur("registres 00h a 04h : " & to_hstring(bloc) & " lu, 4A01000001 attendu"); end if;
-        ecrire(x"02", x"FF");
-        attendu(x"02", x"1F", "MODE apres ecriture FFh");
-        ecrire(x"03", x"FE");
-        attendu(x"03", x"02", "ENTREE apres ecriture FEh");
-        ecrire(x"00", x"55");
-        attendu(x"00", x"4A", "identifiant apres ecriture");
-        ecrire(x"04", x"FF");
-        attendu(x"04", x"01", "ETAT (PLL verrouilles, decodeur absent)");
-        -- écriture groupée (pointeur incrémenté) puis relecture
-        debut; emet(ADR & '0', ok); emet(x"02", ok); emet(x"05", ok); emet(x"01", ok); fin;
-        lire(x"02", 2, bloc(39 downto 24));
-        if bloc(39 downto 24) /= x"0501" then erreur("ecriture groupee 02h, 03h : " & to_hstring(bloc(39 downto 24)) & " lu, 0501 attendu"); end if;
-        -- adresse étrangère
-        debut; emet("0101011" & '0', ok); fin;
-        if ok then erreur("adresse 2Bh acquittee"); end if;
-        attendu(x"00", x"4A", "identifiant apres adresse etrangere");
         if now < 600 us then wait for 600 us - now; end if;
         if tvp_resetb /= '1' or tvp_pdn /= '1' then erreur("RESETB ou PDN du decodeur a 0 a 600 us"); end if;
         if led_tvp /= '0' or led_video /= '0' then erreur("LED decodeur ou video allumee, decodeur absent"); end if;
@@ -2518,12 +2435,513 @@ begin
     begin
         wait until fin_i2c;
         if err_i2c = 0 and n_ecart = 0 and n_trou = 0 and n_grp > 10_000 and n_var > 1_000 then
-            report "OK top : registres I2C (identifiant, defauts, masques, lecture seule, ETAT, ecriture et lecture groupees, adresse etrangere), LED, RESETB, "
+            report "OK top : LED, RESETB, decodeur absent (DVB-S, image noire et mire), "
                    & integer'image(n_grp) & " groupes LVDS relus en serie sans ecart ni trou";
         else
             report "ECHEC top : " & integer'image(err_i2c) & " erreurs I2C, " & integer'image(n_ecart) & " ecarts LVDS, " & integer'image(n_trou) & " trous, "
                    & integer'image(n_grp) & " groupes, " & integer'image(n_var) & " variations" severity error;
         end if;
         finish;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_s2 : émetteur DVB-S2 (dvbs2_tx) : paquets TS lus dans G_IN, symboles
+--   comparés un à un à la référence de dvbs2.js (G_OUT : un octet par symbole,
+--   bit 1 = I négatif, bit 0 = Q négatif) ; la sortie est consommée à un
+--   symbole tous les 16 cycles (5 MS/s) : après le premier symbole, aucun
+--   cycle d'attente ne doit manquer (sigma-delta jamais en attente)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_s2 is
+    generic (
+        G_IN    : string  := "s2_ts.bin";
+        G_N_IN  : natural := 6016;
+        G_OUT   : string  := "s2_sym.bin";
+        G_N_OUT : natural := 99846;
+        G_ECRIT : string  := ""                  -- si non vide : symboles du module écrits dans ce fichier
+    );
+end entity tb_s2;
+
+architecture sim of tb_s2 is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal s_valid : std_logic := '0';
+    signal s_ready : std_logic;
+    signal s_data  : std_logic_vector(7 downto 0) := (others => '0');
+    signal s_sop   : std_logic := '0';
+    signal m_valid : std_logic;
+    signal m_ready : std_logic := '0';
+    signal m_i, m_q : std_logic;
+begin
+    clk <= not clk after 6.25 ns;
+    dut : entity work.dvbs2_tx port map (clk, rst, s_valid, s_ready, s_data, s_sop, m_valid, m_ready, m_i, m_q);
+
+    process
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        wait;
+    end process;
+
+    -- source : E : fichier TS → T : un octet par acceptation, trous aléatoires → S : flux
+    source : process (clk)
+        file f          : octets_f open read_mode is REF & G_IN;
+        variable c      : character;
+        variable n      : natural := 0;
+        variable r      : std_logic_vector(15 downto 0) := x"ACE1";
+        variable tenu   : boolean := false;
+    begin
+        if rising_edge(clk) then
+            if rst = '0' then
+                if s_valid = '1' and s_ready = '1' then
+                    tenu := false;
+                end if;
+                if not tenu then
+                    r := alea(r);
+                    if n < G_N_IN and (r(2 downto 0) /= "000") then
+                        read(f, c);
+                        s_data  <= octet(c);
+                        s_sop   <= '1' when n mod 188 = 0 else '0';
+                        s_valid <= '1';
+                        n := n + 1;
+                        tenu := true;
+                    else
+                        s_valid <= '0';
+                        s_sop   <= '0';
+                    end if;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    -- sortie : un symbole tous les 16 cycles
+    cadence : process (clk)
+        variable k : natural := 0;
+    begin
+        if rising_edge(clk) then
+            k := (k + 1) mod 16;
+            m_ready <= '1' when k = 0 and rst = '0' else '0';
+        end if;
+    end process;
+
+    -- contrôle : E : symboles acceptés, fichier de référence → T : comparaison
+    --   symbole par symbole, attentes de la sortie → S : verdict
+    controle : process (clk)
+        file f          : octets_f open read_mode is REF & G_OUT;
+        file fe         : octets_f;
+        variable a      : character;
+        variable v      : std_logic_vector(7 downto 0);
+        variable n, err, attente : natural := 0;
+        variable ouvert : boolean := false;
+        variable debut  : boolean := false;
+        variable cycles : natural := 0;
+    begin
+        if rising_edge(clk) then
+            cycles := cycles + 1;
+            if m_ready = '1' and debut and m_valid = '0' and n < G_N_OUT then attente := attente + 1; end if;
+            if m_valid = '1' and m_ready = '1' and n < G_N_OUT then
+                debut := true;
+                read(f, a);
+                v := octet(a);
+                if G_ECRIT /= "" then
+                    if not ouvert then file_open(fe, G_ECRIT, write_mode); ouvert := true; end if;
+                    write(fe, character'val(2 * to_integer(unsigned'("" & m_i)) + to_integer(unsigned'("" & m_q))));
+                end if;
+                if m_i /= v(1) or m_q /= v(0) then
+                    if err < 10 then
+                        report "ecart au symbole " & integer'image(n) & " (trame " & integer'image(n / 33282) & ", rang " & integer'image(n mod 33282) & ")" severity warning;
+                    end if;
+                    err := err + 1;
+                end if;
+                n := n + 1;
+                if n = G_N_OUT then
+                    if err = 0 and attente = 0 then
+                        report "OK s2 : " & integer'image(n) & " symboles identiques (" & integer'image(cycles) & " cycles), sortie jamais en attente";
+                    else
+                        report "ECHEC s2 : " & integer'image(err) & " ecarts, " & integer'image(attente) & " attentes de la sortie" severity error;
+                    end if;
+                    finish;
+                end if;
+            end if;
+            if cycles > 3_000_000 then
+                report "ECHEC s2 : delai depasse apres " & integer'image(n) & " symboles" severity error;
+                finish;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_e2e : chaîne complète dvbs_sd (caméra BT.656 → bt656_rx → codeur 720 × 576
+--   par demi-trames, mire, ts_mux, embrouillage BISS, DVB-S ou DVB-S2 →
+--   symboles) ; la caméra rejoue bt656.bin en boucle à 27 MHz ; sont écrits :
+--   G_TS_AV : paquets TS avant l'embrouillage ; G_TS_AP : après (identiques si
+--   biss = 0) ; G_SYM : symboles à l'entrée de sigma_delta (un octet par
+--   symbole, bit 1 = I négatif, bit 0 = Q négatif) ; fin au G_NTS-ième paquet
+--   Paramètres : G_NORME, G_BISS, G_NUM (4 chiffres BCD)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_e2e is
+    generic (
+        G_NORME : natural := 0;
+        G_BISS  : natural := 0;
+        G_NUM   : std_logic_vector(15 downto 0) := x"4821";
+        G_NTS   : natural := 400;
+        G_TS_AV : string  := "e2e_av.ts";
+        G_TS_AP : string  := "e2e_ap.ts";
+        G_SYM   : string  := "e2e_sym.bin"
+    );
+end entity tb_e2e;
+
+architecture sim of tb_e2e is
+    signal clk_v, clk : std_logic := '0';
+    signal rst, rst_v : std_logic := '1';
+    signal d       : std_logic_vector(7 downto 0) := x"10";
+    signal v_valid, v_trame, v_dt, v_sync : std_logic;
+    signal v_cb, v_y0, v_cr, v_y1 : std_logic_vector(7 downto 0);
+    signal v_ligne, v_x : unsigned(8 downto 0);
+    signal m_valid : std_logic;
+    signal m_i, m_q : std_logic_vector(7 downto 0);
+    signal norme, biss : std_logic;
+begin
+    clk_v <= not clk_v after 18.5 ns;
+    clk   <= not clk after 6.25 ns;
+    norme <= '1' when G_NORME = 1 else '0';
+    biss  <= '1' when G_BISS = 1 else '0';
+    rx : entity work.bt656_rx port map (clk_v, rst_v, d, v_valid, v_cb, v_y0, v_cr, v_y1, v_trame, v_ligne, v_x, v_dt, v_sync);
+    dut : entity work.dvbs_sd generic map (G_MCPC => true, G_RS => 5_000_000)
+        port map (clk => clk, rst => rst, norme => norme, biss => biss, biss_num => G_NUM, m_valid => m_valid, m_ready => '1', m_i => m_i, m_q => m_q,
+                  clk_v => clk_v, rst_v => rst_v, v_valid => v_valid, v_cb => v_cb, v_y0 => v_y0, v_cr => v_cr, v_y1 => v_y1,
+                  v_trame => v_trame, v_ligne => v_ligne, v_x => v_x, v_dt => v_dt);
+
+    process
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        wait;
+    end process;
+
+    -- caméra : E : bt656.bin → T : un octet par cycle de 27 MHz, en boucle → S : d
+    camera : process
+        file f     : octets_f;
+        variable c : character;
+    begin
+        wait until rising_edge(clk_v);
+        wait until rising_edge(clk_v);
+        rst_v <= '0';
+        loop
+            file_open(f, REF & "bt656.bin", read_mode);
+            while not endfile(f) loop
+                read(f, c);
+                d <= octet(c);
+                wait until rising_edge(clk_v);
+            end loop;
+            file_close(f);
+        end loop;
+    end process;
+
+    -- captures : E : signaux internes de dvbs_sd → T : écriture des octets
+    --   et des symboles acceptés → S : fichiers, fin de simulation
+    capture : process
+        alias t_valid is << signal .tb_e2e.dut.t_valid : std_logic >>;
+        alias t_ready is << signal .tb_e2e.dut.t_ready : std_logic >>;
+        alias t_data  is << signal .tb_e2e.dut.t_data : std_logic_vector(7 downto 0) >>;
+        alias q_valid is << signal .tb_e2e.dut.q_valid : std_logic >>;
+        alias q_ready is << signal .tb_e2e.dut.q_ready : std_logic >>;
+        alias q_data  is << signal .tb_e2e.dut.q_data : std_logic_vector(7 downto 0) >>;
+        alias sd_valid is << signal .tb_e2e.dut.sd_valid : std_logic >>;
+        alias sd_ready is << signal .tb_e2e.dut.sd_ready : std_logic >>;
+        alias sd_i    is << signal .tb_e2e.dut.sd_i : std_logic >>;
+        alias sd_q    is << signal .tb_e2e.dut.sd_q : std_logic >>;
+        file fa, fb, fs : octets_f;
+        variable na, nb : natural := 0;
+    begin
+        file_open(fa, G_TS_AV, write_mode);
+        file_open(fb, G_TS_AP, write_mode);
+        file_open(fs, G_SYM, write_mode);
+        loop
+            wait until rising_edge(clk);
+            if t_valid = '1' and t_ready = '1' then
+                write(fa, character'val(to_integer(unsigned(t_data))));
+                na := na + 1;
+            end if;
+            if q_valid = '1' and q_ready = '1' then
+                write(fb, character'val(to_integer(unsigned(q_data))));
+                nb := nb + 1;
+            end if;
+            if sd_valid = '1' and sd_ready = '1' then
+                write(fs, character'val((2 * to_integer(unsigned'("" & sd_i))) + to_integer(unsigned'("" & sd_q))));
+            end if;
+            if nb >= G_NTS * 188 then
+                report "OK e2e : " & integer'image(nb / 188) & " paquets TS captures (norme " & integer'image(G_NORME) & ", biss " & integer'image(G_BISS) & ")";
+                file_close(fa); file_close(fb); file_close(fs);
+                finish;
+            end if;
+        end loop;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_choix : banc de test du choix automatique du mode (choix_auto, G_HZ = 1000,
+--   T_SONDE = 600 cycles, minute = 60 000 cycles) ; décodeur simulé : video_ok
+--   selon l'entrée imposée (choix) et les sources branchées (a_on, b_on) ;
+--   quatre scénarios, puis un changement de sources détecté à la minute suivante
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+
+entity tb_choix is
+end entity tb_choix;
+
+architecture sim of tb_choix is
+    signal clk, rst, present, video_ok, entree : std_logic := '0';
+    signal a_on, b_on : std_logic := '0';
+    signal choix, mode : std_logic_vector(1 downto 0);
+    signal norme, biss : std_logic;
+begin
+    clk <= not clk after 5 ns;
+    dut : entity work.choix_auto generic map (G_HZ => 1000)
+        port map (clk, rst, present, video_ok, entree, choix, norme, biss, mode);
+    entree   <= choix(1);
+    video_ok <= a_on when choix = "01" else b_on;
+
+    scen : process
+        variable err : natural := 0;
+        procedure essai(nom : string; a, b : std_logic; m : std_logic_vector(1 downto 0); n, bs : std_logic) is
+        begin
+            rst <= '1'; present <= '0'; a_on <= a; b_on <= b;
+            wait for 30 ns;
+            rst <= '0';
+            wait for 100 us;                          -- tenu sans décodeur identifié
+            assert mode = "00" report nom & " : mode change avant present" severity failure;
+            present <= '1';
+            wait for 14 us;                           -- 1 300 cycles
+            if mode /= m or norme /= n or biss /= bs then
+                report "ECHEC " & nom & " : mode " & integer'image(to_integer(unsigned(mode))) & " norme " & std_logic'image(norme) & " biss " & std_logic'image(biss) severity warning;
+                err := err + 1;
+            else
+                report nom & " : mode " & integer'image(to_integer(unsigned(mode))) & " norme " & std_logic'image(norme) & " biss " & std_logic'image(biss) & " choix " & integer'image(to_integer(unsigned(choix))) & " ok";
+            end if;
+        end procedure;
+    begin
+        essai("A seule", '1', '0', "01", '0', '0');
+        essai("B seule", '0', '1', "10", '1', '0');
+        if choix /= "10" then report "ECHEC B seule : choix doit imposer AIP1B" severity warning; err := err + 1; end if;
+        essai("A+B    ", '1', '1', "11", '0', '1');
+        essai("aucune ", '0', '0', "00", '0', '0');
+        -- changement de sources : relevé à la minute suivante seulement
+        essai("A seule", '1', '0', "01", '0', '0');
+        b_on <= '1';
+        wait for 300 us;                              -- 30 000 cycles : mode tenu
+        if mode /= "01" then report "ECHEC : mode change avant la minute" severity warning; err := err + 1; end if;
+        wait for 400 us;                              -- 70 000 cycles : minute passée
+        if mode /= "11" or biss /= '1' then report "ECHEC : changement non pris a la minute" severity warning; err := err + 1; end if;
+        if err = 0 then
+            report "OK choix_auto : 4 scenarios et changement a la minute";
+        else
+            report "ECHEC choix_auto : " & integer'image(err) & " ecarts" severity error;
+        end if;
+        finish;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_biss : banc de test du tirage du numéro BISS (tirage_biss) : valeur = nombre
+--   de cycles écoulés depuis la remise à zéro, en BCD, figée au premier present
+--   (present vu au cycle 12 344 : 2344 ; second essai : 4 chiffres BCD valides)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+
+entity tb_biss is
+end entity tb_biss;
+
+architecture sim of tb_biss is
+    signal clk, rst, present : std_logic := '0';
+    signal num : std_logic_vector(15 downto 0);
+begin
+    clk <= not clk after 5 ns;
+    dut : entity work.tirage_biss port map (clk, rst, present, num);
+
+    scen : process
+        variable err : natural := 0;
+        variable k   : natural := 0;
+    begin
+        rst <= '1';
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        k := 0;
+        -- k : cycles lus avec rst = 0 ; le DUT voit present au cycle k + 1
+        while k < 12344 loop
+            wait until rising_edge(clk);
+            k := k + 1;
+        end loop;
+        present <= '1';                               -- vu au cycle 12 344
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        if num /= x"2344" then
+            report "ECHEC : num = " & to_hstring(num) & " au lieu de 2344" severity warning; err := err + 1;
+        end if;
+        for i in 1 to 20000 loop                      -- tenu, malgré present
+            wait until rising_edge(clk);
+        end loop;
+        present <= '0';
+        for i in 1 to 100 loop wait until rising_edge(clk); end loop;
+        present <= '1';
+        wait until rising_edge(clk);
+        if num /= x"2344" then
+            report "ECHEC : num non tenu : " & to_hstring(num) severity warning; err := err + 1;
+        end if;
+        -- remise à zéro : nouveau tirage, chiffres BCD valides
+        rst <= '1'; present <= '0';
+        wait until rising_edge(clk); wait until rising_edge(clk);
+        rst <= '0';
+        for i in 1 to 9876 loop wait until rising_edge(clk); end loop;
+        present <= '1';
+        for i in 1 to 3 loop wait until rising_edge(clk); end loop;
+        for d in 0 to 3 loop
+            if unsigned(num(4 * d + 3 downto 4 * d)) > 9 then
+                report "ECHEC : chiffre non BCD : " & to_hstring(num) severity warning; err := err + 1;
+            end if;
+        end loop;
+        report "second tirage : " & to_hstring(num);
+        if err = 0 then
+            report "OK tirage_biss : valeur, maintien, BCD";
+        else
+            report "ECHEC tirage_biss : " & integer'image(err) & " ecarts" severity error;
+        end if;
+        finish;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_numero : image de la mire avec numéro BISS affiché (aff = 1, num = 1234 ou
+--   7890) ; la première image (152 064 octets) est écrite dans mire_num.bin
+--   (G_AFF = 0 : sans numéro, doit égaler la première image de mire_mb.bin)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_numero is
+    generic (
+        G_AFF : natural := 1;
+        G_NUM : std_logic_vector(15 downto 0) := x"1234";
+        G_OUT : string := "mire_num.bin"
+    );
+end entity tb_numero;
+
+architecture sim of tb_numero is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal m_valid, m_debut : std_logic;
+    signal m_data  : unsigned(7 downto 0);
+    signal aff_s   : std_logic;
+begin
+    clk <= not clk after 5 ns;
+    aff_s <= '1' when G_AFF = 1 else '0';
+    dut : entity work.mire_gen port map (clk => clk, rst => rst, m_valid => m_valid, m_ready => '1', m_data => m_data, m_debut => m_debut,
+                                         aff => aff_s, num => G_NUM);
+    process
+    begin
+        wait until rising_edge(clk); wait until rising_edge(clk);
+        rst <= '0';
+        wait;
+    end process;
+    process (clk)
+        file f : octets_f open write_mode is G_OUT;
+        variable n : natural := 0;
+    begin
+        if rising_edge(clk) then
+            if m_valid = '1' then
+                write(f, character'val(to_integer(m_data)));
+                n := n + 1;
+                if n = 152064 then
+                    report "OK numero : image ecrite dans " & G_OUT;
+                    finish;
+                end if;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_biss_chaine : BISS dans la chaîne dvbs_sd (mire seule, 10 MS/s, biss = 1,
+--   numéro 1234) ; les paquets TS avant et après csa_enc (noms externes
+--   VHDL-2008) sont écrits dans biss_in.bin et biss_out.bin ; la comparaison
+--   avec fpga_test/csa.js (mot de contrôle 1234125834123480) se fait hors banc
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_biss_chaine is
+    generic (
+        G_PAQ : natural := 300
+    );
+end entity tb_biss_chaine;
+
+architecture sim of tb_biss_chaine is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal m_valid : std_logic;
+    signal m_i, m_q : std_logic_vector(7 downto 0);
+begin
+    clk <= not clk after 6.25 ns;
+    dut : entity work.dvbs_sd generic map (G_IMAGES => 2, G_RS => 10_000_000)
+        port map (clk => clk, rst => rst, biss => '1', biss_num => x"1234", m_valid => m_valid, m_ready => '1', m_i => m_i, m_q => m_q);
+    process
+    begin
+        wait until rising_edge(clk); wait until rising_edge(clk);
+        rst <= '0';
+        wait;
+    end process;
+
+    espion : process (clk)
+        alias t_valid is <<signal .tb_biss_chaine.dut.t_valid : std_logic>>;
+        alias t_ready is <<signal .tb_biss_chaine.dut.t_ready : std_logic>>;
+        alias t_data  is <<signal .tb_biss_chaine.dut.t_data : std_logic_vector(7 downto 0)>>;
+        alias q_valid is <<signal .tb_biss_chaine.dut.q_valid : std_logic>>;
+        alias q_ready is <<signal .tb_biss_chaine.dut.q_ready : std_logic>>;
+        alias q_data  is <<signal .tb_biss_chaine.dut.q_data : std_logic_vector(7 downto 0)>>;
+        file fi : octets_f open write_mode is "biss_in.bin";
+        file fo : octets_f open write_mode is "biss_out.bin";
+        variable ni, no : natural := 0;
+    begin
+        if rising_edge(clk) then
+            if t_valid = '1' and t_ready = '1' and ni < G_PAQ * 188 then
+                write(fi, character'val(to_integer(unsigned(t_data)))); ni := ni + 1;
+            end if;
+            if q_valid = '1' and q_ready = '1' and no < G_PAQ * 188 then
+                write(fo, character'val(to_integer(unsigned(q_data)))); no := no + 1;
+            end if;
+            if ni = G_PAQ * 188 and no = G_PAQ * 188 then
+                report "OK biss_chaine : " & integer'image(G_PAQ) & " paquets avant / apres csa_enc ecrits";
+                finish;
+            end if;
+        end if;
     end process;
 end architecture sim;

@@ -10,7 +10,7 @@
 
 🇫🇷 [Version française : LISEZMOI.md](LISEZMOI.md)
 
-VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF050T FPGA, specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
+VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF100T FPGA, specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
 
 Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interfaces (flow control exercised with random gaps in every testbench).
 
@@ -25,11 +25,13 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `vlc_enc` + `vlc_tab_pkg` | MPEG-2 VLC: differential DC, B.14, escape, end of block | 05 | `tb_vlc` | ✔ bits and lengths |
 | `es_mux` + `bit_packer` | Elementary stream: headers, 12-picture GOP, slices with their own scale code, sequence end | 06 | `tb_es` | ✔ 3 pictures |
 | `ts_mux` | PES (PTS) and constant-rate transport stream: PAT/PMT 80 ms, PCR 30 ms, null packets; scheduling and PTS by running sums, no multiplier; `G_MCPC` mode: two programmes (PMT 0x0100 / 0x0200), `G_TRAMES1`: channel 1 in field pictures | 07, 08 | `tb_octets` (`G_DUT` 6 = MCPC) | ✔ 976 packets, MCPC 357,200 bytes |
-| `csa_enc` + `csa_tab_pkg` | DVB-CSA scrambling of the packets of one PID, fixed key (BISS-1): chained block cipher from the end of the packet, then stream cipher; stand-alone module, not yet in the chain | — (`fpga_test/csa.js`) | `tb_octets` | ✔ 177 packets, boundary cases |
+| `csa_enc` + `csa_tab_pkg` | DVB-CSA scrambling of the packets of one PID, fixed key (BISS-1): chained block cipher from the end of the packet, then stream cipher; in the `dvbs_sd` chain between `ts_mux` and energy dispersal (PID 0x0101, active when `biss` = 1) | — (`fpga_test/csa.js`) | `tb_octets` (`csa`, `csa_biss`) | ✔ 177 packets, boundary cases, control word of number 1234 |
 | `prbs_disp` | Energy dispersal | 09 | `tb_octets` | ✔ identical |
 | `rs_enc` | RS(204,188) | 10 | `tb_octets` | ✔ identical |
 | `interleaver` | Forney interleaver I = 12, M = 17, synchronous-read memory | 11 | `tb_octets` | ✔ identical |
 | `conv_enc` | Convolutional encoder K = 7, 171/133, puncturing 1/2 to 7/8 | 12 | `tb_conv` | ✔ all 5 rates |
+| `dvbs2_tx` + `dvbs2_pkg` + `mem_sdp` | DVB-S2 (EN 302 307-1) QPSK 1/4, 16,200-bit normal frame, pilots, CCM: baseband header, BCH, LDPC (read-modify-write accumulation with forwarding), interleaving, Gold scrambling, physical-layer header | — (`fpga_test/dvbs2.js`, GNU Radio gr-dtv reference) | `tb_s2` | ✔ 3 frames, 99,846 identical symbols |
+| `choix_auto` + `tirage_biss` | Automatic mode from the locked inputs, re-evaluated every minute; 4-digit BISS number drawn at power-up | board | `tb_choix`, `tb_biss` | ✔ 4 scenarios and change at the minute; value, hold, BCD |
 | `qpsk_map` | QPSK, bit 0 → +1 | 13 | `tb_qpsk` | ✔ identical |
 | `srrc_poly` + `srrc_coef_pkg` | SRRC α = 0.35, 8 phases × 13 16-bit coefficients, no multiplier | 14 (`.cs16`) | `tb_srrc` | ✔ 160,000 samples |
 | `tx_backend` | Back-end chain: TS → I/Q (steps 09 to 14 assembled) | 08 → 14 | `tb_backend` | ✔ 160,000 samples, one per clock |
@@ -38,11 +40,11 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `dvbs_tx` | Complete transmitter: test pattern → I/Q (`video_enc` + `tx_backend`) | 01 → 14 | `tb_dvbs` | ✔ 160,000 samples |
 | `bt656_rx` | BT.656 receiver for the TVP5150AM1 decoder: SAV / EAV codes, field, line, Cb Y Cr Y pairs, 27 MHz SCLK clock | PAL input | `tb_bt656` | ✔ 414,720 pairs (4 fields, colour and black and white) |
 | `i2c_maitre` + `tvp_ctrl` | TVP5150AM1 control: start-up, identification, forced PAL, VBI off, automatic or forced AIP1A / AIP1B selection, I²C watchdog and bus recovery | PAL input | `tb_tvp` (`tb_tvp5150` model) | ✔ 4 scenarios |
-| `dvbs_sd` | Transmitter to the sigma-delta bits; `G_MCPC`: programme 1 camera (`cam_mb` → `codeur`, black picture without a camera), programme 2 test pattern, then `ts_mux` → channel → `sigma_delta` | 01 → 14 | blocks verified by `video`, `mcpc`, `cam`, `chaine`, `sdm` | ✔ composed, end-to-end test pending |
-| `codeur` | Complete encoder of one programme: `mire_gen` or `cam_mb` macroblocks → DCT → TM5 rate control → quantisation → zigzag → VLC → ES; 352 × 288 pictures or 720 × 576 as two field pictures (`G_TRAMES`) | 01 → 06 | `tb_codeur` | ✔ compiled, elaborated |
+| `dvbs_sd` | Transmitter to the sigma-delta bits; `G_MCPC`: programme 1 camera (`cam_mb` → `codeur`, black picture without camera), programme 2 test pattern (BISS number displayed), `ts_mux` → `csa_enc` → DVB-S (`prbs_disp` … `conv_enc`) or DVB-S2 (`dvbs2_tx`) according to `norme` → `sigma_delta`; reset on standard change | 01 → 14 | blocks checked by `video`, `mcpc`, `cam`, `csa`, `s2`, `chaine`, `sdm` | ✔ assembled, blocks verified; full chain too slow to simulate |
+| `codeur` | Complete encoder of one programme: `mire_gen` or `cam_mb` macroblocks → DCT → TM5 rate control → quantisation → zigzag → VLC → ES; 352 × 288 pictures, or 720 × 576 as two field pictures (`G_TRAMES`) | 01 → 06 | `tb_codeur` | ✔ 720 × 576: 4 fields decoded by ffmpeg match the input |
 | `cam_mb` | Camera path: BT.656 pairs (27 MHz) → 4:2:0 macroblocks (80 MHz), rounded mean of the chroma lines, crossing between clocks | PAL input | `tb_cam` | ✔ 1,244,160 bytes (`cam_mb.bin`) |
 | `horloges` + `sortie_lvds` | Wrappers of the Libero cores: PLLs `PF_CCC_SYS` (80 / 320 MHz) and `PF_CCC_TVP` (14.318182 MHz), LVDS serialiser `PF_IOD_TX_SD` (2 lanes, 640 Mbit/s) | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | to validate in Libero |
-| `regs_i2c` + `jpeg2dvb_top` | Top level: PLLs, reset, LVDS, decoder, microcontroller registers, LEDs | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | ✔ registers, LEDs; LVDS reference to regenerate for the MCPC top level |
+| `jpeg2dvb_top` | Top level: PLLs, reset, LVDS, decoder, automatic choice, LEDs | board | `tb_top` (models `jpeg2dvb_ip_sim.vhd`) | ✔ LEDs, decoder absent, 45,247 LVDS groups |
 
 Every module passes `ghdl --synth` without latches (synthesisability check; the real synthesis is done in Libero SoC).
 
@@ -60,7 +62,7 @@ Wiring required by `tvp_ctrl`:
 
 ## MCPC chain (`dvbs_sd`, `G_MCPC`)
 
-Two programmes in one transport stream (DVB-S, FEC 1/2, 10 MS/s):
+Two programmes in one transport stream (DVB-S, FEC 1/2, 5 MS/s):
 
 | | Programme 1 | Programme 2 |
 |---|---|---|
@@ -77,65 +79,22 @@ Verification: `ts_mux` in MCPC mode is bit-exact against `mcpc.js` (`mcpc` testb
 
 Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz for the serialisers) and PLL `PF_CCC_TVP` (exact 14.318182 MHz: VCO 1,575 MHz / 110) to the decoder XTAL1. Reset held until both PLLs are locked. I and Q LVDS outputs at 640 Mbit/s (8:1 serialisers). Active-high LEDs: PLLs locked, decoder present, video locked.
 
-Microcontroller registers (separate I²C bus, FPGA slave at address 2Ah, `regs_i2c`):
+No microcontroller and no register: fixed settings, 5 MS/s, FEC 1/2. `choix_auto` probes both video inputs (AIP1A then AIP1B, 600 ms each) as soon as the decoder is identified, then every minute; the previous mode is held during the probe:
 
-| Address | Name | Access | Default | Role |
-|---|---|---|---|---|
-| 00h | ID | read | 4Ah | FPGA identifier |
-| 01h | VERSION | read | 01h | register-map version |
-| 02h | MODE | read / write | 00h | standard, FEC, symbol rate |
-| 03h | INPUT | read / write | 00h | video source |
-| 04h | STATUS | read | — | board status |
-| 05h to FFh | — | — | 00h | read as 00h, writes ignored |
-
-MODE (02h):
-
-| Bits | Field | Values |
-|---|---|---|
-| 7..5 | — | ignored on write, read as 0 |
-| 4 | RATE | 0: 10 MS/s; 1: 2.5 MS/s |
-| 3..1 | FEC | DVB-S: 000 = 1/2, 001 = 2/3, 010 = 3/4, 011 = 5/6, 100 = 7/8, 101 to 111 reserved; DVB-S2: ignored (QPSK 1/4) |
-| 0 | STANDARD | 0: DVB-S; 1: DVB-S2 (QPSK 1/4, normal frames, pilots, CCM) |
-
-| MODE | Standard | FEC | Symbol rate |
+| Locked inputs | Mode | Programme 1 | Programme 2 |
 |---|---|---|---|
-| 00h | DVB-S | 1/2 | 10 MS/s |
-| 02h | DVB-S | 2/3 | 10 MS/s |
-| 04h | DVB-S | 3/4 | 10 MS/s |
-| 06h | DVB-S | 5/6 | 10 MS/s |
-| 08h | DVB-S | 7/8 | 10 MS/s |
-| 10h | DVB-S | 1/2 | 2.5 MS/s |
-| 12h | DVB-S | 2/3 | 2.5 MS/s |
-| 14h | DVB-S | 3/4 | 2.5 MS/s |
-| 16h | DVB-S | 5/6 | 2.5 MS/s |
-| 18h | DVB-S | 7/8 | 2.5 MS/s |
-| 01h | DVB-S2 | 1/4 | 10 MS/s |
-| 11h | DVB-S2 | 1/4 | 2.5 MS/s |
+| AIP1A only | DVB-S | camera A | test pattern |
+| AIP1B only | DVB-S2 QPSK 1/4 | camera B | test pattern |
+| A and B | DVB-S, BISS-1 | camera A scrambled | test pattern in clear, number displayed |
+| none | DVB-S | black picture | test pattern |
 
-INPUT (03h):
-
-| Bits | Field | Values |
-|---|---|---|
-| 7..2 | — | ignored on write, read as 0 |
-| 1..0 | SOURCE | 00: automatic (AIP1A, then AIP1B if A is not locked); 01: AIP1A forced; 10: AIP1B forced; 11: test pattern |
-
-STATUS (04h, read only):
-
-| Bit | Field | Values |
-|---|---|---|
-| 7..4 | — | 0 |
-| 3 | INPUT | current decoder input: 0 = AIP1A, 1 = AIP1B |
-| 2 | VIDEO | 1: decoder locked on lines and fields |
-| 1 | DECODER | 1: TVP5150AM1 identified |
-| 0 | PLL | 1: both PLLs locked |
-
-Write: start, 54h, register, data…, stop. Read: start, 54h, register, repeated start, 55h, data… (NACK on the last byte), stop. The pointer advances after each byte. Without a microcontroller the defaults apply. MODE is stored; it will be wired to the chain by the FEC, symbol-rate and DVB-S2 work items. INPUT 3 (test pattern forced on programme 1) is decoded but not yet wired to the chain: programme 1 is the camera, or a black picture when the decoder is not locked.
+BISS: the 4-digit number (0000 to 9999) is drawn at power-up (`tirage_biss`, counter frozen when the decoder is identified); the session key is this number repeated three times, the control word `S0 S1 S2 (S0+S1+S2) S3 S4 S5 (S3+S4+S5)`. The number is displayed on the programme 2 pattern in BISS mode only. Active-high LEDs: PLLs locked, decoder present, video locked.
 
 Single source file: `jpeg2dvb_fpga.vhd` holds every unit, including `horloges` and `sortie_lvds`. The only things created by hand in Libero are the three catalog cores below and the constraints. `jpeg2dvb_ip_sim.vhd` (GHDL models of the three cores) is for simulation only; `jpeg2dvb_top.sdc` holds the constraints of step 7.
 
 ### In Libero
 
-1. New project, device MPF050T, package FCG484, VHDL-2008.
+1. New project, device MPF100T, package FCG484 (same pinout as the MPF050T), VHDL-2008.
 2. File ▸ Import ▸ HDL Source Files: `jpeg2dvb_fpga.vhd` only.
 3. Catalog (View ▸ Windows ▸ Catalog) ▸ `PF_CCC`, name `PF_CCC_SYS`: input 0 = 50 MHz; feedback Post-VCO, bandwidth High; output 0: enabled, 80 MHz, Global Clock; output 1: enabled, 320 MHz as HS_IO_CLK (option to check in the configurator); PLL lock exposed. Ports: `REF_CLK_0`, `OUT0_FABCLK_0`, `OUT1_HS_IO_CLK_0`, `PLL_LOCK_0`.
 4. `PF_CCC`, name `PF_CCC_TVP`: input 0 = 50 MHz; output 0: enabled, 14.318182 MHz (VCO 1,575 MHz / 110), Global Clock; no other output. Ports: `REF_CLK_0`, `OUT0_FABCLK_0`, `PLL_LOCK_0`.
@@ -166,11 +125,11 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 
 ## Throughput
 
-- Clock: 80 MHz = 8 × symbol rate (10 MS/s). One 1,504-bit TS slot lasts exactly 13,056 clocks.
+- Clock: 80 MHz = 16 × symbol rate (5 MS/s; 8 × at 10 MS/s in the benches). One 1,504-bit TS slot lasts 26,112 clocks at 5 MS/s (13,056 at 10 MS/s).
 - The SRRC filter outputs one sample per clock; once the stream is running the back end follows without gaps (1,136 start-up clocks, including the interleaver memory clear).
 - DCT: about 140 clocks per block (36.6 million coefficients per second at 80 MHz, 15.6 million needed for 720 × 576 at 25 pictures/s).
 
-## Area (MPF050T target)
+## Area (measured on MPF050T, target MPF100T)
 
 Reductions of 2026-11-11, all bit-identical to the references:
 
@@ -201,16 +160,11 @@ Timing estimate before place and route: `clk_sys` 75.0 MHz (13.3 ns) for 80 MHz 
 
 ## To do
 
-1. ✔ Done (2026-10-19): TM5 rate control in integer arithmetic, in JPEG2DVB page 03 (specification item P7), then in VHDL (`rate_ctrl`), bit for bit.
-2. Sigma-delta output (item P3): ✔ third-order 1-bit modulator and interpolation (`sd_entree`, `sdm3`, `sigma_delta`, `sdm` testbench); ✔ LVDS serialisers (PF_IOD, top level), to be validated in Libero.
-3. LSRAM mapping: ✔ synchronous read of the interleaver memory (1,122 bytes) and three-stage quantisation (2026-11-11); measured in Libero on 2026-11-12: 131 of 160 LSRAM; remaining: pipelining of the VLC.
-4. 720 × 576 PAL video input: ✔ 3a, TVP5150AM1 control and BT.656 reception (2026-11-04); ✔ 3b (2026-11-11, versions 2.13 to 2.17): `cam_mb` (27 MHz to 80 MHz crossing, 4:2:0 macroblocks), `codeur` 720 × 576 as two field pictures, MCPC (`ts_mux`, `dvbs_sd`), black picture without a camera; compiled and elaborated, end-to-end test pending.
-5. DVB-S2 QPSK 1/4, normal frames, pilots, CCM, alongside DVB-S, selected by a DIP switch.
-6. ✔ Board top-level entity (2026-11-10); remaining: pin assignment with the PCB, wiring of the MODE register (FEC, symbol rate, DVB-S2 at run time).
-7. Video scrambling (BISS-1): ✔ `csa_enc` module (2026-11-11); remaining: insertion between `ts_mux` and energy dispersal, identifier 0000 to 9999 drawn at power-up and the key derived from it, programme 2 in clear (fixed test pattern and identifier).
-8. Timing at 80 MHz: pipelining of the colour computation of `mire_gen` and of `vlc_enc` (estimated 75 MHz).
-9. Libero: create the three cores, place and route, constraints, pin assignment, resource and timing report (the figures above are before place and route).
-10. Final chain test: simulate the camera path from `fpga_test/bt656.bin` (field pictures 720 × 576, MCPC, black picture) and decode the transport stream with a standard decoder (ffmpeg, VLC or the receiver); regenerate the LVDS reference of the `top` testbench (it dates from the single-programme top level).
+1. ✔ Complete chain of the .vhd (versions 2.19 to 2.24): DVB-S, DVB-S2, BISS, automatic choice, MCPC, camera; full test suite OK, GHDL synthesis OK.
+2. Libero: create the three cores (`PF_CCC_SYS`, `PF_CCC_TVP`, `PF_IOD_TX_SD`), synthesis, place and route, resource report (`dvbs2_tx` LSRAM) and timing report at 80 MHz on the MPF100T.
+3. Pin assignment with the PCB (azs-cad.html), `jpeg2dvb_top.sdc` constraints.
+4. Final test on the board: read the Transport Stream with a standard decoder (DVB-S, DVB-S2, BISS).
+5. Simulation of the complete chain (camera, MCPC, DVB-S2) is too slow in GHDL: verified block by block; to be checked on the board. LVDS reference of the `top` bench to be regenerated for the MCPC top level.
 
 Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
@@ -229,6 +183,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-11-11 | Fixed-key DVB-CSA scrambling (BISS-1): `csa_enc`, `csa_tab_pkg`, `csa.js` reference (self-test on two public vectors), `csa` testbench; `jpeg2dvb_fpga.vhd` 2.12, `jpeg2dvb_fpga_tb.vhd` 2.7, `run_tests.sh` 1.7 |
 | 2026-11-11 | MCPC and camera chain (`jpeg2dvb_fpga.vhd` 2.13 to 2.17): `ts_mux` with two programmes (`mcpc.js`, `mcpc` testbench), `cam_mb` (`bt656.js` 1.1 writes `cam_mb.bin`, `cam` testbench), `codeur` 720 × 576 in field pictures (`tb_codeur`), `dvbs_sd` and `jpeg2dvb_top` in MCPC (camera on programme 1, test pattern on programme 2, 47 % of the rate each), black picture without a camera; `run_tests.sh` 1.9 |
 | 2026-11-12 | First Libero synthesis of `jpeg2dvb_top` on the MPF050T (131 of 160 LSRAM, 55 of 150 DSP, 75 MHz estimated for 80 MHz required). `jpeg2dvb_fpga.vhd` 2.18: `horloges` and `sortie_lvds` inside the single file, `jpeg2dvb_ip_libero.vhd` removed, `jpeg2dvb_ip_sim.vhd` 2.0 (models of the three Libero cores); documentation brought up to date |
+| 2026-11-12 | Fixed settings (5 MS/s, FEC 1/2) and automatic choice (`choix_auto`), `regs_i2c` removed (2.20); DVB-S2 QPSK 1/4 (`dvbs2_tx`, 2.21); BISS-1 in the chain, `tirage_biss`, number on the test pattern (2.22); three `dvbs2_tx` fixes (`tb_s2` identical to `dvbs2.js`, 2.23); 720 × 576 `codeur`: `vlc_enc` received 22 columns instead of 45, camera picture fixed (2.24); timing: `mire_gen` and `vlc_enc` pipelined (2.19); MPF100T target; `run_tests.sh` 2.0 |
 
 ## License
 
