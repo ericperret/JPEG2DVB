@@ -4,11 +4,11 @@
 --  Objet      : bancs de test GHDL : chaque banc lit les références de
 --               fpga_test/ et compare la sortie de son module au bit près
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-11
---  Version    : 2.8
+--  Date       : 2026-11-12
+--  Version    : 2.11
 --  Plateforme : VHDL-2008, simulation (GHDL) ; analyser d'abord jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 17 unités, dans l'ordre d'analyse :
+--  Contenu    : 19 unités, dans l'ordre d'analyse :
 --               tb_pkg        lecture des fichiers et des codes, générateur pseudo-aléatoire
 --               tb_octets     modules à flux d'octets (09, 10, 11, TS, embrouillage)
 --               tb_conv       codeur convolutif, 5 taux
@@ -23,6 +23,8 @@
 --               tb_dvbs       tête de chaîne et émetteur complet
 --               tb_sdm        sortie sigma-delta
 --               tb_bt656      récepteur BT.656
+--               tb_codeur     codeur seul (macroblocs → flux élémentaire)
+--               tb_cam        entrée caméra (bt656_rx puis cam_mb)
 --               tb_tvp5150    modèle I²C du décodeur TVP5150AM1
 --               tb_tvp        pilotage du TVP5150AM1 (4 scénarios)
 --               tb_top        entité de tête (registres I²C, LED, sorties LVDS)
@@ -51,6 +53,9 @@
 --                                contrôle G_CW), délai réglable (G_DELAI)
 --               2.8  2026-11-11  tb_octets : multiplexeur à deux programmes (G_DUT = 6,
 --                                canal 2 lu dans G_IN2)
+--               2.9  2026-11-11  tb_cam : entrée caméra (bt656_rx puis cam_mb)
+--               2.10 2026-11-11  tb_codeur : codeur seul (macroblocs → flux élémentaire)
+--               2.11 2026-11-12  en-tête : 19 unités, tb_codeur et tb_cam dans le contenu
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -1974,6 +1979,228 @@ begin
                 end if;
             end loop;
         end loop;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_codeur : codeur seul, des macroblocs au flux élémentaire ; entrée :
+--   fichier de macroblocs ; G_ECRIT : le flux produit est écrit dans G_OUT
+--   (pour décodage par un décodeur de référence), sinon il est comparé à G_OUT
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.textio.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_codeur is
+    generic (
+        G_IN     : string  := "cam_mb.bin";
+        G_N_IN   : natural := 1244160;
+        G_OUT    : string  := "cam_es.bin";
+        G_N_OUT  : natural := 0;
+        G_ECRIT  : boolean := false;
+        G_LARG   : natural := 720;
+        G_HAUT   : natural := 576;
+        G_TRAMES : boolean := true;
+        G_T      : natural := 86627;
+        G_IMAGES : natural := 2
+    );
+end entity tb_codeur;
+
+architecture sim of tb_codeur is
+    signal clk     : std_logic := '0';
+    signal rst     : std_logic := '1';
+    signal s_valid : std_logic := '0';
+    signal s_ready : std_logic;
+    signal s_data  : unsigned(7 downto 0) := (others => '0');
+    signal m_valid : std_logic;
+    signal m_ready : std_logic := '0';
+    signal m_data  : std_logic_vector(7 downto 0);
+begin
+    clk <= not clk after 5 ns;
+    dut : entity work.codeur
+        generic map (G_LARG => G_LARG, G_HAUT => G_HAUT, G_TRAMES => G_TRAMES, G_T => G_T, G_IMAGES => G_IMAGES)
+        port map (clk, rst, s_valid, s_ready, s_data, m_valid, m_ready, m_data);
+
+    -- source : E : fichier de macroblocs → S : octets, avec des trous au hasard
+    source : process
+        file f      : octets_f open read_mode is REF & G_IN;
+        variable c  : character;
+        variable r  : std_logic_vector(15 downto 0) := x"1D2B";
+    begin
+        wait until rising_edge(clk);
+        wait until rising_edge(clk);
+        rst <= '0';
+        for k in 0 to G_N_IN - 1 loop
+            read(f, c);
+            r := alea(r);
+            if r(0) = '1' and r(1) = '1' then
+                s_valid <= '0';
+                wait until rising_edge(clk);
+            end if;
+            s_data  <= unsigned(octet(c));
+            s_valid <= '1';
+            loop
+                wait until rising_edge(clk);
+                exit when s_ready = '1';
+            end loop;
+        end loop;
+        s_valid <= '0';
+        wait;
+    end process;
+
+    -- puits : E : flux élémentaire → T : écriture ou comparaison ; arrêt après
+    --   100 000 cycles sans octet → S : fichier ou verdict
+    puits : process (clk)
+        file fo          : octets_f;
+        file fr          : octets_f;
+        variable ouvert  : boolean := false;
+        variable c       : character;
+        variable n, err  : natural := 0;
+        variable calme   : natural := 0;
+        variable r       : std_logic_vector(15 downto 0) := x"7A3C";
+    begin
+        if rising_edge(clk) then
+            if not ouvert then
+                if G_ECRIT then file_open(fo, REF & G_OUT, write_mode); else file_open(fr, REF & G_OUT, read_mode); end if;
+                ouvert := true;
+            end if;
+            calme := calme + 1;
+            if m_valid = '1' and m_ready = '1' then
+                calme := 0;
+                if G_ECRIT then
+                    write(fo, character'val(to_integer(unsigned(m_data))));
+                elsif n >= G_N_OUT then
+                    err := err + 1;
+                else
+                    read(fr, c);
+                    if m_data /= octet(c) then
+                        if err < 10 then report "ecart a l'octet " & integer'image(n) severity warning; end if;
+                        err := err + 1;
+                    end if;
+                end if;
+                n := n + 1;
+            end if;
+            r := alea(r);
+            if r(0) = '1' and r(1) = '1' then m_ready <= '0'; else m_ready <= '1'; end if;
+            if calme = 100000 and rst = '0' and n > 0 then
+                if G_ECRIT then
+                    file_close(fo);
+                    report "ECRIT " & G_OUT & " : " & integer'image(n) & " octets" severity note;
+                elsif err = 0 and n = G_N_OUT then
+                    report "OK " & G_OUT & " : " & integer'image(n) & " octets identiques" severity note;
+                else
+                    report "ECHEC " & G_OUT & " : " & integer'image(err) & " ecarts, " & integer'image(n) & " octets sur " & integer'image(G_N_OUT) severity error;
+                end if;
+                finish;
+            end if;
+        end if;
+    end process;
+end architecture sim;
+
+--------------------------------------------------------------------------------
+-- tb_cam : entrée caméra, de l'octet BT.656 au macrobloc : bt656_rx (27 MHz)
+--   puis cam_mb (80 MHz) ; entrée bt656.bin, référence cam_mb.bin (4 trames
+--   de 45 × 18 macroblocs) ; l'aval refuse un octet sur quatre au hasard ;
+--   retard doit rester à 0
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+use std.textio.all;
+use std.env.all;
+use work.tb_pkg.all;
+
+entity tb_cam is
+    generic (
+        G_N : natural := 1244160             -- octets attendus : 4 trames × 810 macroblocs × 384
+    );
+end entity tb_cam;
+
+architecture sim of tb_cam is
+    constant N_TRAME : natural := 810 * 384;
+    signal clk_v   : std_logic := '0';
+    signal clk     : std_logic := '0';
+    signal rst_v   : std_logic := '1';
+    signal rst     : std_logic := '1';
+    signal d       : std_logic_vector(7 downto 0) := x"10";
+    signal fin_e   : boolean := false;
+    signal v_valid, v_trame, v_dt, v_sync : std_logic;
+    signal v_cb, v_y0, v_cr, v_y1 : std_logic_vector(7 downto 0);
+    signal v_ligne, v_x : unsigned(8 downto 0);
+    signal m_valid, m_debut, m_trame, retard : std_logic;
+    signal m_ready : std_logic := '0';
+    signal m_data  : unsigned(7 downto 0);
+begin
+    clk_v <= not clk_v after 18.5 ns;
+    clk   <= not clk after 6.25 ns;
+    rx : entity work.bt656_rx port map (clk_v, rst_v, d, v_valid, v_cb, v_y0, v_cr, v_y1, v_trame, v_ligne, v_x, v_dt, v_sync);
+    dut : entity work.cam_mb port map (clk_v, rst_v, v_valid, v_cb, v_y0, v_cr, v_y1, v_trame, v_ligne, v_x, v_dt,
+                                       clk, rst, m_valid, m_ready, m_data, m_debut, m_trame, retard);
+
+    -- entrée : E : bt656.bin → T : un octet par cycle de 27 MHz → S : d, fin_e
+    entree : process
+        file f     : octets_f open read_mode is REF & "bt656.bin";
+        variable c : character;
+    begin
+        wait until rising_edge(clk_v);
+        wait until rising_edge(clk_v);
+        rst_v <= '0';
+        while not endfile(f) loop
+            read(f, c);
+            d <= octet(c);
+            wait until rising_edge(clk_v);
+        end loop;
+        d <= x"10";
+        fin_e <= true;
+        wait;
+    end process;
+
+    -- contrôle : E : octets des macroblocs, cam_mb.bin → T : comparaison,
+    --   m_debut et m_trame attendus, retard jamais levé → S : verdict
+    controle : process (clk)
+        file f           : octets_f open read_mode is REF & "cam_mb.bin";
+        variable c       : character;
+        variable n, err, nret : natural := 0;
+        variable r       : std_logic_vector(15 downto 0) := x"ACE1";
+        variable fin_cpt : natural := 0;
+        variable p       : natural;
+    begin
+        if rising_edge(clk) then
+            rst <= '0';
+            if retard = '1' then nret := nret + 1; end if;
+            if m_valid = '1' and m_ready = '1' then
+                if n >= G_N then
+                    err := err + 1;
+                else
+                    read(f, c);
+                    p := n mod N_TRAME;
+                    if std_logic_vector(m_data) /= octet(c) or (m_debut = '1') /= (p = 0) or (m_trame = '1') /= ((n / N_TRAME) mod 2 = 1) then
+                        if err < 10 then
+                            report "ecart a l'octet " & integer'image(n) & " (trame " & integer'image(n / N_TRAME) & ", macrobloc " & integer'image(p / 384) &
+                                   ", octet " & integer'image(p mod 384) & ")" severity warning;
+                        end if;
+                        err := err + 1;
+                    end if;
+                end if;
+                n := n + 1;
+            end if;
+            r := alea(r);
+            if r(0) = '1' and r(1) = '1' then m_ready <= '0'; else m_ready <= '1'; end if;
+            if fin_e then
+                fin_cpt := fin_cpt + 1;
+                if n = G_N or fin_cpt = 200000 then
+                    if err = 0 and n = G_N and nret = 0 then
+                        report "OK cam_mb.bin : " & integer'image(n) & " octets identiques (4 trames de 810 macroblocs), aucun retard" severity note;
+                    else
+                        report "ECHEC cam_mb.bin : " & integer'image(err) & " ecarts, " & integer'image(n) & " octets sur " & integer'image(G_N) & ", retards : " & integer'image(nret) severity error;
+                    end if;
+                    finish;
+                end if;
+            end if;
+        end if;
     end process;
 end architecture sim;
 

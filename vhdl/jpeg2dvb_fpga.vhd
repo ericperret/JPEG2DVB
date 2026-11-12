@@ -6,11 +6,11 @@
 --               chaque module de la chaîne reproduit au bit près une étape de
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-11
---  Version    : 2.17
+--  Date       : 2026-11-12
+--  Version    : 2.18
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 36 unités, dans l'ordre d'analyse :
+--  Contenu    : 38 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
@@ -46,9 +46,12 @@
 --                             automatique ou imposée de l'entrée AIP1A / AIP1B
 --               dvbs_sd       émetteur de la mire aux bits sigma-delta (80 MHz)
 --               regs_i2c      esclave I²C 2Ah du microcontrôleur et registres
+--               horloges      deux PLL (cœurs Libero PF_CCC_SYS et PF_CCC_TVP)
+--               sortie_lvds   sérialiseurs LVDS (cœur Libero PF_IOD_TX_SD)
 --               jpeg2dvb_top  entité de tête de la carte (PLL, LVDS, décodeur,
---                             microcontrôleur, LED) ; blocs Libero dans
---                             jpeg2dvb_ip_libero.vhd (jpeg2dvb_ip_sim.vhd en simulation)
+--                             microcontrôleur, LED) ; les trois cœurs Libero
+--                             sont créés à la main dans le catalogue
+--                             (jpeg2dvb_ip_sim.vhd : modèles GHDL des cœurs)
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (clauses
 --               library / use par unité) ; fonctions et process commentés
 --               « E : entrées → T : traitement → S : sorties » ; les paquetages
@@ -124,6 +127,10 @@
 --               2.17 2026-11-11  dvbs_sd : image noire sur le canal 1 quand la caméra
 --                                est absente (25 images par seconde), retour à la
 --                                caméra sur un début d'image
+--               2.18 2026-11-12  horloges et sortie_lvds intégrés au fichier
+--                                (jpeg2dvb_ip_libero.vhd supprimé) ; seuls les
+--                                cœurs PF_CCC_SYS, PF_CCC_TVP et PF_IOD_TX_SD
+--                                restent à créer dans le catalogue Libero
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -5382,6 +5389,98 @@ begin
             end if;
         end if;
     end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- horloges : deux PLL depuis l'oscillateur 50 MHz ; verrou : les deux PLL
+--   verrouillés ; cœurs PF_CCC_SYS (80 MHz global, 320 MHz HS_IO_CLK) et
+--   PF_CCC_TVP (14,318182 MHz) créés dans le catalogue Libero
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity horloges is
+    port (
+        osc_50  : in  std_logic;
+        clk_sys : out std_logic;
+        clk_hs  : out std_logic;
+        clk_tvp : out std_logic;
+        verrou  : out std_logic
+    );
+end entity horloges;
+
+architecture rtl of horloges is
+    component PF_CCC_SYS is
+        port (
+            REF_CLK_0        : in  std_logic;
+            OUT0_FABCLK_0    : out std_logic;
+            OUT1_HS_IO_CLK_0 : out std_logic;
+            PLL_LOCK_0       : out std_logic
+        );
+    end component;
+    component PF_CCC_TVP is
+        port (
+            REF_CLK_0     : in  std_logic;
+            OUT0_FABCLK_0 : out std_logic;
+            PLL_LOCK_0    : out std_logic
+        );
+    end component;
+    signal v_sys, v_tvp : std_logic;
+begin
+    u_sys : PF_CCC_SYS port map (REF_CLK_0 => osc_50, OUT0_FABCLK_0 => clk_sys, OUT1_HS_IO_CLK_0 => clk_hs, PLL_LOCK_0 => v_sys);
+    u_tvp : PF_CCC_TVP port map (REF_CLK_0 => osc_50, OUT0_FABCLK_0 => clk_tvp, PLL_LOCK_0 => v_tvp);
+    verrou <= v_sys and v_tvp;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
+-- sortie_lvds : sérialiseurs 8:1 des voies I et Q (640 Mbit/s) ; d_i, d_q :
+--   bit 7 émis en premier ; cœur PF_IOD_TX_SD (PF_IOD_GENERIC_TX, interface
+--   TX_DDRX_B_G_FA, 2 voies, LVDS) créé dans le catalogue Libero ; TX_DATA(0)
+--   supposé émis en premier, d'où l'inversion des bits
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity sortie_lvds is
+    port (
+        clk_sys : in  std_logic;
+        clk_hs  : in  std_logic;
+        rst     : in  std_logic;
+        d_i     : in  std_logic_vector(7 downto 0);
+        d_q     : in  std_logic_vector(7 downto 0);
+        i_p     : out std_logic;
+        i_n     : out std_logic;
+        q_p     : out std_logic;
+        q_n     : out std_logic
+    );
+end entity sortie_lvds;
+
+architecture rtl of sortie_lvds is
+    component PF_IOD_TX_SD is
+        port (
+            TX_CLK_G        : in  std_logic;
+            HS_IO_CLK       : in  std_logic;
+            ARST_N          : in  std_logic;
+            HS_IO_CLK_PAUSE : in  std_logic;
+            TX_DATA_0       : in  std_logic_vector(7 downto 0);
+            TX_DATA_1       : in  std_logic_vector(7 downto 0);
+            TXD             : out std_logic_vector(1 downto 0);
+            TXD_N           : out std_logic_vector(1 downto 0)
+        );
+    end component;
+    signal r_i, r_q   : std_logic_vector(7 downto 0);
+    signal txd, txd_n : std_logic_vector(1 downto 0);
+    signal arst_n     : std_logic;
+begin
+    g : for k in 0 to 7 generate
+        r_i(k) <= d_i(7 - k);
+        r_q(k) <= d_q(7 - k);
+    end generate;
+    arst_n <= not rst;
+    u_iod : PF_IOD_TX_SD port map (TX_CLK_G => clk_sys, HS_IO_CLK => clk_hs, ARST_N => arst_n, HS_IO_CLK_PAUSE => '0',
+                                   TX_DATA_0 => r_i, TX_DATA_1 => r_q, TXD => txd, TXD_N => txd_n);
+    i_p <= txd(0); i_n <= txd_n(0);
+    q_p <= txd(1); q_n <= txd_n(1);
 end architecture rtl;
 
 --------------------------------------------------------------------------------
