@@ -4,7 +4,7 @@
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
   Date       : 2026-11-12
-  Version    : 1.7
+  Version    : 1.8
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
@@ -14,6 +14,7 @@
                1.5  2026-11-11  mire.js 1.2 (paquetage sans image), fusion.js 1.1
                1.6  2026-11-11  csa.js, csa_in.bin, ts_csa.bin : embrouillage DVB-CSA (banc csa)
                1.7  2026-11-12  chaîne MCPC et caméra : mcpc.js, es2.bin, ts_mcpc.bin, cam_mb.bin (bt656.js 1.1), bancs mcpc et cam ; état mis à jour
+               1.8  2026-11-12  DVB-S2 : dvbs2.js, s2_ts.bin, s2_sym.bin (banc s2) ; bancs choix, biss, csa_biss ; run_tests.sh 2.0 ; état mis à jour
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -33,6 +34,7 @@ Le VHDL est dans `../vhdl/` : `jpeg2dvb_fpga.vhd` (modules) et `jpeg2dvb_fpga_tb
 | `bt656.js` | Référence du récepteur `bt656_rx` : flux BT.656 PAL 625 lignes tel que le sort le TVP5150AM1 (image 720 × 576 : mire doublée, ligne marquée dans les 8 premiers pixels ; une image en couleur, une en noir et blanc), entrée au milieu d'une ligne de suppression, et couples attendus ; écrit `bt656.bin`, `bt656_ref.bin` et `cam_mb.bin` (macroblocs 4:2:0 attendus de `cam_mb`). `node bt656.js` |
 | `csa.js` | Référence de l'embrouillage DVB-CSA à clé fixe (BISS-1) du PID vidéo : autotest sur deux vecteurs publics, compose `csa_in.bin` (paquets 240 à 399 de `ts_v.bin` et 17 paquets d'essai aux limites), écrit `ts_csa.bin` et réécrit le paquetage `csa_tab_pkg`. `node csa.js`, ou `node csa.js ENTREE.bin SORTIE.bin CW PID` pour chiffrer un fichier TS |
 | `mcpc.js` | Référence du multiplexeur à deux programmes (MCPC) : canal 1 en images de demi-trame (PMT 0x0100, vidéo 0x0101, PCR), canal 2 (PMT 0x0200, vidéo 0x0201), 47 % du débit chacun ; écrit `es2.bin` et `ts_mcpc.bin`. `node mcpc.js` |
+| `dvbs2.js` | Référence DVB-S2 (EN 302 307-1) QPSK 1/4, trame normale, pilotes, CCM, au bit près ; port de GNU Radio gr-dtv : écrit `s2_ts.bin` (trames BBFRAME de test) et `s2_sym.bin` (symboles de 3 trames) |
 | `fusion.js` | Module commun aux générateurs : met un paquetage généré au format du fichier fusionné et le remplace entre ses balises `-- >>>` / `-- <<<` ; les clauses `library` / `use` sont conservées |
 
 Ces outils ne servent que si une page JPEG2DVB change : les références doivent alors suivre la page.
@@ -99,10 +101,20 @@ Les bancs `tvp`, `tvp_abs` et `tvp_bloc` n'ont pas de fichier : le modèle I²C 
 | `es2.bin` | 06 | flux élémentaire du canal 2 (28 433 octets) ; le canal 1 est `es.bin` (115 224 octets) | `mcpc` |
 | `ts_mcpc.bin` | 08 | Transport Stream à deux programmes, 357 200 octets (`tb_octets`, `G_DUT=6`) | `mcpc` |
 
+## Références — DVB-S2 et BISS
+
+| Fichier | Contenu | Banc |
+|---|---|---|
+| `s2_ts.bin` | 6 016 octets d'entrée de `dvbs2_tx` | `s2` |
+| `s2_sym.bin` | 99 846 symboles attendus (3 trames) | `s2` |
+| `ts_csa_biss.bin` | `csa_in.bin` embrouillé avec le mot de contrôle du numéro BISS 1234 (`node csa.js csa_in.bin ts_csa_biss.bin 123412583412347a 0101`) | `csa_biss` |
+
+Les bancs `choix` (choix automatique), `biss` (tirage du numéro) et `numero` (mire avec numéro, image écrite dans un fichier) n'ont pas de fichier de référence : `choix` et `biss` contrôlent leurs sorties par assertions.
+
 ## État au 2026-11-12
 
-Toutes les références sont à jour pour les bancs de `run_tests.sh` (dont `rc`, `csa`, `mcpc`, `cam`). Les modules passent `ghdl --synth` sans verrou, `cam_mb`, `csa_enc` et `dvbs_sd` compris.
+Toutes les références sont à jour pour les bancs de `run_tests.sh` 2.0 (suite complète OK sur `jpeg2dvb_fpga.vhd` 2.24). Les modules passent `ghdl --synth` sans verrou, `dvbs2_tx`, `choix_auto`, `tirage_biss` et `dvbs_sd` compris.
 
 `mire_iq.cs16` ne couvre que les 12 premiers paquets TS, identiques avant et après la régulation : la régulation se vérifie par les bancs `quant8`, `es`, `rc` et `video`.
 
-À refaire pour le test final de la chaîne : le banc `top` compare encore la sortie LVDS à une référence de l'entité de tête à un seul programme (mire 352 × 288) ; elle est à régénérer pour l'entité de tête MCPC (caméra sur le programme 1, mire sur le programme 2). `tb_codeur` (codeur 720 × 576 en demi-trames) n'est pas encore dans la liste des bancs de `run_tests.sh`.
+Hors suite (trop lents ou manuels) : `tb_codeur` avec `G_ECRIT=true` écrit le flux élémentaire de la caméra, à décoder avec ffmpeg et à comparer à `cam_mb.bin` ; `tb_numero` écrit une image de la mire avec numéro ; `tb_e2e` et `tb_biss_chaine` (chaîne complète) ne vont pas à terme en un temps raisonnable. Le banc `top` compare encore la sortie LVDS à une référence de l'entité de tête à un seul programme (mire 352 × 288) ; elle est à régénérer pour l'entité de tête MCPC.

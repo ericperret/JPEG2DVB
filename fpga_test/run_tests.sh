@@ -6,8 +6,8 @@
 #               GHDL ; chaque banc compare la sortie de son module, au bit près,
 #               aux fichiers de référence de JPEG2DVB (ce dossier)
 #  Auteur     : Eric PERRET
-#  Date       : 2026-11-11
-#  Version    : 1.9
+#  Date       : 2026-11-12
+#  Version    : 2.0
 #  Usage      : ./run_tests.sh            (dossier fpga_test/)
 #               ./run_tests.sh rs         (un seul banc : nom contenant « rs »)
 #  Licence    : CC BY-NC 4.0
@@ -28,6 +28,9 @@
 #                                synthèse
 #               1.8  2026-11-11  banc mcpc (multiplexeur à deux programmes)
 #               1.9  2026-11-11  banc cam (entrée caméra) ; cam_mb au contrôle de synthèse
+#               2.0  2026-11-12  bancs s2 (DVB-S2 QPSK 1/4), choix (choix automatique), biss
+#                                (tirage), csa_biss (BISS-1, numéro 1234) ; dvbs2_tx,
+#                                choix_auto, tirage_biss au contrôle de synthèse ; regs_i2c retiré
 #===============================================================================
 set -e
 cd "$(dirname "$0")"
@@ -65,6 +68,7 @@ rc|tb_rc|
 ts|tb_octets|-gG_DUT=4 -gG_IN=es.bin -gG_OUT=ts_v.bin -gG_N_IN=115224 -gG_N_OUT=183488 -gG_PKT=188
 mcpc|tb_octets|-gG_DUT=6 -gG_IN=es.bin -gG_OUT=ts_mcpc.bin -gG_N_IN=115224 -gG_IN2=es2.bin -gG_N_IN2=28433 -gG_N_OUT=357200 -gG_PKT=188
 csa|tb_octets|-gG_DUT=5 -gG_IN=csa_in.bin -gG_OUT=ts_csa.bin -gG_N_IN=33276 -gG_N_OUT=33276 -gG_PKT=188 -gG_DELAI=40
+csa_biss|tb_octets|-gG_DUT=5 -gG_IN=csa_in.bin -gG_OUT=ts_csa_biss.bin -gG_N_IN=33276 -gG_N_OUT=33276 -gG_PKT=188 -gG_DELAI=40 -gG_CW=0111101000110100000100100011010001011000000100100011010000010010
 mire|tb_mire|
 video|tb_dvbs|-gG_DUT=1 -gG_OUT=mire_ts.bin -gG_N=148708
 emetteur|tb_dvbs|-gG_DUT=2 -gG_OUT=mire_iq.cs16 -gG_N=160000
@@ -75,7 +79,10 @@ tvp|tb_tvp|
 tvp_abs|tb_tvp|-gG_ABS=1
 tvp_bloc|tb_tvp|-gG_ABS=2
 tvp_force|tb_tvp|-gG_ABS=3
-top|tb_top|"
+top|tb_top|
+s2|tb_s2|
+choix|tb_choix|
+biss|tb_biss|"
 
 OK=0; KO=0
 echo "$BANCS" | while IFS='|' read -r nom ent gen; do
@@ -89,7 +96,7 @@ done
 
 # contrôle de synthétisabilité (GHDL --synth) des modules de la carte
 if [ -z "$1" ] || [ "$1" = "synth" ]; then
-    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux csa_enc rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx cam_mb tvp_ctrl regs_i2c dvbs_sd; do
+    for top in tx_backend dct8x8_int quant_intra zigzag vlc_enc es_mux ts_mux csa_enc rate_ctrl mire_gen video_enc dvbs_tx sd_entree sdm3 sigma_delta bt656_rx cam_mb tvp_ctrl dvbs2_tx choix_auto tirage_biss dvbs_sd; do
         if $G --synth $O $RTL -e $top > $W/$top.synth.vhd 2> $W/$top.synth.log; then
             echo "synth   OK $top : synthétisable (GHDL --synth, $(grep -c latch $W/$top.synth.log) verrou)"
         else
