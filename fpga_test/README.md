@@ -3,8 +3,8 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
-  Date       : 2026-11-11
-  Version    : 1.6
+  Date       : 2026-11-12
+  Version    : 1.7
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
@@ -13,6 +13,7 @@
                1.4  2026-11-04  entrée vidéo PAL : bt656.js, bt656.bin, bt656_ref.bin ; bancs tvp
                1.5  2026-11-11  mire.js 1.2 (paquetage sans image), fusion.js 1.1
                1.6  2026-11-11  csa.js, csa_in.bin, ts_csa.bin : embrouillage DVB-CSA (banc csa)
+               1.7  2026-11-12  chaîne MCPC et caméra : mcpc.js, es2.bin, ts_mcpc.bin, cam_mb.bin (bt656.js 1.1), bancs mcpc et cam ; état mis à jour
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -29,8 +30,9 @@ Le VHDL est dans `../vhdl/` : `jpeg2dvb_fpga.vhd` (modules) et `jpeg2dvb_fpga_tb
 | `gen_vlc.js` | Lit les tables VLC de `page05-rle-huffman.html` et réécrit le paquetage `vlc_tab_pkg` |
 | `mire.js` | Dessine la mire 16 couleurs : `mire.png` (entrée de la page 01) et paquetage `mire_pkg` (géométrie, fonction `mire_idx`, palette ; sans image) ; contrôle que `mire_idx` redonne l'image |
 | `sdm.js` | Référence de la sortie sigma-delta (cahier des charges § 5.4) : symboles de `qpsk.bin` → SRRC à 640 MS/s par tables → sigma-delta 1 bit d'ordre 3 par voie à 640 Mbit/s ; vérifie que la formulation par anticipation du VHDL donne le même flux que la boucle pas à pas ; écrit `sd_iq.bin`, réécrit le paquetage `sdm_coef_pkg` et affiche le contrôle spectral. `node sdm.js` ou `node sdm.js ENTREE.bin N SORTIE.bin` |
-| `bt656.js` | Référence du récepteur `bt656_rx` : flux BT.656 PAL 625 lignes tel que le sort le TVP5150AM1 (image 720 × 576 : mire doublée, ligne marquée dans les 8 premiers pixels ; une image en couleur, une en noir et blanc), entrée au milieu d'une ligne de suppression, et couples attendus ; écrit `bt656.bin` et `bt656_ref.bin`. `node bt656.js` |
+| `bt656.js` | Référence du récepteur `bt656_rx` : flux BT.656 PAL 625 lignes tel que le sort le TVP5150AM1 (image 720 × 576 : mire doublée, ligne marquée dans les 8 premiers pixels ; une image en couleur, une en noir et blanc), entrée au milieu d'une ligne de suppression, et couples attendus ; écrit `bt656.bin`, `bt656_ref.bin` et `cam_mb.bin` (macroblocs 4:2:0 attendus de `cam_mb`). `node bt656.js` |
 | `csa.js` | Référence de l'embrouillage DVB-CSA à clé fixe (BISS-1) du PID vidéo : autotest sur deux vecteurs publics, compose `csa_in.bin` (paquets 240 à 399 de `ts_v.bin` et 17 paquets d'essai aux limites), écrit `ts_csa.bin` et réécrit le paquetage `csa_tab_pkg`. `node csa.js`, ou `node csa.js ENTREE.bin SORTIE.bin CW PID` pour chiffrer un fichier TS |
+| `mcpc.js` | Référence du multiplexeur à deux programmes (MCPC) : canal 1 en images de demi-trame (PMT 0x0100, vidéo 0x0101, PCR), canal 2 (PMT 0x0200, vidéo 0x0201), 47 % du débit chacun ; écrit `es2.bin` et `ts_mcpc.bin`. `node mcpc.js` |
 | `fusion.js` | Module commun aux générateurs : met un paquetage généré au format du fichier fusionné et le remplace entre ses balises `-- >>>` / `-- <<<` ; les clauses `library` / `use` sont conservées |
 
 Ces outils ne servent que si une page JPEG2DVB change : les références doivent alors suivre la page.
@@ -86,10 +88,21 @@ Ces outils ne servent que si une page JPEG2DVB change : les références doivent
 | `bt656.bin` | entrée PAL | flux BT.656 de 2 207 684 octets : fin d'une image, image 0 en couleur, image 1 en noir et blanc, 2 lignes | `bt656` |
 | `bt656_ref.bin` | entrée PAL | 414 720 couples Cb Y0 Cr Y1 attendus (4 trames de 288 lignes × 360 couples) | `bt656` |
 
+| `cam_mb.bin` | entrée PAL | 1 244 160 octets : macroblocs 4:2:0 de 4 trames 720 × 288 (chrominance = moyenne arrondie des deux lignes de chaque paire) | `cam` |
+
 Les bancs `tvp`, `tvp_abs` et `tvp_bloc` n'ont pas de fichier : le modèle I²C du décodeur (`tb_tvp5150`) contrôle la séquence d'écritures, la chronologie du bus (mode standard) et des délais du décodeur.
 
-## État au 2026-11-04
+## Références — chaîne MCPC (deux programmes)
 
-Toutes les références sont à jour : DCT entière et régulation TM5 de la page 03 (3.x). Les 28 bancs passent au bit près, dont `rc` (codes de `rate_ctrl` comparés à `qcode.bin`), et les 16 modules passent `ghdl --synth` sans verrou.
+| Fichier | Étape | Contenu | Banc |
+|---|---|---|---|
+| `es2.bin` | 06 | flux élémentaire du canal 2 (28 433 octets) ; le canal 1 est `es.bin` (115 224 octets) | `mcpc` |
+| `ts_mcpc.bin` | 08 | Transport Stream à deux programmes, 357 200 octets (`tb_octets`, `G_DUT=6`) | `mcpc` |
+
+## État au 2026-11-12
+
+Toutes les références sont à jour pour les bancs de `run_tests.sh` (dont `rc`, `csa`, `mcpc`, `cam`). Les modules passent `ghdl --synth` sans verrou, `cam_mb`, `csa_enc` et `dvbs_sd` compris.
 
 `mire_iq.cs16` ne couvre que les 12 premiers paquets TS, identiques avant et après la régulation : la régulation se vérifie par les bancs `quant8`, `es`, `rc` et `video`.
+
+À refaire pour le test final de la chaîne : le banc `top` compare encore la sortie LVDS à une référence de l'entité de tête à un seul programme (mire 352 × 288) ; elle est à régénérer pour l'entité de tête MCPC (caméra sur le programme 1, mire sur le programme 2). `tb_codeur` (codeur 720 × 576 en demi-trames) n'est pas encore dans la liste des bancs de `run_tests.sh`.
