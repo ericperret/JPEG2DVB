@@ -7,10 +7,10 @@
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-11
---  Version    : 2.13
+--  Version    : 2.17
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC)
 --  Licence    : CC BY-NC 4.0
---  Contenu    : 34 unités, dans l'ordre d'analyse :
+--  Contenu    : 36 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
 --               srrc_coef_pkg coefficients SRRC (généré par refs.js)
 --               sdm_coef_pkg  SRRC à 640 MS/s du sigma-delta (généré par sdm.js)
@@ -40,6 +40,7 @@
 --               sdm3          sigma-delta 1 bit d'ordre 3, 8 bits par cycle, anticipation
 --               sigma_delta   sortie sigma-delta I/Q depuis les symboles QPSK
 --               bt656_rx      récepteur BT.656 du décodeur TVP5150AM1 (SCLK 27 MHz)
+--               cam_mb        couples BT.656 → macroblocs 4:2:0, 27 MHz → 80 MHz
 --               i2c_maitre    maître I²C minimal (étirement, libération du bus)
 --               tvp_ctrl      pilotage du TVP5150AM1 : démarrage, PAL forcé, choix
 --                             automatique ou imposée de l'entrée AIP1A / AIP1B
@@ -109,6 +110,20 @@
 --               2.13 2026-11-11  ts_mux à deux programmes (MCPC, G_MCPC) : canal 2 sur
 --                                s2_*, PAT à 2 programmes, PMT 2 (0x0200), vidéo 0x0201 ;
 --                                à un programme (défaut), sortie inchangée
+--               2.14 2026-11-11  entrée caméra, chantier 3b : cam_mb (couples BT.656 à
+--                                27 MHz → macroblocs 4:2:0 à 80 MHz, une image de
+--                                45 × 18 macroblocs par trame) ; module seul
+--               2.15 2026-11-11  codeur en 720 × 576 par demi-trames : es_mux (G_TRAMES :
+--                                séquence entrelacée, image haute puis image basse) ;
+--                                entité codeur (DCT à assemblage), reprise par video_enc
+--               2.16 2026-11-11  chaîne MCPC de la carte : dvbs_sd (G_MCPC) : caméra
+--                                (cam_mb, codeur 720 × 576) sur le canal 1, mire sur
+--                                le canal 2, 47 % du débit chacun ; ts_mux
+--                                (G_TRAMES1 : une image = deux demi-trames) ;
+--                                jpeg2dvb_top branché en MCPC
+--               2.17 2026-11-11  dvbs_sd : image noire sur le canal 1 quand la caméra
+--                                est absente (25 images par seconde), retour à la
+--                                caméra sur un début d'image
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -2239,6 +2254,7 @@ entity es_mux is
     generic (
         G_LARG     : natural := 352;
         G_HAUT     : natural := 288;
+        G_TRAMES   : boolean := false;        -- chaque demi-trame est une image codée (haute, puis basse)
         G_BIT_RATE : natural := 23040;        -- unités de 400 bit/s (débit TS)
         G_VBV      : natural := 112;          -- unités de 16 kbit
         G_GOP      : natural := 12;
@@ -2262,8 +2278,21 @@ entity es_mux is
 end entity es_mux;
 
 architecture rtl of es_mux is
+    -- rangees : E : hauteur, demi-trames ou non → S : rangées de macroblocs par image codée
+    function rangees(h : natural; t : boolean) return natural is
+    begin
+        if t then return h / 32; end if;
+        return h / 16;
+    end function;
     constant COLS : natural := G_LARG / 16;
-    constant ROWS : natural := G_HAUT / 16;
+    constant ROWS : natural := rangees(G_HAUT, G_TRAMES);
+    -- un : E : condition → S : '1' si vraie
+    function un(c : boolean) return std_logic is
+    begin
+        if c then return '1'; end if;
+        return '0';
+    end function;
+    constant PROG : std_logic := un(not G_TRAMES);         -- séquence et images progressives
 
     -- slv : E : entier, largeur → S : vecteur non signé
     function slv(v, n : natural) return std_logic_vector is
@@ -2282,6 +2311,7 @@ architecture rtl of es_mux is
     signal tr    : natural range 0 to 1023 := 0;          -- temporal_reference
     signal rang  : natural range 0 to 255 := 0;
     signal col   : natural range 0 to 255 := 0;
+    signal basse : std_logic := '0';                       -- demi-trame basse en cours (G_TRAMES)
 
     signal p_valid, p_ready, p_align : std_logic;
     signal p_code : std_logic_vector(31 downto 0);
@@ -2305,7 +2335,7 @@ begin
                     when 1  => w_code <= slv(G_LARG, 12) & slv(G_HAUT, 12) & "0010" & "0011"; w_lg <= 32;       -- 4:3, 25 im/s
                     when 2  => w_code <= slv(G_BIT_RATE, 18) & '1' & slv(G_VBV, 10) & "000"; w_lg <= 32;        -- marqueur, VBV, matrices par défaut
                     when 3  => w_code <= x"000001B5"; w_lg <= 32;
-                    when 4  => w_code <= "0001" & x"48" & '1' & "01" & "00" & "00" & x"000" & '1'; w_lg <= 32;    -- Main@Main, progressif, 4:2:0
+                    when 4  => w_code <= "0001" & x"48" & PROG & "01" & "00" & "00" & x"000" & '1'; w_lg <= 32;   -- Main@Main, progressif ou entrelacé, 4:2:0
                     when 5  => w_lg <= 16;                                                                      -- vbv ext, low_delay, frame_rate ext
                     when 6  => w_code <= x"000001B8"; w_lg <= 32;
                     when 7  => w_code(26 downto 0) <= '0' & slv(tc_h, 5) & slv(tc_mi, 6) & '1' & slv(tc_se, 6) & slv(tc_im, 6) & '1' & '0';
@@ -2313,8 +2343,14 @@ begin
                     when 8  => w_code <= x"00000100"; w_lg <= 32;
                     when 9  => w_code(29 downto 0) <= slv(tr, 10) & "001" & x"FFFF" & '0'; w_lg <= 30; w_align <= '1';   -- image I
                     when 10 => w_code <= x"000001B5"; w_lg <= 32;
-                    when 11 => w_code <= "1000" & x"FFFF" & "00" & "11" & "01000001"; w_lg <= 32;               -- f_code, dc 8 bits, trame, frame_pred_frame_dct, chroma_420_type
-                    when others => w_code(1 downto 0) <= "10"; w_lg <= 2; w_align <= '1';                       -- progressive_frame, composite 0
+                    when 11 =>
+                        if G_TRAMES then
+                            -- f_code, dc 8 bits, picture_structure : 01 demi-trame haute, 10 basse ; drapeaux à 0
+                            w_code <= "1000" & x"FFFF" & "00" & basse & (not basse) & "00000000"; w_lg <= 32;
+                        else
+                            w_code <= "1000" & x"FFFF" & "00" & "11" & "01000001"; w_lg <= 32;           -- f_code, dc 8 bits, image, frame_pred_frame_dct, chroma_420_type
+                        end if;
+                    when others => w_code(1 downto 0) <= PROG & '0'; w_lg <= 2; w_align <= '1';                 -- progressive_frame, composite 0
                 end case;
             when SLICE1    => w_code <= x"000001" & slv(rang + 1, 8); w_lg <= 32;
             when SLICE2    => w_code(5 downto 0) <= std_logic_vector(slice_code) & '0'; w_lg <= 6;
@@ -2337,7 +2373,7 @@ begin
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                etat <= EN_TETE; i <= 0; image <= 0; rang <= 0; col <= 0;
+                etat <= EN_TETE; i <= 0; image <= 0; rang <= 0; col <= 0; basse <= '0';
                 tc_im <= 0; tc_se <= 0; tc_mi <= 0; tc_h <= 0; tr <= 0;
             elsif etat = ARRET then
                 null;
@@ -2364,7 +2400,13 @@ begin
                     when SLICE2    => etat <= MB_ENTETE;
                     when MB_ENTETE => etat <= MB_DONNEES;
                     when SLICE_FIN =>
-                        if rang = ROWS - 1 then
+                        if rang = ROWS - 1 and G_TRAMES and basse = '0' then
+                            -- demi-trame basse de la même image : en-tête d'image seul
+                            basse <= '1';
+                            i     <= 8;
+                            etat  <= EN_TETE;
+                        elsif rang = ROWS - 1 then
+                            basse <= '0';
                             if G_IMAGES /= 0 and image = G_IMAGES - 1 then
                                 etat <= FIN_SEQ;
                             else
@@ -2440,6 +2482,7 @@ entity ts_mux is
         G_IMG   : natural := 12500;         -- période image 40 ms
         G_GOP   : natural := 12;
         G_MCPC  : boolean := false;         -- deux programmes (canal 2 sur s2_*)
+        G_TRAMES1 : boolean := false;       -- canal 1 : une image = deux demi-trames codées
         G_AB1   : natural := 17;            -- mémoire du canal 1 : 2^G_AB1 octets
         G_AB2   : natural := 14             -- mémoire du canal 2 : 2^G_AB2 octets
     );
@@ -2541,6 +2584,7 @@ architecture rtl of ts_mux is
     signal ecr    : adr2_t := (others => (others => '0'));
     signal der3   : der3_2_t := (others => (others => '1'));    -- 3 derniers octets
     signal en_tete_seq : std_logic_vector(0 to 1) := "00";
+    signal basse  : std_logic_vector(0 to 1) := "00";          -- la prochaine image codée est une demi-trame basse
     signal au_deb, au_fin : adr28_t := (others => (others => (others => '0')));
     signal nb_deb, nb_cpl : u32_2_t := (others => (others => '0'));   -- images commencées, complètes
 
@@ -2623,7 +2667,7 @@ begin
     begin
         if rising_edge(clk) then
             if rst = '1' then
-                ecr <= (others => (others => '0')); der3 <= (others => (others => '1')); en_tete_seq <= "00";
+                ecr <= (others => (others => '0')); der3 <= (others => (others => '1')); en_tete_seq <= "00"; basse <= "00";
                 nb_deb <= (others => (others => '0')); nb_cpl <= (others => (others => '0'));
                 d_psi <= (others => '0'); d_pcr <= (others => '0'); d_img <= (others => to_signed(-G_IMG, 40));
                 pts_r <= (others => to_unsigned(12600, 33)); pmt_du <= 0;
@@ -2646,8 +2690,9 @@ begin
                         ecr(c)  <= (w + 1) and masque(c);
                         der3(c) <= der3(c)(15 downto 0) & sd(c);
                         if der3(c) = x"000001" then
-                            if sd(c) = x"B3" or (sd(c) = x"00" and en_tete_seq(c) = '0') then
+                            if sd(c) = x"B3" or (sd(c) = x"00" and en_tete_seq(c) = '0' and not (G_TRAMES1 and c = 0 and basse(c) = '1')) then
                                 -- début d'image à w − 3 ; l'image précédente est complète
+                                if sd(c) = x"00" then basse(c) <= '1'; end if;      -- demi-trame haute : la suivante est basse
                                 if nb_deb(c) > 0 then
                                     au_fin(c, to_integer(nb_deb(c)(2 downto 0) - 1)) <= (w - 3) and masque(c);
                                     nb_cpl(c) <= nb_cpl(c) + 1;
@@ -2656,6 +2701,9 @@ begin
                                 nb_deb(c) <= nb_deb(c) + 1;
                                 if sd(c) = x"B3" then en_tete_seq(c) <= '1'; else en_tete_seq(c) <= '0'; end if;
                             elsif sd(c) = x"00" then
+                                -- image codée sans début d'image : haute après un en-tête de
+                                --   séquence, ou basse de la même image
+                                basse(c) <= en_tete_seq(c);
                                 en_tete_seq(c) <= '0';
                             elsif sd(c) = x"B7" then
                                 -- fin de séquence : la dernière image se termine après ce code
@@ -3601,6 +3649,85 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
+-- codeur : codeur MPEG-2 intra, des macroblocs au flux élémentaire : DCT,
+--   régulation, quantification, zigzag, VLC, assemblage (étapes 02 à 06)
+--   Interface : entrée : octets des macroblocs (format de mire_gen et de
+--               cam_mb) ; sortie : octets du flux élémentaire
+--   Paramètres : G_LARG × G_HAUT : image ; G_TRAMES : chaque demi-trame est
+--                codée comme une image (G_HAUT / 32 rangées) ; G_T : budget en
+--                bits par image codée (par demi-trame si G_TRAMES) ; G_GOP en
+--                images ; G_IMAGES : nombre d'images (0 = sans fin)
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity codeur is
+    generic (
+        G_LARG     : natural := 352;
+        G_HAUT     : natural := 288;
+        G_TRAMES   : boolean := false;
+        G_T        : natural := 350196;
+        G_GOP      : natural := 12;
+        G_BIT_RATE : natural := 23040;
+        G_IMAGES   : natural := 0
+    );
+    port (
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        s_valid : in  std_logic;
+        s_ready : out std_logic;
+        s_data  : in  unsigned(7 downto 0);
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_data  : out std_logic_vector(7 downto 0)
+    );
+end entity codeur;
+
+architecture rtl of codeur is
+    -- rangees : E : hauteur, demi-trames ou non → S : rangées de macroblocs par image codée
+    function rangees(h : natural; t : boolean) return natural is
+    begin
+        if t then return h / 32; end if;
+        return h / 16;
+    end function;
+    -- gop_codees : E : GOP en images, demi-trames ou non → S : GOP en images codées
+    function gop_codees(g : natural; t : boolean) return natural is
+    begin
+        if t then return 2 * g; end if;
+        return g;
+    end function;
+    constant COLS : natural := G_LARG / 16;
+    constant ROWS : natural := rangees(G_HAUT, G_TRAMES);
+    signal d_valid, d_ready          : std_logic;
+    signal d_data                    : signed(15 downto 0);
+    signal g_valid, g_ready          : std_logic;
+    signal g_data                    : signed(15 downto 0);
+    signal code                      : unsigned(4 downto 0);
+    signal code_ok                   : std_logic;
+    signal q_valid, q_ready          : std_logic;
+    signal q_data                    : signed(15 downto 0);
+    signal z_valid, z_ready          : std_logic;
+    signal z_data                    : signed(15 downto 0);
+    signal v_valid, v_ready, v_fin   : std_logic;
+    signal v_code                    : std_logic_vector(31 downto 0);
+    signal v_lg                      : unsigned(5 downto 0);
+begin
+    u_dct : entity work.dct8x8_int
+        port map (clk, rst, s_valid, s_ready, s_data, d_valid, d_ready, d_data);
+    u_rc : entity work.rate_ctrl generic map (G_COLS => COLS, G_ROWS => ROWS, G_T => G_T, G_GOP => gop_codees(G_GOP, G_TRAMES))
+        port map (clk, rst, d_valid, d_ready, d_data, g_valid, g_ready, g_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
+    u_quant : entity work.quant_intra
+        port map (clk, rst, code, g_valid, g_ready, g_data, q_valid, q_ready, q_data);
+    u_zz : entity work.zigzag
+        port map (clk, rst, q_valid, q_ready, q_data, z_valid, z_ready, z_data);
+    u_vlc : entity work.vlc_enc
+        port map (clk, rst, z_valid, z_ready, z_data, v_valid, v_ready, v_code, v_lg, v_fin);
+    u_es : entity work.es_mux generic map (G_LARG => G_LARG, G_HAUT => G_HAUT, G_TRAMES => G_TRAMES, G_BIT_RATE => G_BIT_RATE, G_GOP => G_GOP, G_IMAGES => G_IMAGES)
+        port map (clk, rst, code, code_ok, v_valid, v_ready, v_code, v_lg, v_fin, m_valid, m_ready, m_data);
+end architecture rtl;
+
+--------------------------------------------------------------------------------
 -- video_enc : tête de chaîne vidéo : mire animée → DCT entière → régulation
 --   TM5 → quantification → zigzag → VLC → flux élémentaire → PES et
 --   Transport Stream à débit constant ; référence bit à bit :
@@ -3635,36 +3762,13 @@ end entity video_enc;
 architecture rtl of video_enc is
     signal p_valid, p_ready, p_debut : std_logic;
     signal p_data                    : unsigned(7 downto 0);
-    signal d_valid, d_ready          : std_logic;
-    signal d_data                    : signed(15 downto 0);
-    signal g_valid, g_ready          : std_logic;
-    signal g_data                    : signed(15 downto 0);
-    signal code                      : unsigned(4 downto 0);
-    signal code_ok                   : std_logic;
-    signal q_valid, q_ready          : std_logic;
-    signal q_data                    : signed(15 downto 0);
-    signal z_valid, z_ready          : std_logic;
-    signal z_data                    : signed(15 downto 0);
-    signal v_valid, v_ready, v_fin   : std_logic;
-    signal v_code                    : std_logic_vector(31 downto 0);
-    signal v_lg                      : unsigned(5 downto 0);
     signal e_valid, e_ready          : std_logic;
     signal e_data                    : std_logic_vector(7 downto 0);
 begin
     u_mire : entity work.mire_gen
         port map (clk, rst, p_valid, p_ready, p_data, p_debut);
-    u_dct : entity work.dct8x8_int
-        port map (clk, rst, p_valid, p_ready, p_data, d_valid, d_ready, d_data);
-    u_rc : entity work.rate_ctrl generic map (G_T => G_T)
-        port map (clk, rst, d_valid, d_ready, d_data, g_valid, g_ready, g_data, v_valid, v_ready, v_lg, v_fin, code, code_ok);
-    u_quant : entity work.quant_intra
-        port map (clk, rst, code, g_valid, g_ready, g_data, q_valid, q_ready, q_data);
-    u_zz : entity work.zigzag
-        port map (clk, rst, q_valid, q_ready, q_data, z_valid, z_ready, z_data);
-    u_vlc : entity work.vlc_enc
-        port map (clk, rst, z_valid, z_ready, z_data, v_valid, v_ready, v_code, v_lg, v_fin);
-    u_es : entity work.es_mux generic map (G_IMAGES => G_IMAGES)
-        port map (clk, rst, code, code_ok, v_valid, v_ready, v_code, v_lg, v_fin, e_valid, e_ready, e_data);
+    u_cod : entity work.codeur generic map (G_T => G_T, G_IMAGES => G_IMAGES)
+        port map (clk, rst, p_valid, p_ready, p_data, e_valid, e_ready, e_data);
     u_ts : entity work.ts_mux
         port map (clk, rst, e_valid, e_ready, e_data, m_valid, m_ready, m_data, m_sop);
 end architecture rtl;
@@ -4256,6 +4360,307 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
+-- cam_mb : entrée caméra : couples de pixels BT.656 (domaine 27 MHz de
+--   bt656_rx) → macroblocs 4:2:0 dans le domaine 80 MHz, au format de
+--   mire_gen ; chaque trame (720 × 288) est une image de 45 × 18 macroblocs ;
+--   référence octet à octet : fpga_test/cam_mb.bin (fpga_test/bt656.js)
+--   Interface : entrée : sorties de bt656_rx (v_valid, Cb, Y0, Cr, Y1, trame,
+--               ligne, couple, début de trame), sans contrôle de flux ;
+--               sortie : octets dans l'ordre des macroblocs, 6 blocs par
+--               macrobloc (4 Y, Cb, Cr), 64 valeurs par bloc ; m_debut sur le
+--               premier octet de chaque trame, m_trame : trame en cours
+--               (0 = trame 1) ; retard : une rangée a été lue alors que la
+--               suivante était déjà complète (image abîmée, structure gardée)
+--   Principe : une mémoire à deux horloges garde 32 lignes de la trame (deux
+--              rangées de macroblocs), luminance et chrominance : adresse =
+--              plan (Y, C) & ligne mod 32 & octet de la ligne (0 à 719).
+--              Écriture (27 MHz) : les 4 octets d'un couple en 4 cycles ; à la
+--              fin de chaque rangée de 16 lignes, un compteur de rangées
+--              complètes avance d'un pas (code de Gray, resynchronisé dans le
+--              domaine 80 MHz). Les rangées sont numérotées 0 à 35 dans
+--              l'image (18 par trame) ; si une trame commence hors de son
+--              rang (signal perdu puis revenu), les rangées manquantes sont
+--              déclarées complètes, une par cycle : la suite reste alignée.
+--              Lecture (80 MHz) : tant qu'il reste des rangées complètes, les
+--              45 macroblocs de la suivante sont sortis ; chaque bloc est
+--              d'abord copié de la mémoire dans un tampon de 64 octets (un
+--              octet par cycle pour Y, deux lectures par octet pour Cb et Cr),
+--              puis remis à l'aval.
+--              Chrominance 4:2:0 de la trame : moyenne arrondie des deux
+--              lignes de chaque paire, (a + b + 1) >> 1.
+--   Débit : environ 41 000 cycles par rangée avec la DCT en aval, pour
+--           81 920 cycles disponibles (16 lignes de 64 µs).
+--------------------------------------------------------------------------------
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
+
+entity cam_mb is
+    port (
+        clk_v   : in  std_logic;
+        rst_v   : in  std_logic;
+        v_valid : in  std_logic;
+        v_cb    : in  std_logic_vector(7 downto 0);
+        v_y0    : in  std_logic_vector(7 downto 0);
+        v_cr    : in  std_logic_vector(7 downto 0);
+        v_y1    : in  std_logic_vector(7 downto 0);
+        v_trame : in  std_logic;
+        v_ligne : in  unsigned(8 downto 0);
+        v_x     : in  unsigned(8 downto 0);
+        v_dt    : in  std_logic;
+        clk     : in  std_logic;
+        rst     : in  std_logic;
+        m_valid : out std_logic;
+        m_ready : in  std_logic;
+        m_data  : out unsigned(7 downto 0);
+        m_debut : out std_logic;
+        m_trame : out std_logic;
+        retard  : out std_logic
+    );
+end entity cam_mb;
+
+architecture rtl of cam_mb is
+    subtype octet_t is std_logic_vector(7 downto 0);
+    -- mémoire de 32 lignes : plan (1 bit) & ligne mod 32 (5 bits) & octet (10 bits)
+    type ram_t is array (0 to 65535) of octet_t;
+    signal ram     : ram_t;
+    -- gray : E : binaire → S : code de Gray
+    function gray(b : unsigned(7 downto 0)) return std_logic_vector is
+    begin
+        return std_logic_vector(b xor ('0' & b(7 downto 1)));
+    end function;
+    -- binaire : E : code de Gray → S : binaire
+    function binaire(g : std_logic_vector(7 downto 0)) return unsigned is
+        variable b : unsigned(7 downto 0);
+    begin
+        b(7) := g(7);
+        for i in 6 downto 0 loop
+            b(i) := b(i + 1) xor g(i);
+        end loop;
+        return b;
+    end function;
+
+    -- écriture (27 MHz)
+    signal w_ph    : natural range 0 to 3 := 0;            -- octet du couple à écrire
+    signal w_y1, w_cb, w_cr : octet_t := (others => '0');
+    signal w_slot  : unsigned(4 downto 0) := (others => '0');
+    signal w_x     : unsigned(8 downto 0) := (others => '0');
+    signal w_fin   : std_logic := '0';                     -- le couple en cours termine une rangée
+    signal w_ok    : std_logic := '0';                     -- aligné sur un début d'image
+    signal w_rang  : natural range 0 to 35 := 0;           -- rangée en cours dans l'image
+    signal w_dette : natural range 0 to 63 := 0;           -- rangées à déclarer complètes
+    signal w_cnt   : unsigned(7 downto 0) := (others => '0');
+    signal w_gray  : std_logic_vector(7 downto 0) := (others => '0');
+
+    -- lecture (80 MHz)
+    signal g1, g2  : std_logic_vector(7 downto 0) := (others => '0');
+    signal r_cnt   : unsigned(7 downto 0) := (others => '0');
+    signal r_rang  : natural range 0 to 35 := 0;
+    type etat_t is (ATTENTE, COPIE, SORTIE);
+    signal etat    : etat_t := ATTENTE;
+    signal mbc     : natural range 0 to 44 := 0;
+    signal blk     : natural range 0 to 5 := 0;
+    signal pas     : natural range 0 to 130 := 0;
+    signal ra      : unsigned(15 downto 0) := (others => '0');
+    signal lu, ca  : octet_t := (others => '0');
+    type bloc_t is array (0 to 63) of octet_t;
+    signal bloc    : bloc_t;
+    signal k       : natural range 0 to 64 := 0;
+    signal o_valid : std_logic := '0';
+    signal libre   : std_logic;
+begin
+    ----------------------------------------------------------------------------
+    -- domaine 27 MHz
+    ----------------------------------------------------------------------------
+    -- E : couples de pixels → T : 4 écritures par couple (Y0, Y1, Cb, Cr),
+    --   rangées complètes comptées en code de Gray → S : mémoire, w_gray
+    process (clk_v)
+        variable ecr   : boolean;
+        variable adr   : unsigned(15 downto 0);
+        variable oct   : octet_t;
+        variable dette : natural range 0 to 127;
+        variable cible : natural range 0 to 35;
+        variable n     : unsigned(7 downto 0);
+    begin
+        if rising_edge(clk_v) then
+            ecr := false; adr := (others => '0'); oct := (others => '0');
+            if rst_v = '1' then
+                w_ph <= 0; w_fin <= '0'; w_ok <= '0'; w_rang <= 0; w_dette <= 0;
+                w_cnt <= (others => '0'); w_gray <= (others => '0');
+            else
+                dette := w_dette;
+                if v_valid = '1' then
+                    -- premier octet du couple : Y0 ; les trois autres aux cycles suivants
+                    ecr := true; adr := '0' & v_ligne(4 downto 0) & v_x & '0'; oct := v_y0;
+                    w_y1 <= v_y1; w_cb <= v_cb; w_cr <= v_cr;
+                    w_slot <= v_ligne(4 downto 0); w_x <= v_x;
+                    w_ph <= 1;
+                    if v_x = 359 and v_ligne(3 downto 0) = 15 then w_fin <= '1'; else w_fin <= '0'; end if;
+                    if v_dt = '1' then
+                        -- début de trame : alignement sur le rang 0 (trame 1) ou 18 (trame 2)
+                        if v_trame = '1' then cible := 18; else cible := 0; end if;
+                        if w_ok = '0' then
+                            if v_trame = '0' then
+                                w_ok   <= '1';
+                                w_rang <= 0;
+                            end if;
+                        elsif w_rang /= cible then
+                            dette  := dette + (cible + 36 - w_rang) mod 36;
+                            w_rang <= cible;
+                        end if;
+                    end if;
+                elsif w_ph /= 0 then
+                    ecr := true;
+                    case w_ph is
+                        when 1 => adr := '0' & w_slot & w_x & '1'; oct := w_y1;
+                        when 2 => adr := '1' & w_slot & w_x & '0'; oct := w_cb;
+                        when others => adr := '1' & w_slot & w_x & '1'; oct := w_cr;
+                    end case;
+                    if w_ph = 3 then
+                        w_ph <= 0;
+                        if w_fin = '1' and w_ok = '1' then
+                            dette := dette + 1;
+                            if w_rang = 35 then w_rang <= 0; else w_rang <= w_rang + 1; end if;
+                        end if;
+                    else
+                        w_ph <= w_ph + 1;
+                    end if;
+                end if;
+                -- compteur de rangées complètes : un pas par cycle au plus
+                if dette /= 0 then
+                    n := w_cnt + 1;
+                    w_cnt  <= n;
+                    w_gray <= gray(n);
+                    dette  := dette - 1;
+                end if;
+                if dette > 63 then w_dette <= 63; else w_dette <= dette; end if;
+            end if;
+            if ecr then
+                ram(to_integer(adr)) <= oct;
+            end if;
+        end if;
+    end process;
+
+    ----------------------------------------------------------------------------
+    -- domaine 80 MHz
+    ----------------------------------------------------------------------------
+    libre   <= (not o_valid) or m_ready;
+    m_valid <= o_valid;
+
+    -- lecture synchrone de la mémoire
+    process (clk)
+    begin
+        if rising_edge(clk) then
+            lu <= ram(to_integer(ra));
+        end if;
+    end process;
+
+    -- E : rangées complètes → T : pour chaque macrobloc, 6 blocs copiés de la
+    --   mémoire dans le tampon puis sortis → S : octets des macroblocs
+    process (clk)
+        variable w_bin  : unsigned(7 downto 0);
+        variable moitie : std_logic;
+        variable i      : natural range 0 to 63;
+        variable yy, xx : unsigned(2 downto 0);
+        variable lig    : unsigned(3 downto 0);
+        variable col    : unsigned(9 downto 0);
+        variable som    : unsigned(8 downto 0);
+        variable dern   : natural range 0 to 130;
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                g1 <= (others => '0'); g2 <= (others => '0');
+                r_cnt <= (others => '0'); r_rang <= 0; etat <= ATTENTE;
+                mbc <= 0; blk <= 0; pas <= 0; k <= 0; o_valid <= '0'; retard <= '0';
+            else
+                g1 <= w_gray; g2 <= g1;
+                w_bin := binaire(g2);
+                retard <= '0';
+                if libre = '1' then
+                    o_valid <= '0';
+                end if;
+                if r_rang mod 2 = 1 then moitie := '1'; else moitie := '0'; end if;
+                case etat is
+                    when ATTENTE =>
+                        if r_cnt /= w_bin then
+                            if w_bin - r_cnt >= 2 then retard <= '1'; end if;
+                            mbc <= 0; blk <= 0; pas <= 0;
+                            etat <= COPIE;
+                        end if;
+                    -- copie d'un bloc : adresse au pas n, octet lu deux cycles après
+                    when COPIE =>
+                        if blk < 4 then
+                            -- luminance : une lecture par octet
+                            dern := 65;
+                            if pas <= 63 then
+                                yy := to_unsigned(pas / 8, 3); xx := to_unsigned(pas mod 8, 3);
+                                if blk >= 2 then lig := '1' & yy; else lig := '0' & yy; end if;
+                                col := to_unsigned(16 * mbc, 10) + xx;
+                                if blk mod 2 = 1 then col := col + 8; end if;
+                                ra <= '0' & moitie & lig & col;
+                            end if;
+                            if pas >= 2 then
+                                bloc(pas - 2) <= lu;
+                            end if;
+                        else
+                            -- chrominance : deux lignes par octet, moyenne arrondie
+                            dern := 130;
+                            if pas <= 127 then
+                                i := pas / 2;
+                                yy := to_unsigned(i / 8, 3); xx := to_unsigned(i mod 8, 3);
+                                if pas mod 2 = 1 then lig := yy & '1'; else lig := yy & '0'; end if;
+                                col := shift_left(to_unsigned(8 * mbc, 10) + xx, 1);
+                                if blk = 5 then col := col + 1; end if;
+                                ra <= '1' & moitie & lig & col;
+                            end if;
+                            if pas >= 2 and pas mod 2 = 0 then
+                                ca <= lu;
+                            end if;
+                            if pas >= 3 and pas mod 2 = 1 then
+                                som := resize(unsigned(ca), 9) + resize(unsigned(lu), 9) + 1;
+                                bloc((pas - 3) / 2) <= std_logic_vector(som(8 downto 1));
+                            end if;
+                        end if;
+                        if pas = dern then
+                            pas  <= 0;
+                            k    <= 0;
+                            etat <= SORTIE;
+                        else
+                            pas <= pas + 1;
+                        end if;
+                    -- remise du bloc à l'aval
+                    when SORTIE =>
+                        if libre = '1' then
+                            if k = 64 then
+                                if blk = 5 then
+                                    blk <= 0;
+                                    if mbc = 44 then
+                                        r_cnt <= r_cnt + 1;
+                                        if r_rang = 35 then r_rang <= 0; else r_rang <= r_rang + 1; end if;
+                                        etat <= ATTENTE;
+                                    else
+                                        mbc  <= mbc + 1;
+                                        etat <= COPIE;
+                                    end if;
+                                else
+                                    blk  <= blk + 1;
+                                    etat <= COPIE;
+                                end if;
+                            else
+                                m_data  <= unsigned(bloc(k));
+                                if (r_rang = 0 or r_rang = 18) and mbc = 0 and blk = 0 and k = 0 then m_debut <= '1'; else m_debut <= '0'; end if;
+                                if r_rang >= 18 then m_trame <= '1'; else m_trame <= '0'; end if;
+                                o_valid <= '1';
+                                k <= k + 1;
+                            end if;
+                        end if;
+                end case;
+            end if;
+        end if;
+    end process;
+end architecture rtl;
+
+--------------------------------------------------------------------------------
 -- i2c_maitre : maître I²C minimal (un seul esclave, sans arbitrage), pour le
 --   décodeur TVP5150AM1 (adresse B8h, I2CSEL à 0) ; l'esclave peut étirer SCL
 --   Interface : go, si occupe = 0, lance une transaction : lire = 0 : S,
@@ -4679,7 +5084,8 @@ use work.dvbs_pkg.all;
 entity dvbs_sd is
     generic (
         G_IMAGES : natural := 0;
-        G_FEC    : natural range 0 to 4 := 0
+        G_FEC    : natural range 0 to 4 := 0;
+        G_MCPC   : boolean := false          -- caméra sur le canal 1, mire sur le canal 2
     );
     port (
         clk     : in  std_logic;
@@ -4687,7 +5093,19 @@ entity dvbs_sd is
         m_valid : out std_logic;
         m_ready : in  std_logic;
         m_i     : out std_logic_vector(7 downto 0);
-        m_q     : out std_logic_vector(7 downto 0)
+        m_q     : out std_logic_vector(7 downto 0);
+        -- caméra : sorties de bt656_rx, domaine clk_v (G_MCPC)
+        clk_v   : in  std_logic := '0';
+        rst_v   : in  std_logic := '1';
+        v_valid : in  std_logic := '0';
+        v_cb    : in  std_logic_vector(7 downto 0) := (others => '0');
+        v_y0    : in  std_logic_vector(7 downto 0) := (others => '0');
+        v_cr    : in  std_logic_vector(7 downto 0) := (others => '0');
+        v_y1    : in  std_logic_vector(7 downto 0) := (others => '0');
+        v_trame : in  std_logic := '0';
+        v_ligne : in  unsigned(8 downto 0) := (others => '0');
+        v_x     : in  unsigned(8 downto 0) := (others => '0');
+        v_dt    : in  std_logic := '0'
     );
 end entity dvbs_sd;
 
@@ -4703,8 +5121,114 @@ architecture rtl of dvbs_sd is
     signal c_valid, c_ready        : std_logic;
     signal c_data                  : std_logic_vector(1 downto 0);
 begin
-    u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(10_000_000, G_FEC, 95, 25))
-        port map (clk, rst, t_valid, t_ready, t_data, t_sop);
+    -- un programme : mire animée seule (bancs)
+    g_un : if not G_MCPC generate
+        u_video : entity work.video_enc generic map (G_IMAGES => G_IMAGES, G_T => budget_image(10_000_000, G_FEC, 95, 25))
+            port map (clk, rst, t_valid, t_ready, t_data, t_sop);
+    end generate;
+
+    -- deux programmes : caméra 720 × 576 par demi-trames sur le canal 1, mire
+    --   352 × 288 sur le canal 2 ; 47 % du débit chacun (budget par demi-trame
+    --   à 50 par seconde pour la caméra, par image à 25 par seconde pour la mire)
+    g_deux : if G_MCPC generate
+        signal c_mb_valid, c_mb_ready : std_logic;
+        signal c_mb_data              : unsigned(7 downto 0);
+        signal c_es_valid, c_es_ready : std_logic;
+        signal c_es_data              : std_logic_vector(7 downto 0);
+        signal m_mb_valid, m_mb_ready : std_logic;
+        signal m_mb_data              : unsigned(7 downto 0);
+        signal m_es_valid, m_es_ready : std_logic;
+        signal m_es_data              : std_logic_vector(7 downto 0);
+        -- entrée du codeur 1 : caméra, ou image noire si la caméra est absente
+        constant T_IMAGE  : natural := 3_200_000;         -- 40 ms à 80 MHz
+        constant T_ABSENT : natural := 4_000_000;         -- 50 ms sans octet : caméra absente
+        signal c_debut, c_trame       : std_logic;
+        signal x_valid, x_ready       : std_logic;
+        signal x_data                 : unsigned(7 downto 0);
+        signal sel_cam                : std_logic := '0';                 -- 1 : caméra, 0 : noir
+        signal cam_pret               : std_logic;                        -- la caméra présente un début d'image
+        signal pmb                    : natural range 0 to 383 := 0;      -- octet dans le macrobloc
+        signal nmb                    : natural range 0 to 1619 := 0;     -- macrobloc dans l'image (45 × 36)
+        signal tic                    : natural range 0 to T_IMAGE - 1 := 0;
+        signal du                     : std_logic := '1';                 -- une image noire est due
+        signal att                    : natural range 0 to T_ABSENT - 1 := 0;
+    begin
+        -- E : macroblocs de la caméra → T : sans caméra, image noire (Y = 16,
+        --   Cb = Cr = 128) au rythme de 25 par seconde ; une image commencée
+        --   avec la caméra et interrompue est finie en noir ; retour à la
+        --   caméra à une frontière d'image, quand elle présente un début
+        --   d'image (trame 1) → S : macroblocs vers le codeur 1
+        cam_pret   <= c_mb_valid and c_debut and not c_trame;
+        x_valid    <= c_mb_valid when sel_cam = '1' else
+                      du when pmb = 0 and nmb = 0 else '1';
+        x_data     <= c_mb_data when sel_cam = '1' else
+                      to_unsigned(16, 8) when pmb < 256 else to_unsigned(128, 8);
+        c_mb_ready <= x_ready when sel_cam = '1' else not cam_pret;
+        process (clk)
+        begin
+            if rising_edge(clk) then
+                if rst = '1' then
+                    sel_cam <= '0'; pmb <= 0; nmb <= 0; tic <= 0; du <= '1'; att <= 0;
+                else
+                    -- cadence des images noires
+                    if tic = T_IMAGE - 1 then
+                        tic <= 0;
+                        du  <= '1';
+                    else
+                        tic <= tic + 1;
+                    end if;
+                    if x_valid = '1' and x_ready = '1' then
+                        att <= 0;
+                        if sel_cam = '0' and pmb = 0 and nmb = 0 then
+                            du <= '0';
+                        end if;
+                        if pmb = 383 then
+                            pmb <= 0;
+                            if nmb = 1619 then
+                                -- frontière d'image : la caméra prend la suite si elle est prête
+                                nmb <= 0;
+                                if sel_cam = '0' and cam_pret = '1' then
+                                    sel_cam <= '1';
+                                end if;
+                            else
+                                nmb <= nmb + 1;
+                            end if;
+                        else
+                            pmb <= pmb + 1;
+                        end if;
+                    elsif sel_cam = '1' and x_ready = '1' then
+                        -- le codeur attend la caméra
+                        if att = T_ABSENT - 1 then
+                            att     <= 0;
+                            sel_cam <= '0';
+                        else
+                            att <= att + 1;
+                        end if;
+                    end if;
+                end if;
+            end if;
+        end process;
+
+        u_cam : entity work.cam_mb
+            port map (clk_v => clk_v, rst_v => rst_v, v_valid => v_valid, v_cb => v_cb, v_y0 => v_y0, v_cr => v_cr, v_y1 => v_y1,
+                      v_trame => v_trame, v_ligne => v_ligne, v_x => v_x, v_dt => v_dt,
+                      clk => clk, rst => rst, m_valid => c_mb_valid, m_ready => c_mb_ready, m_data => c_mb_data,
+                      m_debut => c_debut, m_trame => c_trame, retard => open);
+        u_cod1 : entity work.codeur
+            generic map (G_LARG => 720, G_HAUT => 576, G_TRAMES => true, G_T => budget_image(10_000_000, G_FEC, 47, 50))
+            port map (clk, rst, x_valid, x_ready, x_data, c_es_valid, c_es_ready, c_es_data);
+        u_mire : entity work.mire_gen
+            port map (clk => clk, rst => rst, m_valid => m_mb_valid, m_ready => m_mb_ready, m_data => m_mb_data, m_debut => open);
+        u_cod2 : entity work.codeur
+            generic map (G_T => budget_image(10_000_000, G_FEC, 47, 25), G_IMAGES => G_IMAGES)
+            port map (clk, rst, m_mb_valid, m_mb_ready, m_mb_data, m_es_valid, m_es_ready, m_es_data);
+        u_ts : entity work.ts_mux
+            generic map (G_MCPC => true, G_TRAMES1 => true, G_AB2 => 16)
+            port map (clk => clk, rst => rst, s_valid => c_es_valid, s_ready => c_es_ready, s_data => c_es_data,
+                      m_valid => t_valid, m_ready => t_ready, m_data => t_data, m_sop => t_sop,
+                      s2_valid => m_es_valid, s2_ready => m_es_ready, s2_data => m_es_data);
+    end generate;
+
     u_prbs : entity work.prbs_disp
         port map (clk, rst, t_valid, t_ready, t_data, t_sop, p_valid, p_ready, p_data, p_sop);
     u_rs : entity work.rs_enc
@@ -4875,7 +5399,9 @@ end architecture rtl;
 --              choix de tvp_ctrl (1 : AIP1A, 2 : AIP1B, 0 et 3 : automatique ;
 --              3 : mire imposée, réservé à la sélection de source du chantier
 --              3b) ; registre MODE rangé, branché aux chantiers FEC, débit et
---              DVB-S2 ; source : mire animée (dvbs_sd, DVB-S, FEC 1/2, 10 MS/s) ;
+--              DVB-S2 ; deux programmes (dvbs_sd, DVB-S, FEC 1/2, 10 MS/s) :
+--              caméra sur le canal 1 (image noire si elle est absente), mire
+--              animée sur le canal 2 ;
 --              sigma-delta au repos (01010101) avant le premier symbole
 --   Paramètres : G_TVP_HZ : horloge vue par tvp_ctrl (80 MHz ; réduite en
 --                simulation pour raccourcir les délais du décodeur)
@@ -4977,7 +5503,11 @@ begin
     rst_sclk <= raz_sclk(2);
 
     -- chaîne d'émission et sorties LVDS (repos 01010101 avant le premier symbole)
-    u_tx : entity work.dvbs_sd port map (clk_sys, rst, sd_valid, '1', sd_i, sd_q);
+    u_tx : entity work.dvbs_sd
+        generic map (G_MCPC => true)
+        port map (clk => clk_sys, rst => rst, m_valid => sd_valid, m_ready => '1', m_i => sd_i, m_q => sd_q,
+                  clk_v => tvp_sclk, rst_v => rst_sclk, v_valid => b_valid, v_cb => b_cb, v_y0 => b_y0, v_cr => b_cr, v_y1 => b_y1,
+                  v_trame => b_trame, v_ligne => b_ligne, v_x => b_x, v_dt => b_dt);
     s_i <= sd_i when sd_valid = '1' else "01010101";
     s_q <= sd_q when sd_valid = '1' else "01010101";
     u_lvds : sortie_lvds port map (clk_sys, clk_hs, rst, s_i, s_q, sd_i_p, sd_i_n, sd_q_p, sd_q_n);
