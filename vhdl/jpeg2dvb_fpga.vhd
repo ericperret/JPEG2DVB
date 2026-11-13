@@ -6,8 +6,8 @@
 --               chaque module de la chaîne reproduit au bit près une étape de
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-12
---  Version    : 2.24
+--  Date       : 2026-11-13
+--  Version    : 2.25
 --  Plateforme : VHDL-2008, synthétisable (Libero SoC), PolarFire MPF100T
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 42 unités, dans l'ordre d'analyse :
@@ -173,6 +173,11 @@
 --               2.24 2026-11-12  codeur : nombre de macroblocs par rangée transmis à
 --                                vlc_enc (G_COLS ; 22 par défaut : prédiction DC
 --                                remise à zéro tous les 22 macroblocs en 720 × 576)
+--               2.25 2026-11-13  cœurs Libero tels que générés : PF_CCC_SYS (80 MHz
+--                                seul) → PF_IOD_TX_CCC_IOD (320 MHz, 80 MHz, alignement
+--                                des horloges) ; PF_IOD_TX_SD : bus TXD_DATA de 16 bits,
+--                                retour d'alignement ; horloges, sortie_lvds et
+--                                jpeg2dvb_top adaptés
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -6550,30 +6555,39 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- horloges : deux PLL depuis l'oscillateur 50 MHz ; verrou : les deux PLL
---   verrouillés ; cœurs PF_CCC_SYS (80 MHz global, 320 MHz HS_IO_CLK) et
---   PF_CCC_TVP (14,318182 MHz) créés dans le catalogue Libero
+-- horloges : PLL depuis l'oscillateur 50 MHz ; cœurs créés dans le catalogue
+--   Libero : PF_CCC_SYS (50 → 80 MHz, référence du cœur suivant),
+--   PF_IOD_TX_CCC_IOD (PF_IOD_TX_CCC, 640 Mbit/s, rapport 4, multiplicateur 4 :
+--   80 MHz → HS_IO_CLK 320 MHz, TX_CLK_G 80 MHz pour la logique et pour les
+--   sérialiseurs, alignement des deux horloges) et PF_CCC_TVP (14,318 MHz)
+--   Ports : clk_sys : horloge de toute la logique (TX_CLK_G) ; clk_iod, clk_hs,
+--           pause : vers sortie_lvds ; aligne : retour d'alignement de
+--           sortie_lvds ; verrou : les trois PLL verrouillés ; aligne_ok :
+--           alignement des horloges terminé (information)
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 
 entity horloges is
     port (
-        osc_50  : in  std_logic;
-        clk_sys : out std_logic;
-        clk_hs  : out std_logic;
-        clk_tvp : out std_logic;
-        verrou  : out std_logic
+        osc_50    : in  std_logic;
+        aligne    : in  std_logic_vector(3 downto 0);
+        clk_sys   : out std_logic;
+        clk_iod   : out std_logic;
+        clk_hs    : out std_logic;
+        pause     : out std_logic;
+        clk_tvp   : out std_logic;
+        verrou    : out std_logic;
+        aligne_ok : out std_logic
     );
 end entity horloges;
 
 architecture rtl of horloges is
     component PF_CCC_SYS is
         port (
-            REF_CLK_0        : in  std_logic;
-            OUT0_FABCLK_0    : out std_logic;
-            OUT1_HS_IO_CLK_0 : out std_logic;
-            PLL_LOCK_0       : out std_logic
+            REF_CLK_0     : in  std_logic;
+            OUT0_FABCLK_0 : out std_logic;
+            PLL_LOCK_0    : out std_logic
         );
     end component;
     component PF_CCC_TVP is
@@ -6583,29 +6597,55 @@ architecture rtl of horloges is
             PLL_LOCK_0    : out std_logic
         );
     end component;
-    signal v_sys, v_tvp : std_logic;
+    component PF_IOD_TX_CCC_IOD is
+        port (
+            CLK_ALIGN_IOD_RX : in  std_logic_vector(3 downto 0);
+            POWERDOWN_N      : in  std_logic;
+            REF_CLK          : in  std_logic;
+            CLK_TRAIN_DONE   : out std_logic;
+            HS_IO_CLK_0      : out std_logic;
+            HS_IO_CLK_PAUSE  : out std_logic;
+            PLL_LOCK         : out std_logic;
+            TX_CLK_G         : out std_logic;
+            TX_CLK_G_TO_IOD  : out std_logic
+        );
+    end component;
+    signal ref_80 : std_logic;
+    signal v_sys, v_tvp, v_iod : std_logic;
 begin
-    u_sys : PF_CCC_SYS port map (REF_CLK_0 => osc_50, OUT0_FABCLK_0 => clk_sys, OUT1_HS_IO_CLK_0 => clk_hs, PLL_LOCK_0 => v_sys);
+    u_sys : PF_CCC_SYS port map (REF_CLK_0 => osc_50, OUT0_FABCLK_0 => ref_80, PLL_LOCK_0 => v_sys);
     u_tvp : PF_CCC_TVP port map (REF_CLK_0 => osc_50, OUT0_FABCLK_0 => clk_tvp, PLL_LOCK_0 => v_tvp);
-    verrou <= v_sys and v_tvp;
+    -- le second PLL démarre quand sa référence (80 MHz) est stable
+    u_iod : PF_IOD_TX_CCC_IOD port map (CLK_ALIGN_IOD_RX => aligne, POWERDOWN_N => v_sys, REF_CLK => ref_80,
+                                        CLK_TRAIN_DONE => aligne_ok, HS_IO_CLK_0 => clk_hs, HS_IO_CLK_PAUSE => pause,
+                                        PLL_LOCK => v_iod, TX_CLK_G => clk_sys, TX_CLK_G_TO_IOD => clk_iod);
+    verrou <= v_sys and v_tvp and v_iod;
 end architecture rtl;
 
 --------------------------------------------------------------------------------
 -- sortie_lvds : sérialiseurs 8:1 des voies I et Q (640 Mbit/s) ; d_i, d_q :
 --   bit 7 émis en premier ; cœur PF_IOD_TX_SD (PF_IOD_GENERIC_TX, interface
---   TX_DDRX_B_G_FA, 2 voies, LVDS) créé dans le catalogue Libero ; TX_DATA(0)
---   supposé émis en premier, d'où l'inversion des bits
+--   TX_DDRX_B, rapport 4, 2 voies, LVDS, sans horloge transmise) créé dans le
+--   catalogue Libero ; TXD_DATA : voie I sur les bits 7..0, voie Q sur les bits
+--   15..8, bit de poids faible supposé émis en premier (d'où l'inversion des
+--   bits ; ordre à confirmer sur le cœur généré)
+--   Ports : clk_iod, clk_hs, pause : horloges et pause de horloges ; verrou :
+--           PLL verrouillés (remise à zéro des sérialiseurs, indépendante de
+--           rst pour que l'alignement des horloges se fasse) ; aligne : retour
+--           d'alignement vers horloges
 --------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 
 entity sortie_lvds is
     port (
-        clk_sys : in  std_logic;
+        clk_iod : in  std_logic;
         clk_hs  : in  std_logic;
-        rst     : in  std_logic;
+        pause   : in  std_logic;
+        verrou  : in  std_logic;
         d_i     : in  std_logic_vector(7 downto 0);
         d_q     : in  std_logic_vector(7 downto 0);
+        aligne  : out std_logic_vector(3 downto 0);
         i_p     : out std_logic;
         i_n     : out std_logic;
         q_p     : out std_logic;
@@ -6616,27 +6656,25 @@ end entity sortie_lvds;
 architecture rtl of sortie_lvds is
     component PF_IOD_TX_SD is
         port (
-            TX_CLK_G        : in  std_logic;
-            HS_IO_CLK       : in  std_logic;
-            ARST_N          : in  std_logic;
-            HS_IO_CLK_PAUSE : in  std_logic;
-            TX_DATA_0       : in  std_logic_vector(7 downto 0);
-            TX_DATA_1       : in  std_logic_vector(7 downto 0);
-            TXD             : out std_logic_vector(1 downto 0);
-            TXD_N           : out std_logic_vector(1 downto 0)
+            ARST_N           : in  std_logic;
+            HS_IO_CLK        : in  std_logic;
+            HS_IO_CLK_PAUSE  : in  std_logic;
+            TXD_DATA         : in  std_logic_vector(15 downto 0);
+            TX_CLK_G         : in  std_logic;
+            CLK_ALIGN_IOD_RX : out std_logic_vector(3 downto 0);
+            TXD              : out std_logic_vector(1 downto 0);
+            TXD_N            : out std_logic_vector(1 downto 0)
         );
     end component;
-    signal r_i, r_q   : std_logic_vector(7 downto 0);
+    signal donnees    : std_logic_vector(15 downto 0);
     signal txd, txd_n : std_logic_vector(1 downto 0);
-    signal arst_n     : std_logic;
 begin
     g : for k in 0 to 7 generate
-        r_i(k) <= d_i(7 - k);
-        r_q(k) <= d_q(7 - k);
+        donnees(k)     <= d_i(7 - k);
+        donnees(8 + k) <= d_q(7 - k);
     end generate;
-    arst_n <= not rst;
-    u_iod : PF_IOD_TX_SD port map (TX_CLK_G => clk_sys, HS_IO_CLK => clk_hs, ARST_N => arst_n, HS_IO_CLK_PAUSE => '0',
-                                   TX_DATA_0 => r_i, TX_DATA_1 => r_q, TXD => txd, TXD_N => txd_n);
+    u_iod : PF_IOD_TX_SD port map (ARST_N => verrou, HS_IO_CLK => clk_hs, HS_IO_CLK_PAUSE => pause, TXD_DATA => donnees,
+                                   TX_CLK_G => clk_iod, CLK_ALIGN_IOD_RX => aligne, TXD => txd, TXD_N => txd_n);
     i_p <= txd(0); i_n <= txd_n(0);
     q_p <= txd(1); q_n <= txd_n(1);
 end architecture rtl;
@@ -6644,7 +6682,7 @@ end architecture rtl;
 --------------------------------------------------------------------------------
 -- jpeg2dvb_top : entité de tête de la carte (MPF100T-FCG484I) ; banc : tb_top
 --   Horloges : oscillateur MEMS 50 MHz → horloges (PLL) : clk_sys 80 MHz,
---              clk_hs 320 MHz (sérialiseurs), clk_tvp 14,31818 MHz (XTAL1 du
+--              clk_iod 80 MHz et clk_hs 320 MHz (sérialiseurs), clk_tvp 14,318 MHz (XTAL1 du
 --              décodeur) ; tvp_sclk 27 MHz (décodeur) pour bt656_rx
 --   Ports : osc_50 ; tvp_* : décodeur TVP5150AM1 (XTAL1, RESETB, PDN, bus
 --           I²C maître, SCLK, YOUT) ; sd_i_p/n, sd_q_p/n : sorties LVDS
@@ -6694,20 +6732,26 @@ end entity jpeg2dvb_top;
 architecture rtl of jpeg2dvb_top is
     component horloges is
         port (
-            osc_50  : in  std_logic;
-            clk_sys : out std_logic;
-            clk_hs  : out std_logic;
-            clk_tvp : out std_logic;
-            verrou  : out std_logic
+            osc_50    : in  std_logic;
+            aligne    : in  std_logic_vector(3 downto 0);
+            clk_sys   : out std_logic;
+            clk_iod   : out std_logic;
+            clk_hs    : out std_logic;
+            pause     : out std_logic;
+            clk_tvp   : out std_logic;
+            verrou    : out std_logic;
+            aligne_ok : out std_logic
         );
     end component;
     component sortie_lvds is
         port (
-            clk_sys : in  std_logic;
+            clk_iod : in  std_logic;
             clk_hs  : in  std_logic;
-            rst     : in  std_logic;
+            pause   : in  std_logic;
+            verrou  : in  std_logic;
             d_i     : in  std_logic_vector(7 downto 0);
             d_q     : in  std_logic_vector(7 downto 0);
+            aligne  : out std_logic_vector(3 downto 0);
             i_p     : out std_logic;
             i_n     : out std_logic;
             q_p     : out std_logic;
@@ -6715,7 +6759,8 @@ architecture rtl of jpeg2dvb_top is
         );
     end component;
 
-    signal clk_sys, clk_hs, clk_tvp, verrou : std_logic;
+    signal clk_sys, clk_iod, clk_hs, pause, clk_tvp, verrou : std_logic;
+    signal aligne     : std_logic_vector(3 downto 0);
     signal raz_sys    : std_logic_vector(7 downto 0) := (others => '1');
     signal raz_sclk   : std_logic_vector(2 downto 0) := (others => '1');
     signal rst, rst_sclk : std_logic;
@@ -6733,7 +6778,8 @@ architecture rtl of jpeg2dvb_top is
     signal b_cb, b_y0, b_cr, b_y1 : std_logic_vector(7 downto 0);
     signal b_ligne, b_x : unsigned(8 downto 0);
 begin
-    u_horl : horloges port map (osc_50, clk_sys, clk_hs, clk_tvp, verrou);
+    u_horl : horloges port map (osc_50 => osc_50, aligne => aligne, clk_sys => clk_sys, clk_iod => clk_iod, clk_hs => clk_hs,
+                                pause => pause, clk_tvp => clk_tvp, verrou => verrou, aligne_ok => open);
     tvp_xtal1 <= clk_tvp;
 
     -- remise à zéro : E : verrouillage des PLL → T : mise à 1 immédiate,
@@ -6766,7 +6812,8 @@ begin
                   v_trame => b_trame, v_ligne => b_ligne, v_x => b_x, v_dt => b_dt);
     s_i <= sd_i when sd_valid = '1' else "01010101";
     s_q <= sd_q when sd_valid = '1' else "01010101";
-    u_lvds : sortie_lvds port map (clk_sys, clk_hs, rst, s_i, s_q, sd_i_p, sd_i_n, sd_q_p, sd_q_n);
+    u_lvds : sortie_lvds port map (clk_iod => clk_iod, clk_hs => clk_hs, pause => pause, verrou => verrou, d_i => s_i, d_q => s_q,
+                                   aligne => aligne, i_p => sd_i_p, i_n => sd_i_n, q_p => sd_q_p, q_n => sd_q_n);
 
     -- décodeur vidéo : pilotage I²C (drain ouvert) et réception BT.656
     u_tvp : entity work.tvp_ctrl generic map (G_HZ => G_TVP_HZ, G_I2C_HZ => 100_000)

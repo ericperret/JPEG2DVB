@@ -2384,7 +2384,7 @@ begin
     begin
         wait for 15 us;
         if led_pll /= '0' then erreur("LED PLL allumee avant verrouillage"); end if;
-        wait for 15 us;
+        wait for 45 us;                               -- PLL en cascade : 20 µs + 20 µs
         if led_pll /= '1' then erreur("LED PLL eteinte apres verrouillage"); end if;
         if now < 600 us then wait for 600 us - now; end if;
         if tvp_resetb /= '1' or tvp_pdn /= '1' then erreur("RESETB ou PDN du decodeur a 0 a 600 us"); end if;
