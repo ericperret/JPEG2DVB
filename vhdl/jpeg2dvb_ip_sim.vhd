@@ -8,20 +8,21 @@
 --               (horloges, sortie_lvds)
 --  Auteur     : Eric PERRET
 --  Date       : 2026-11-13
---  Version    : 2.1
+--  Version    : 2.2
 --  Plateforme : VHDL-2008, simulation seule ; analyser après jpeg2dvb_fpga.vhd
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : PF_CCC_SYS         80 MHz, verrouillage à 20 µs
 --               PF_CCC_TVP         14,31818 MHz, verrouillage à 20 µs
 --               PF_IOD_TX_CCC_IOD  80 MHz et 320 MHz, verrouillage à 20 µs
---               PF_IOD_TX_SD       8 bits par cycle et par voie (voie 0 :
---                                  TXD_DATA 7..0, voie 1 : 15..8), bit de poids
---                                  faible en premier, 1,5625 ns par bit
+--               PF_IOD_TX_SD       8 bits par cycle et par voie (bit k de la
+--                                  voie n : TXD_DATA(2k + n)), bit 0 en
+--                                  premier, 1,5625 ns par bit
 --  Historique : 1.0  2026-11-10  modèles de horloges et sortie_lvds
 --               2.0  2026-11-12  modèles des cœurs Libero ; horloges et
 --                                sortie_lvds passent dans jpeg2dvb_fpga.vhd
 --               2.1  2026-11-13  ports des cœurs générés : PF_CCC_SYS à une
 --                                sortie, PF_IOD_TX_CCC_IOD, bus TXD_DATA
+--               2.2  2026-11-13  TXD_DATA : bits des deux voies entrelacés
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -106,7 +107,7 @@ end architecture sim;
 
 --------------------------------------------------------------------------------
 -- PF_IOD_TX_SD : à chaque front montant de TX_CLK_G, les 8 bits de chaque voie
---   (voie 0 : TXD_DATA 7..0, voie 1 : 15..8) sont émis bit de poids faible en
+--   (bit k de la voie n : TXD_DATA(2k + n)) sont émis bit 0 en
 --   premier, 1,5625 ns par bit ; sorties complémentaires ; 0 pendant ARST_N = 0
 --------------------------------------------------------------------------------
 library ieee;
@@ -139,7 +140,7 @@ begin
         variable a, b : std_logic_vector(7 downto 0);
     begin
         if rising_edge(TX_CLK_G) then
-            if ARST_N = '0' then a := x"00"; b := x"00"; else a := TXD_DATA(7 downto 0); b := TXD_DATA(15 downto 8); end if;
+            if ARST_N = '0' then a := x"00"; b := x"00"; else for k in 0 to 7 loop a(k) := TXD_DATA(2 * k); b(k) := TXD_DATA(2 * k + 1); end loop; end if;
             s0 <= transport a(0), a(1) after T, a(2) after 2 * T, a(3) after 3 * T,
                             a(4) after 4 * T, a(5) after 5 * T, a(6) after 6 * T, a(7) after 7 * T;
             s1 <= transport b(0), b(1) after T, b(2) after 2 * T, b(3) after 3 * T,

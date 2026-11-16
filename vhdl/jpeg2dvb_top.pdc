@@ -1,0 +1,49 @@
+# ==============================================================================
+#  Nom        : jpeg2dvb_top.pdc
+#  Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
+#  Objet      : brochage de jpeg2dvb_top, boîtier FCVG484 (pas de 0,8 mm), commun
+#               au MPF050T et au MPF100T ; rangé par quadrant, boîtier vu de
+#               dessus, bille A1 en haut à gauche : vidéo à gauche (banque 4),
+#               sorties I/Q en haut à droite (banque 2), oscillateur en haut au
+#               centre (banque 2), LED en bas du côté gauche (banque 4)
+#  Auteur     : Eric PERRET
+#  Date       : 2026-11-16
+#  Version    : 1.0
+#  Licence    : CC BY-NC 4.0
+#  Contenu    : banques 2 et 4 (GPIO) à 3,3 V : signaux LVCMOS33, sorties I/Q
+#               LVDS33 ; banques 0 et 1 (HSIO, bas du boîtier, 1,8 V au plus)
+#               inutilisées ; JTAG et SPI sur leurs billes dédiées (F6 à H10)
+#  Historique : 1.0  2026-11-16  création d'après la table des broches du
+#                                MPF050T-FCVG484 ; I/Q et oscillateur sur les
+#                                billes déjà validées par Libero (essai 0)
+# ==============================================================================
+
+# oscillateur MEMS 50 MHz : entrée d'horloge CLKIN_S_4, haut, centre
+set_io -port_name osc_50 -pin_name A10 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+
+# décodeur vidéo TVP5150AM1 : côté gauche, banque 4
+set_io -port_name tvp_sclk   -pin_name G4 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[0]} -pin_name H2 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[1]} -pin_name J2 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[2]} -pin_name J1 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[3]} -pin_name J4 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[4]} -pin_name K1 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[5]} -pin_name L1 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[6]} -pin_name L2 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name {tvp_d[7]} -pin_name M4 -fixed true -io_std LVCMOS33 -DIRECTION INPUT
+set_io -port_name tvp_xtal1  -pin_name F3 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+set_io -port_name tvp_resetb -pin_name E3 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+set_io -port_name tvp_pdn    -pin_name F5 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+set_io -port_name tvp_scl    -pin_name G3 -fixed true -io_std LVCMOS33 -DIRECTION INOUT
+set_io -port_name tvp_sda    -pin_name G2 -fixed true -io_std LVCMOS33 -DIRECTION INOUT
+
+# LED : bas du côté gauche, banque 4 (les billes du bas du boîtier sont en 1,8 V)
+set_io -port_name led_pll   -pin_name R3 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+set_io -port_name led_tvp   -pin_name R4 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+set_io -port_name led_video -pin_name T1 -fixed true -io_std LVCMOS33 -DIRECTION OUTPUT
+
+# sorties I/Q sigma-delta LVDS 640 Mbit/s : haut, droite, banque 2
+set_io -port_name sd_i_p -pin_name B19 -fixed true -io_std LVDS33 -DIRECTION OUTPUT
+set_io -port_name sd_i_n -pin_name B20 -fixed true -io_std LVDS33 -DIRECTION OUTPUT
+set_io -port_name sd_q_p -pin_name A20 -fixed true -io_std LVDS33 -DIRECTION OUTPUT
+set_io -port_name sd_q_n -pin_name A21 -fixed true -io_std LVDS33 -DIRECTION OUTPUT

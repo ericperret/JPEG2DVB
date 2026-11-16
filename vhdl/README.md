@@ -2,7 +2,7 @@
   Name     : README.md
   Purpose  : FPGA port of JPEG2DVB (23 cm DVB-S transmitter), VHDL-2008
   Author   : Eric PERRET
-  Date     : 2026-11-12
+  Date     : 2026-11-16
   License  : CC BY-NC 4.0
 -->
 
@@ -10,7 +10,7 @@
 
 🇫🇷 [Version française : LISEZMOI.md](LISEZMOI.md)
 
-VHDL modules of the 23 cm DVB-S transmitter (Microchip PolarFire MPF100T FPGA, specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
+VHDL modules of the 23 cm DVB-S / DVB-S2 transmitter (Microchip PolarFire MPF050T or MPF100T FPGA, FCVG484 package, same board; specification v0.4). All modules are in one file, `jpeg2dvb_fpga.vhd` (synthesis), and all testbenches in `jpeg2dvb_fpga_tb.vhd` (simulation). Each module reproduces one JPEG2DVB 2.x step **bit for bit**; each GHDL testbench reads the files produced by JPEG2DVB ([`fpga_test/`](../fpga_test/) folder) and compares the module output byte by byte, or sample by sample.
 
 Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interfaces (flow control exercised with random gaps in every testbench).
 
@@ -43,7 +43,7 @@ Synthesisable VHDL-2008, `ieee` library only, `valid` / `ready` streaming interf
 | `dvbs_sd` | Transmitter to the sigma-delta bits; `G_MCPC`: programme 1 camera (`cam_mb` → `codeur`, black picture without camera), programme 2 test pattern (BISS number displayed), `ts_mux` → `csa_enc` → DVB-S (`prbs_disp` … `conv_enc`) or DVB-S2 (`dvbs2_tx`) according to `norme` → `sigma_delta`; reset on standard change | 01 → 14 | blocks checked by `video`, `mcpc`, `cam`, `csa`, `s2`, `chaine`, `sdm` | ✔ assembled, blocks verified; full chain too slow to simulate |
 | `codeur` | Complete encoder of one programme: `mire_gen` or `cam_mb` macroblocks → DCT → TM5 rate control → quantisation → zigzag → VLC → ES; 352 × 288 pictures, or 720 × 576 as two field pictures (`G_TRAMES`) | 01 → 06 | `tb_codeur` | ✔ 720 × 576: 4 fields decoded by ffmpeg match the input |
 | `cam_mb` | Camera path: BT.656 pairs (27 MHz) → 4:2:0 macroblocks (80 MHz), rounded mean of the chroma lines, crossing between clocks | PAL input | `tb_cam` | ✔ 1,244,160 bytes (`cam_mb.bin`) |
-| `horloges` + `sortie_lvds` | Wrappers of the Libero cores: PLLs `PF_CCC_SYS` (80 / 320 MHz) and `PF_CCC_TVP` (14.318182 MHz), LVDS serialiser `PF_IOD_TX_SD` (2 lanes, 640 Mbit/s) | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | to validate in Libero |
+| `horloges` + `sortie_lvds` | Wrappers of the four Libero cores: PLLs `PF_CCC_SYS` (80 MHz) and `PF_CCC_TVP` (14.318 MHz), serialiser clocks `PF_IOD_TX_CCC_IOD` (320 MHz, 80 MHz), LVDS serialiser `PF_IOD_TX_SD` (2 lanes, 640 Mbit/s, I and Q bits interleaved on `TXD_DATA`) | board | `tb_top` (`jpeg2dvb_ip_sim.vhd` models) | ✔ placed and routed in Libero; bit order of each lane to be checked on the board |
 | `jpeg2dvb_top` | Top level: PLLs, reset, LVDS, decoder, automatic choice, LEDs | board | `tb_top` (models `jpeg2dvb_ip_sim.vhd`) | ✔ LEDs, decoder absent, 45,247 LVDS groups |
 
 Every module passes `ghdl --synth` without latches (synthesisability check; the real synthesis is done in Libero SoC).
@@ -73,11 +73,11 @@ Two programmes in one transport stream (DVB-S, FEC 1/2, 5 MS/s):
 
 The PAT lists both programmes. `ts_mux` (`G_MCPC`, `G_TRAMES1`) schedules the packets by running differences (PAT / PMT, PCR, channel 1, channel 2); a channel-1 picture is made of the two coded fields; PTS = 3,600 · (n + 1) + 9,000 on each channel. The chroma of the camera macroblocks is the rounded mean of the two lines of each pair, (a + b + 1) >> 1. The per-picture budget comes from `budget_image` with 47 % of the rate (50 fields per second on channel 1, 25 pictures per second on channel 2).
 
-Verification: `ts_mux` in MCPC mode is bit-exact against `mcpc.js` (`mcpc` testbench; `ffprobe` sees two programmes, `ffmpeg` decodes both); `cam_mb` is bit-exact against `cam_mb.bin` (`cam` testbench). The composition (`codeur` 720 × 576 in field mode, black picture, MCPC wiring) was only compiled and elaborated: the end-to-end test is the last work item.
+Verification: `ts_mux` in MCPC mode is bit-exact against `mcpc.js` (`mcpc` testbench; `ffprobe` sees two programmes, `ffmpeg` decodes both); `cam_mb` is bit-exact against `cam_mb.bin` (`cam` testbench). `codeur` 720 × 576 in field mode: the 4 fields of `cam_mb.bin`, coded then decoded by ffmpeg, match the input. The complete chain is too slow to simulate in GHDL: it is verified block by block, then on the board.
 
 ## Board top-level entity (`jpeg2dvb_top`)
 
-Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz, 320 MHz for the serialisers) and PLL `PF_CCC_TVP` (exact 14.318182 MHz: VCO 1,575 MHz / 110) to the decoder XTAL1. Reset held until both PLLs are locked. I and Q LVDS outputs at 640 Mbit/s (8:1 serialisers). Active-high LEDs: PLLs locked, decoder present, video locked.
+Clocks: 50 MHz MEMS oscillator (DSC1001) → PLL `PF_CCC_SYS` (80 MHz) → `PF_IOD_TX_CCC_IOD` (× 4: 320 MHz for the serialisers, and the 80 MHz `TX_CLK_G` that clocks all the logic). Second PLL `PF_CCC_TVP`: 50 MHz → 14.318 MHz to the decoder XTAL1 (14.318182 MHz requested; the configurator accepts three decimals only, 12.7 ppm off). Reset held until the three PLLs are locked. I and Q LVDS outputs at 640 Mbit/s (8:1 serialisers): the bits of both lanes are interleaved on the core's `TXD_DATA` bus (bit k of lane n on `TXD_DATA(2k + n)`, lane I = 0, lane Q = 1).
 
 No microcontroller and no register: fixed settings, 5 MS/s, FEC 1/2. `choix_auto` probes both video inputs (AIP1A then AIP1B, 600 ms each) as soon as the decoder is identified, then every minute; the previous mode is held during the probe:
 
@@ -90,19 +90,67 @@ No microcontroller and no register: fixed settings, 5 MS/s, FEC 1/2. `choix_auto
 
 BISS: the 4-digit number (0000 to 9999) is drawn at power-up (`tirage_biss`, counter frozen when the decoder is identified); the session key is this number repeated three times, the control word `S0 S1 S2 (S0+S1+S2) S3 S4 S5 (S3+S4+S5)`. The number is displayed on the programme 2 pattern in BISS mode only. Active-high LEDs: PLLs locked, decoder present, video locked.
 
-Single source file: `jpeg2dvb_fpga.vhd` holds every unit, including `horloges` and `sortie_lvds`. The only things created by hand in Libero are the three catalog cores below and the constraints. `jpeg2dvb_ip_sim.vhd` (GHDL models of the three cores) is for simulation only; `jpeg2dvb_top.sdc` holds the constraints of step 7.
+### Device, package, voltages
 
-### In Libero
+- One board for two devices: MPF050T or MPF100T, **FCVG484** package (484 balls, 0.8 mm pitch, 19 × 19 mm), industrial range (−40 to 100 °C), STD speed. The FCG484 package (1.0 mm pitch) does not exist for the MPF050T: it is dropped.
+- Every I/O is at 3.3 V: LVCMOS33 for the signals, LVDS33 for the I/Q outputs. Banks 2 and 4 (GPIO) at 3.3 V; banks 0 and 1 (HSIO, 1.8 V at most) and the transceivers are unused.
+- FPGA rails: VDD 1.0 V, VDD18 1.8 V, VDD25 2.5 V; VDDI2, VDDI4, VDDAUX2, VDDAUX4 and VDDI3 (JTAG) at 3.3 V; the rails of unused banks and functions (VDDI0, VDDI1, VDDA, VDDA25, VDD_XCVR_CLK, XCVR_VREF) go to ground through 10 kΩ.
 
-1. New project, device MPF100T, package FCG484 (same pinout as the MPF050T), VHDL-2008.
-2. File ▸ Import ▸ HDL Source Files: `jpeg2dvb_fpga.vhd` only.
-3. Catalog (View ▸ Windows ▸ Catalog) ▸ `PF_CCC`, name `PF_CCC_SYS`: input 0 = 50 MHz; feedback Post-VCO, bandwidth High; output 0: enabled, 80 MHz, Global Clock; output 1: enabled, 320 MHz as HS_IO_CLK (option to check in the configurator); PLL lock exposed. Ports: `REF_CLK_0`, `OUT0_FABCLK_0`, `OUT1_HS_IO_CLK_0`, `PLL_LOCK_0`.
-4. `PF_CCC`, name `PF_CCC_TVP`: input 0 = 50 MHz; output 0: enabled, 14.318182 MHz (VCO 1,575 MHz / 110), Global Clock; no other output. Ports: `REF_CLK_0`, `OUT0_FABCLK_0`, `PLL_LOCK_0`.
-5. `PF_IOD_GENERIC_TX`, name `PF_IOD_TX_SD`: interface TX_DDRX_B_G (the file assumes TX_DDRX_B_G_FA), 8 bits per cycle, 640 Mbps per lane, 2 data lanes, no forwarded clock, LVDS standard (LVDS25 in a 2.5 V bank, LVDS18G in a 1.8 V bank). Ports: `TX_CLK_G`, `HS_IO_CLK`, `ARST_N`, `HS_IO_CLK_PAUSE`, `TX_DATA_0`, `TX_DATA_1`, `TXD`, `TXD_N`.
-6. Compare the generated ports (`component/work/<name>/<name>.vhd`) with the component declarations of `horloges` and `sortie_lvds` in `jpeg2dvb_fpga.vhd`; check the TX_DATA bit transmit order in the PF_IOD guide (the file assumes TX_DATA(0) first).
-7. Design Hierarchy ▸ `jpeg2dvb_top` ▸ Set As Root. Constraint Manager ▸ Timing, constraints to enter (or import `jpeg2dvb_top.sdc`): `create_clock -name osc_50 -period 20.000 [get_ports osc_50]`, `create_clock -name tvp_sclk -period 37.037 [get_ports tvp_sclk]`, `set_clock_groups -asynchronous -group [get_clocks tvp_sclk]`; then Derive Constraints (PLL clocks 80, 320 and 14.318182 MHz).
-8. Pin assignment (I/O Editor) with the PCB: LVDS outputs in a GPIO bank (HSIO banks do not transmit LVDS); `osc_50` and `tvp_sclk` on clock inputs.
-9. Synthesize, Place and Route, Verify Timing; the resource report is `synthesis/jpeg2dvb_top.srr`.
+### Pin assignment (`jpeg2dvb_top.pdc` 1.0)
+
+Arranged by quadrant, package seen from above, ball A1 top left. Board layout: video on the left, FPGA in the centre, I/Q and RF chain on the right, supplies at the top, LEDs and programming at the bottom.
+
+| Function | Balls | Bank | Standard |
+|---|---|---|---|
+| `osc_50` | A10 | 2 | LVCMOS33 |
+| `tvp_sclk` | G4 | 4 | LVCMOS33 |
+| `tvp_d[0]` to `tvp_d[7]` | H2, J2, J1, J4, K1, L1, L2, M4 | 4 | LVCMOS33 |
+| `tvp_xtal1`, `tvp_resetb`, `tvp_pdn` | F3, E3, F5 | 4 | LVCMOS33 |
+| `tvp_scl`, `tvp_sda` | G3, G2 | 4 | LVCMOS33 |
+| `led_pll`, `led_tvp`, `led_video` | R3, R4, T1 | 4 | LVCMOS33 |
+| `sd_i_p` / `sd_i_n` | B19 / B20 | 2 | LVDS33 |
+| `sd_q_p` / `sd_q_n` | A20 / A21 | 2 | LVDS33 |
+
+Deviations imposed by the package: only the top and left-side balls accept 3.3 V; the I/Q outputs are therefore top right, the LEDs at the bottom of the left side, and JTAG stays on its fixed balls (F6 to H10). Libero accepts this pin assignment without error or warning on both devices.
+
+The schematic of what enters and leaves the FPGA (azs-cad format) is in [`carte/`](../carte/), with the table of the 484 balls.
+
+### Unattended Libero flow (`jpeg2dvb_libero.tcl` 1.2)
+
+The `vhdl/` folder is the batch: `jpeg2dvb_libero.tcl`, `jpeg2dvb_fpga.vhd` (single source file, including `horloges` and `sortie_lvds`), `jpeg2dvb_top.sdc`, `jpeg2dvb_top.pdc`, `sonde.vhd` and `coeurs/` (the four cores exported as Tcl). The script (Libero SoC 2026.1, script mode, Libero window closed) writes every setting, with no default setting:
+
+1. cores: `coeurs/*.tcl`; if missing, they are exported from a reference project (`REF` variable of the script);
+2. package pin table, obtained from Libero with the `sonde.vhd` design;
+3. pin assignment: `jpeg2dvb_top.pdc` of the batch, otherwise a computed assignment;
+4. for the MPF050T then the MPF100T: new project, VHDL-2008, block mode off, cores, constraints (`jpeg2dvb_top.sdc` and PLL clocks through `derive_constraints_sdc`), synthesis, place and route, timing;
+5. `resultats/bilan.txt`, `resultats/journal.txt` and the `jpeg2dvb_resultats.tgz` archive.
+
+Launch, in the batch folder, once and in the foreground (two simultaneous runs in the same folder destroy each other):
+
+```
+libero SCRIPT:jpeg2dvb_libero.tcl LOGFILE:jpeg2dvb_libero.log
+```
+
+About 20 minutes per device on a PC with 4 GB of memory; script mode is about ten times faster than the graphical interface.
+
+The four cores:
+
+| Core | Catalog | Settings |
+|---|---|---|
+| `PF_CCC_SYS` | `PF_CCC` | 50 MHz → 80 MHz, Post-VCO feedback |
+| `PF_CCC_TVP` | `PF_CCC` | 50 MHz → 14.318 MHz |
+| `PF_IOD_TX_CCC_IOD` | `PF_IOD_TX_CCC` | 80 MHz reference, × 4, 640 Mbit/s, ratio 8, clock alignment exposed |
+| `PF_IOD_TX_SD` | `PF_IOD_GENERIC_TX` | `TX_DDRX_B`, 640 Mbit/s, 8 bits per cycle, 2 differential lanes, no forwarded clock |
+
+Pitfalls met:
+
+- the core catalog must be downloaded (Libero default repositories) before any core is created;
+- "Enable block creation" (Project Settings, Design flow) must be unchecked, otherwise synthesis inserts no I/O buffers;
+- the outputs of a `PF_IOD_GENERIC_TX` serialiser must be placed and locked before place and route;
+- at 640 Mbit/s this serialiser requires the `PF_IOD_TX_CCC` clock core, whose reference is 320 MHz divided by an integer (80 MHz here): a 50 MHz oscillator cannot feed it directly;
+- without clock constraints the timing report shows "N/A" and "no violation" proves nothing.
+
+`jpeg2dvb_ip_sim.vhd` 2.2 (GHDL models of the four cores) is for simulation only.
 
 ## Running the tests
 
@@ -129,7 +177,7 @@ Each line prints `OK …` (output identical to JPEG2DVB) or `ECHEC …` (first m
 - The SRRC filter outputs one sample per clock; once the stream is running the back end follows without gaps (1,136 start-up clocks, including the interleaver memory clear).
 - DCT: about 140 clocks per block (36.6 million coefficients per second at 80 MHz, 15.6 million needed for 720 × 576 at 25 pictures/s).
 
-## Area (measured on MPF050T, target MPF100T)
+## Area and timing
 
 Reductions of 2026-11-11, all bit-identical to the references:
 
@@ -142,29 +190,37 @@ Reductions of 2026-11-11, all bit-identical to the references:
 | `interleaver` | asynchronous memory read | synchronous read |
 | `mire_gen` | image of 101,376 4-bit words | colour computed by comparisons |
 
-To check in the Libero resource report: `quant_intra` 3 LSRAM (ROM), `interleaver` 1 LSRAM, `dct8x8_int` memories in µSRAM. `quant_intra` assumes |F| ≤ 4,095 (the DCT gives |F| ≤ 2,040).
+In the Libero resource report: `quant_intra` 3 LSRAM (ROM), `interleaver` 1 LSRAM, `dct8x8_int` memories in µSRAM. `quant_intra` assumes |F| ≤ 4,095 (the DCT gives |F| ≤ 2,040).
 
-### Libero synthesis of `jpeg2dvb_top` (2026-11-12)
+### Place and route of `jpeg2dvb_top` (2026-11-16)
 
-Synplify Pro, `mpf050tfcvg484-1`, `jpeg2dvb_fpga.vhd` 2.17, run before the three Libero cores were created (`horloges` and `sortie_lvds` as empty boxes) and without clock constraints (100 MHz assumed):
+Libero SoC 2026.1, `jpeg2dvb_fpga.vhd` 2.26, pin assignment `jpeg2dvb_top.pdc` 1.0, FCVG484 package, industrial range, STD speed; timing analysed on every corner:
 
-| Resource | Used | Available (MPF050T) |
+| | MPF050T | MPF100T |
 |---|---|---|
-| 4-input LUTs (with the RAM and DSP interface logic) | 30,217 | about 48,000 |
-| Registers (with the interface logic) | 11,763 | about 48,000 |
-| LSRAM (RAM1K20) | 131 | 160 (81 %) |
-| µSRAM (RAM64x12) | 11 | 450 |
-| Math blocks (DSP) | 55 | 150 |
+| 4-input LUTs | 35,287 / 48,144 (73 %) | 35,287 / 108,600 (32 %) |
+| Registers | 13,859 (29 %) | 13,859 (13 %) |
+| LSRAM | 143 / 160 (89 %) | 143 / 352 (41 %) |
+| µSRAM | 13 / 450 | 13 / 1,008 |
+| Math blocks | 56 / 150 (37 %) | 56 / 336 (17 %) |
+| PLLs | 3 / 8 | 3 / 8 |
+| Slack at 80 MHz, worst case | +0.507 ns | +0.346 ns |
+| Hold slack, worst case | +0.072 ns | +0.067 ns |
+| Violations | none | none |
 
-Timing estimate before place and route: `clk_sys` 75.0 MHz (13.3 ns) for 80 MHz required (12.5 ns); `tvp_sclk` 129 MHz for 27 MHz. Critical paths: colour computation of `mire_gen` (31 logic levels) and `o_valid` / `m_code` of `vlc_enc`. The place-and-route figures will replace these estimates.
+**The MPF050T is feasible**, with the same pin assignment as the MPF100T (identical pin files). Two reservations: the MPF050T is almost full in memory (17 LSRAM blocks free), and the timing slack is thin on both devices: it is checked again at every VHDL version. Full figures: `resultats/bilan.txt` and `resultats/journal.txt`.
+
+The first synthesis (2026-11-12, version 2.17, before the cores and without clock constraints) gave 30,217 LUTs, 131 LSRAM, 55 math blocks and an estimated 75 MHz; `mire_gen` and `vlc_enc` have been pipelined since (2.19).
 
 ## To do
 
-1. ✔ Complete chain of the .vhd (versions 2.19 to 2.24): DVB-S, DVB-S2, BISS, automatic choice, MCPC, camera; full test suite OK, GHDL synthesis OK.
-2. Libero: create the three cores (`PF_CCC_SYS`, `PF_CCC_TVP`, `PF_IOD_TX_SD`), synthesis, place and route, resource report (`dvbs2_tx` LSRAM) and timing report at 80 MHz on the MPF100T.
-3. Pin assignment with the PCB (azs-cad.html), `jpeg2dvb_top.sdc` constraints.
-4. Final test on the board: read the Transport Stream with a standard decoder (DVB-S, DVB-S2, BISS).
-5. Simulation of the complete chain (camera, MCPC, DVB-S2) is too slow in GHDL: verified block by block; to be checked on the board. LVDS reference of the `top` bench to be regenerated for the MCPC top level.
+1. ✔ Complete chain of the .vhd (versions 2.19 to 2.27): DVB-S, DVB-S2, BISS, automatic choice, MCPC, camera; full test suite and GHDL synthesis OK on 2.24; versions 2.25 to 2.27 only touch `horloges`, `sortie_lvds`, `jpeg2dvb_top` and comments.
+2. ✔ Libero (2026-11-16): four cores, script-mode flow, place and route and timing at 80 MHz on the MPF050T and the MPF100T, no violation.
+3. ✔ Pin assignment by quadrant (`jpeg2dvb_top.pdc` 1.0) and schematic of the FPGA inputs and outputs ([`carte/`](../carte/)).
+4. Video input delays: the arrival time of `tvp_d[7:0]` relative to `tvp_sclk` (27 MHz) is not declared in `jpeg2dvb_top.sdc`; to be added from the TVP5150AM1 data sheet, then rerun the Libero flow.
+5. Bit order inside each LVDS lane (bit 0 sent first): assumption to be checked on the board.
+6. Simulation of the complete chain (camera, MCPC, DVB-S2) is too slow in GHDL: verified block by block; to be checked on the board. LVDS reference of the `top` bench to be regenerated for the MCPC top level.
+7. Board: supplies, RF stage, printed circuit; no test on a board so far. Final test: read the Transport Stream with a standard decoder (DVB-S, DVB-S2, BISS).
 
 Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
@@ -184,6 +240,8 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-11-11 | MCPC and camera chain (`jpeg2dvb_fpga.vhd` 2.13 to 2.17): `ts_mux` with two programmes (`mcpc.js`, `mcpc` testbench), `cam_mb` (`bt656.js` 1.1 writes `cam_mb.bin`, `cam` testbench), `codeur` 720 × 576 in field pictures (`tb_codeur`), `dvbs_sd` and `jpeg2dvb_top` in MCPC (camera on programme 1, test pattern on programme 2, 47 % of the rate each), black picture without a camera; `run_tests.sh` 1.9 |
 | 2026-11-12 | First Libero synthesis of `jpeg2dvb_top` on the MPF050T (131 of 160 LSRAM, 55 of 150 DSP, 75 MHz estimated for 80 MHz required). `jpeg2dvb_fpga.vhd` 2.18: `horloges` and `sortie_lvds` inside the single file, `jpeg2dvb_ip_libero.vhd` removed, `jpeg2dvb_ip_sim.vhd` 2.0 (models of the three Libero cores); documentation brought up to date |
 | 2026-11-12 | Fixed settings (5 MS/s, FEC 1/2) and automatic choice (`choix_auto`), `regs_i2c` removed (2.20); DVB-S2 QPSK 1/4 (`dvbs2_tx`, 2.21); BISS-1 in the chain, `tirage_biss`, number on the test pattern (2.22); three `dvbs2_tx` fixes (`tb_s2` identical to `dvbs2.js`, 2.23); 720 × 576 `codeur`: `vlc_enc` received 22 columns instead of 45, camera picture fixed (2.24); timing: `mire_gen` and `vlc_enc` pipelined (2.19); MPF100T target; `run_tests.sh` 2.0 |
+| 2026-11-13 | Libero cores as generated (2.25): `PF_CCC_SYS` (80 MHz) feeds `PF_IOD_TX_CCC_IOD` (320 MHz, 80 MHz, clock alignment), 16-bit `TXD_DATA` bus; I and Q lane bits interleaved on `TXD_DATA` (2.26); `jpeg2dvb_ip_sim.vhd` 2.2 (four cores) |
+| 2026-11-16 | Script-mode Libero flow (`jpeg2dvb_libero.tcl` 1.2, `sonde.vhd`, `coeurs/`), `jpeg2dvb_top.sdc` 1.1, pin assignment by quadrant `jpeg2dvb_top.pdc` 1.0; FCVG484 package, everything at 3.3 V (LVCMOS33, LVDS33); place and route and timing without violation on the MPF050T and the MPF100T with the same pin assignment; schematic of the FPGA inputs and outputs in `carte/`; `jpeg2dvb_fpga.vhd` 2.27 (comments only); `jpeg2dvb_ip_libero.vhd` removed; documentation brought up to date |
 
 ## License
 

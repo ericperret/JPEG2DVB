@@ -6,9 +6,10 @@
 --               chaque module de la chaîne reproduit au bit près une étape de
 --               JPEG2DVB
 --  Auteur     : Eric PERRET
---  Date       : 2026-11-13
---  Version    : 2.25
---  Plateforme : VHDL-2008, synthétisable (Libero SoC), PolarFire MPF100T
+--  Date       : 2026-11-16
+--  Version    : 2.27
+--  Plateforme : VHDL-2008, synthétisable (Libero SoC), PolarFire MPF050T ou
+--               MPF100T, boîtier FCVG484 (même carte)
 --  Licence    : CC BY-NC 4.0
 --  Contenu    : 42 unités, dans l'ordre d'analyse :
 --               dvbs_pkg      types et fonctions communs (PRBS, GF(2⁸), RS, convolutif)
@@ -53,11 +54,12 @@
 --               choix_auto    mode de la carte d'après les entrées verrouillées
 --                             (sondage toutes les minutes, sans microcontrôleur)
 --               tirage_biss   numéro BISS de 4 chiffres tiré à la mise sous tension
---               horloges      deux PLL (cœurs Libero PF_CCC_SYS et PF_CCC_TVP)
+--               horloges      trois PLL (cœurs Libero PF_CCC_SYS, PF_CCC_TVP et
+--                             PF_IOD_TX_CCC_IOD)
 --               sortie_lvds   sérialiseurs LVDS (cœur Libero PF_IOD_TX_SD)
 --               jpeg2dvb_top  entité de tête de la carte (PLL, LVDS, décodeur,
---                             choix automatique, LED) ; les trois cœurs Libero
---                             sont créés à la main dans le catalogue
+--                             choix automatique, LED) ; les quatre cœurs Libero
+--                             sont créés par jpeg2dvb_libero.tcl
 --                             (jpeg2dvb_ip_sim.vhd : modèles GHDL des cœurs)
 --  Conventions: flux valid / ready ; bibliothèque ieee seule (clauses
 --               library / use par unité) ; fonctions et process commentés
@@ -178,6 +180,11 @@
 --                                des horloges) ; PF_IOD_TX_SD : bus TXD_DATA de 16 bits,
 --                                retour d'alignement ; horloges, sortie_lvds et
 --                                jpeg2dvb_top adaptés
+--               2.26 2026-11-13  sortie_lvds : bits des voies I et Q entrelacés sur
+--                                TXD_DATA (bit k de la voie n en 2k + n), d'après le
+--                                cœur PF_IOD_TX_SD généré
+--               2.27 2026-11-16  commentaires seuls : boîtier FCVG484 (MPF050T ou
+--                                MPF100T), quatre cœurs créés par script
 --==============================================================================
 
 --------------------------------------------------------------------------------
@@ -6626,9 +6633,9 @@ end architecture rtl;
 -- sortie_lvds : sérialiseurs 8:1 des voies I et Q (640 Mbit/s) ; d_i, d_q :
 --   bit 7 émis en premier ; cœur PF_IOD_TX_SD (PF_IOD_GENERIC_TX, interface
 --   TX_DDRX_B, rapport 4, 2 voies, LVDS, sans horloge transmise) créé dans le
---   catalogue Libero ; TXD_DATA : voie I sur les bits 7..0, voie Q sur les bits
---   15..8, bit de poids faible supposé émis en premier (d'où l'inversion des
---   bits ; ordre à confirmer sur le cœur généré)
+--   catalogue Libero ; TXD_DATA : bits des deux voies entrelacés (cœur généré :
+--   bit k de la voie n sur TXD_DATA(2k + n)), voie I = voie 0, voie Q = voie 1 ;
+--   bit 0 de chaque voie supposé émis en premier (d'où l'inversion des bits)
 --   Ports : clk_iod, clk_hs, pause : horloges et pause de horloges ; verrou :
 --           PLL verrouillés (remise à zéro des sérialiseurs, indépendante de
 --           rst pour que l'alignement des horloges se fasse) ; aligne : retour
@@ -6670,8 +6677,8 @@ architecture rtl of sortie_lvds is
     signal txd, txd_n : std_logic_vector(1 downto 0);
 begin
     g : for k in 0 to 7 generate
-        donnees(k)     <= d_i(7 - k);
-        donnees(8 + k) <= d_q(7 - k);
+        donnees(2 * k)     <= d_i(7 - k);
+        donnees(2 * k + 1) <= d_q(7 - k);
     end generate;
     u_iod : PF_IOD_TX_SD port map (ARST_N => verrou, HS_IO_CLK => clk_hs, HS_IO_CLK_PAUSE => pause, TXD_DATA => donnees,
                                    TX_CLK_G => clk_iod, CLK_ALIGN_IOD_RX => aligne, TXD => txd, TXD_N => txd_n);
@@ -6680,7 +6687,7 @@ begin
 end architecture rtl;
 
 --------------------------------------------------------------------------------
--- jpeg2dvb_top : entité de tête de la carte (MPF100T-FCG484I) ; banc : tb_top
+-- jpeg2dvb_top : entité de tête de la carte (MPF050T ou MPF100T, FCVG484) ; banc : tb_top
 --   Horloges : oscillateur MEMS 50 MHz → horloges (PLL) : clk_sys 80 MHz,
 --              clk_iod 80 MHz et clk_hs 320 MHz (sérialiseurs), clk_tvp 14,318 MHz (XTAL1 du
 --              décodeur) ; tvp_sclk 27 MHz (décodeur) pour bt656_rx
