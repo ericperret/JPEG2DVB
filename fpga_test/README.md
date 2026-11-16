@@ -3,8 +3,8 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
-  Date       : 2026-11-12
-  Version    : 1.8
+  Date       : 2026-11-16
+  Version    : 1.9
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
@@ -15,6 +15,7 @@
                1.6  2026-11-11  csa.js, csa_in.bin, ts_csa.bin : embrouillage DVB-CSA (banc csa)
                1.7  2026-11-12  chaîne MCPC et caméra : mcpc.js, es2.bin, ts_mcpc.bin, cam_mb.bin (bt656.js 1.1), bancs mcpc et cam ; état mis à jour
                1.8  2026-11-12  DVB-S2 : dvbs2.js, s2_ts.bin, s2_sym.bin (banc s2) ; bancs choix, biss, csa_biss ; run_tests.sh 2.0 ; état mis à jour
+               1.9  2026-11-16  jpeg2dvb_fpga.vhd 2.25 à 2.27 et jpeg2dvb_ip_sim.vhd 2.2 (quatre cœurs Libero) : banc top ; état mis à jour
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -111,9 +112,9 @@ Les bancs `tvp`, `tvp_abs` et `tvp_bloc` n'ont pas de fichier : le modèle I²C 
 
 Les bancs `choix` (choix automatique), `biss` (tirage du numéro) et `numero` (mire avec numéro, image écrite dans un fichier) n'ont pas de fichier de référence : `choix` et `biss` contrôlent leurs sorties par assertions.
 
-## État au 2026-11-12
+## État au 2026-11-16
 
-Toutes les références sont à jour pour les bancs de `run_tests.sh` 2.0 (suite complète OK sur `jpeg2dvb_fpga.vhd` 2.24). Les modules passent `ghdl --synth` sans verrou, `dvbs2_tx`, `choix_auto`, `tirage_biss` et `dvbs_sd` compris.
+Toutes les références sont à jour pour les bancs de `run_tests.sh` 2.0 (suite complète OK sur `jpeg2dvb_fpga.vhd` 2.24). Les versions 2.25 à 2.27 ne changent que `horloges`, `sortie_lvds`, `jpeg2dvb_top` et des commentaires : seul le banc `top` est concerné. Il utilise les modèles des quatre cœurs Libero de `jpeg2dvb_ip_sim.vhd` 2.2 (`PF_CCC_SYS`, `PF_CCC_TVP`, `PF_IOD_TX_CCC_IOD`, `PF_IOD_TX_SD`) : les PLL en cascade se verrouillent à 40 µs, et les bits des voies I et Q sont entrelacés sur `TXD_DATA` (bit k de la voie n sur `TXD_DATA(2k + n)`). Les modules passent `ghdl --synth` sans verrou, `dvbs2_tx`, `choix_auto`, `tirage_biss` et `dvbs_sd` compris.
 
 `mire_iq.cs16` ne couvre que les 12 premiers paquets TS, identiques avant et après la régulation : la régulation se vérifie par les bancs `quant8`, `es`, `rc` et `video`.
 
