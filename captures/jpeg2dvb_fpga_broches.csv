@@ -1,0 +1,511 @@
+# ==============================================================================
+#  Nom        : jpeg2dvb_fpga_broches.csv
+#  Projet     : JPEG2DVB, émetteur DVB-S/DVB-S2 23 cm
+#  Objet      : les 484 billes du FPGA (MPF050T ou MPF100T, boîtier FCVG484, pas
+#               de 0,8 mm) avec le réseau à y relier : source du schéma « ce qui
+#               arrive au FPGA et ce qui en sort » pour azs-cad
+#  Auteur     : Eric PERRET
+#  Date       : 2026-11-16
+#  Version    : 1.1
+#  Licence    : CC BY-NC 4.0
+#  Origine    : rapport de broches Libero SoC 2026.1 du design jpeg2dvb_top placé et
+#               routé sur le MPF050T-FCVG484, banques 2 et 4 à 3,3 V (fonction,
+#               banque, consigne de câblage) et brochage jpeg2dvb_top.pdc 1.0
+#  Colonnes   : bille ; fonction (nom Microchip) ; banque ; type ; réseau ; sens
+#               (vu du FPGA) ; norme ; côté (boîtier vu de dessus, A1 en haut à
+#               gauche) ; vers (composant relié) ; consigne (Libero)
+#  Notes      : réseau vide = bille non reliée, sauf consigne ; « absente sur MPF050T » = bille
+#               d'entrée-sortie du MPF100T sans fonction sur le MPF050T : la
+#               laisser non reliée pour garder une carte commune ; les rails
+#               autres que GND et +3V3 portent le nom de leur fonction Microchip
+#               (tensions fixées au chantier alimentations)
+#  Historique : 1.0  2026-11-16  création (consignes tirées du design sonde, banques
+#                                à 1,8 V : fausses pour VDDI2, VDDI4, VDDAUX)
+#               1.1  2026-11-16  consignes tirées du design final, banques à 3,3 V ;
+#                                VDDAUX2 et VDDAUX4 au +3V3 (consigne Libero)
+# ==============================================================================
+bille;fonction;banque;type;reseau;sens;norme;cote;vers;consigne
+A1;VSS;;alimentation;GND;;;haut gauche;;VSS
+A2;GPIO84PB2/DQS/CCC_SW_PLL1_OUT0;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A3;GPIO84NB2/DQS;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A4;VSS;;alimentation;GND;;;haut gauche;;VSS
+A5;GPIO91PB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A6;GPIO91NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A7;GPIO93PB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A8;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A9;VDDI2;;alimentation;+3V3;;;haut;;3.3v
+A10;GPIO0PB2/CLKIN_S_4;Bank2;signal;osc_50;INPUT;LVCMOS33;haut;oscillateur DSC1001 50 MHz, sortie;osc_50
+A11;GPIO0NB2;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A12;GPIO5PB2/CLKIN_S_7;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A13;GPIO2PB2/DQS;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A14;VSS;;alimentation;GND;;;haut;;VSS
+A15;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A16;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A17;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A18;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+A19;VDDI2;;alimentation;+3V3;;;haut droite;;3.3v
+A20;GPIO7PB2;Bank2;signal;sd_q_p;OUTPUT;LVDS33;haut droite;voie Q +, vers filtre puis ADL5375 QBBP;sd_q_p
+A21;GPIO7NB2;Bank2;signal;sd_q_n;OUTPUT;LVDS33;haut droite;voie Q -, vers filtre puis ADL5375 QBBN;sd_q_n
+A22;VSS;;alimentation;GND;;;haut droite;;VSS
+B1;GPIO83NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B2;GPIO85NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B3;GPIO87PB2/CLKIN_S_3/CCC_SW_CLKIN_S_3;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B4;GPIO87NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B5;GPIO89NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B6;VDDI2;;alimentation;+3V3;;;haut gauche;;3.3v
+B7;GPIO93NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B8;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B9;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B10;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B11;VSS;;alimentation;GND;;;haut;;VSS
+B12;GPIO5NB2;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B13;GPIO2NB2/DQS;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B14;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B15;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B16;VDDI2;;alimentation;+3V3;;;haut droite;;3.3v
+B17;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B18;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B19;GPIO6PB2;Bank2;signal;sd_i_p;OUTPUT;LVDS33;haut droite;voie I +, vers filtre puis ADL5375 IBBP;sd_i_p
+B20;GPIO6NB2;Bank2;signal;sd_i_n;OUTPUT;LVDS33;haut droite;voie I -, vers filtre puis ADL5375 IBBN;sd_i_n
+B21;GPIO8PB2/DQS/CCC_SE_PLL0_OUT0;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+B22;GPIO8NB2/DQS;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C1;GPIO83PB2/CCC_SW_CLKIN_S_1;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C2;GPIO85PB2/CLKIN_S_2/CCC_SW_CLKIN_S_2/CCC_SW_PLL1_OUT0;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C3;VDDI2;;alimentation;+3V3;;;haut gauche;;3.3v
+C4;GPIO86NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C5;GPIO89PB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C6;GPIO90NB2/DQS;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C7;GPIO92PB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C8;VSS;;alimentation;GND;;;haut;;VSS
+C9;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C10;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C11;GPIO1PB2/CLKIN_S_5;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C12;GPIO3PB2/CLKIN_S_6;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C13;VDDI2;;alimentation;+3V3;;;haut;;3.3v
+C14;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C15;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C16;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C17;NC;;absente sur MPF050T;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C18;VSS;;alimentation;GND;;;haut droite;;VSS
+C19;GPIO10NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C20;GPIO10PB2/CCC_SE_PLL0_OUT1;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+C21;VDDI2;;alimentation;+3V3;;;haut droite;;3.3v
+C22;GPIO9PB2/CLKIN_S_8/CCC_SE_CLKIN_S_8/CCC_SE_PLL0_OUT0;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D1;GPIO79NB4/DQS;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+D2;GPIO79PB4/DQS/CCC_SW_PLL0_OUT0;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+D3;GPIO82NB2;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D4;GPIO86PB2/CCC_SW_PLL1_OUT1;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D5;VSS;;alimentation;GND;;;gauche;;VSS
+D6;GPIO90PB2/DQS;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D7;GPIO92NB2;Bank2;entrée-sortie libre;;;;haut gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D8;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D9;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D10;VDDI2;;alimentation;+3V3;;;haut;;3.3v
+D11;GPIO1NB2;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D12;GPIO3NB2;Bank2;entrée-sortie libre;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D13;GPIO4NB2/LPRB_B;Bank2;entrée-sortie libre;;;;haut;;Probe B
+D14;GPIO4PB2/LPRB_A;Bank2;entrée-sortie libre;;;;haut;;Probe A
+D15;VSS;;alimentation;GND;;;haut droite;;VSS
+D16;GPIO14NB2/DQS;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D17;GPIO14PB2/DQS/CCC_SE_PLL1_OUT0;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D18;GPIO15NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D19;GPIO15PB2/CCC_SE_CLKIN_S_10/CCC_SE_PLL1_OUT0;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D20;GPIO11NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D21;GPIO11PB2/CLKIN_S_9/CCC_SE_CLKIN_S_9;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+D22;GPIO9NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E1;GPIO77PB4/CLKIN_W_2/CCC_SW_CLKIN_W_2/CCC_SW_PLL0_OUT0;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+E2;VSS;;alimentation;GND;;;gauche;;VSS
+E3;GPIO80PB4;Bank4;signal;tvp_resetb;OUTPUT;LVCMOS33;gauche;TVP5150AM1 RESETB;tvp_resetb
+E4;GPIO82PB2/CCC_SW_CLKIN_S_0;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E5;GPIO88PB2;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E6;GPIO88NB2;Bank2;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E7;VDDI2;;alimentation;+3V3;;;haut gauche;;3.3v
+E8;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E9;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E10;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E11;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E12;VSS;;alimentation;GND;;;haut;;VSS
+E13;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E14;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E15;GPIO16NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E16;GPIO17NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E17;VDDI2;;alimentation;+3V3;;;haut droite;;3.3v
+E18;GPIO13NB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E19;GPIO13PB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+E20;VDDI2;;alimentation;+3V3;;;haut droite;;3.3v
+E21;VSS;;alimentation;GND;;;haut droite;;VSS
+E22;VSS;;alimentation;GND;;;haut droite;;VSS
+F1;GPIO77NB4;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+F2;GPIO76PB4/CCC_SW_PLL0_OUT1;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+F3;GPIO80NB4;Bank4;signal;tvp_xtal1;OUTPUT;LVCMOS33;gauche;TVP5150AM1 XTAL1 (14,318 MHz);tvp_xtal1
+F4;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+F5;GPIO81NB4;Bank4;signal;tvp_pdn;OUTPUT;LVCMOS33;gauche;TVP5150AM1 PDN;tvp_pdn
+F6;TMS;;dédiée;JTAG_TMS;;;gauche;connecteur de programmation FlashPro;Safety Critical Applications: Must connect to VDDI3 through resistor (10K ohm). All other applications: DNC is acceptable, CLAMP=OFF
+F7;TDO;;dédiée;JTAG_TDO;;;haut gauche;connecteur de programmation FlashPro;DNC, TDO is High-Z when TRSTB is asserted or JTAG is not used, CLAMP=OFF
+F8;SS;;dédiée;;;;haut;;Must connect to VSS through resistor (10K ohm), CLAMP=OFF
+F9;VSS;;alimentation;GND;;;haut;;VSS
+F10;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F11;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F12;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F13;NC;;absente sur MPF050T;;;;haut;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F14;VDDI2;;alimentation;+3V3;;;haut;;3.3v
+F15;GPIO16PB2/CCC_SE_PLL1_OUT1;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F16;GPIO17PB2/CCC_SE_CLKIN_S_11;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F17;GPIO12PB2;Bank2;entrée-sortie libre;;;;haut droite;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+F18;VSS;;alimentation;GND;;;haut droite;;VSS
+F19;VSS;;alimentation;GND;;;haut droite;;VSS
+F20;VSS;;alimentation;GND;;;haut droite;;VSS
+F21;XCVR_0_TX0_N;;émetteur-récepteur inutilisé;;;;haut droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+F22;XCVR_0_TX0_P;;émetteur-récepteur inutilisé;;;;haut droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+G1;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+G2;GPIO76NB4;Bank4;signal;tvp_sda;INOUT;LVCMOS33;gauche;TVP5150AM1 SDA, tirage 3,3 V;tvp_sda
+G3;GPIO78NB4;Bank4;signal;tvp_scl;INOUT;LVCMOS33;gauche;TVP5150AM1 SCL, tirage 3,3 V;tvp_scl
+G4;GPIO78PB4/CLKIN_W_1/CCC_SW_CLKIN_W_1;Bank4;signal;tvp_sclk;INPUT;LVCMOS33;gauche;TVP5150AM1 SCLK (27 MHz);tvp_sclk
+G5;GPIO81PB4/CLKIN_W_0/CCC_SW_CLKIN_W_0;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+G6;VSS;;alimentation;GND;;;gauche;;VSS
+G7;TDI;;dédiée;JTAG_TDI;;;centre;connecteur de programmation FlashPro;Safety Critical Applications: Must connect to VDDI3 through resistor (10K ohm). All other applications: DNC is acceptable, CLAMP=OFF
+G8;DEVRST_N;;dédiée;DEVRST_N;;;centre;;Must connect to VDDI3 through 1k ohm resistor (not to be shared with any other pins), CLAMP=OFF
+G9;SDI;;dédiée;;;;centre;;Must connect to VDDI3 through resistor (10K ohm), CLAMP=OFF
+G10;RESERVED;;dédiée;;;;centre;;Safety Critical Applications: Must connect to VDDI3 through resistor (10K ohm). All other applications: DNC is acceptable, CLAMP=OFF
+G11;VDDI3;;alimentation;VDDI3;;;centre;;Must connect VDDI3 to 1.8v/2.5v/3.3v
+G12;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+G13;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+G14;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+G15;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+G16;VSS;;alimentation;GND;;;centre;;VSS
+G17;GPIO12NB2;Bank2;entrée-sortie libre;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+G18;VSS;;alimentation;GND;;;droite;;VSS
+G19;XCVR_0_RX0_P;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+G20;XCVR_0_RX0_N;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+G21;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+G22;VSS;;alimentation;GND;;;droite;;VSS
+H1;GPIO71PB4/CLKIN_W_5/CCC_NW_CLKIN_W_5;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+H2;GPIO74PB4;Bank4;signal;tvp_d[0];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT0;tvp_d[0]
+H3;VSS;;alimentation;GND;;;gauche;;VSS
+H4;SDO;;dédiée;;;;gauche;;DNC, SDO is High-Z when the SPI interface is idle - it is only enabled when the SPI controller is outputting data, CLAMP=OFF
+H5;SCK;;dédiée;;;;gauche;;Must connect to VSS through resistor (10K ohm), CLAMP=OFF
+H6;IO_CFG_INTF;;dédiée;;;;gauche;;Must connect to VSS through resistor (10K ohm), CLAMP=OFF
+H7;TRSTB;;dédiée;JTAG_TRSTB;;;centre;connecteur de programmation FlashPro;In All applications it is recommended to pull down this pin through resistor (1K ohm) to VSS. Must be de-asserted (driven to logic 1) for JTAG device access or exit system controller suspend mode, CLAMP=OFF
+H8;VDD25;;alimentation;VDD25;;;centre;;Must connect VDD25 to 2.5v
+H9;SPI_EN;;dédiée;;;;centre;;Must connect to VSS through resistor (10K ohm), CLAMP=OFF
+H10;TCK;;dédiée;JTAG_TCK;;;centre;connecteur de programmation FlashPro;Must connect to VSS through resistor (10K ohm), CLAMP=OFF
+H11;VDDAUX2;;alimentation;+3V3;;;centre;;3.3v
+H12;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+H13;VDDI2;;alimentation;+3V3;;;centre;;3.3v
+H14;VDDAUX2;;alimentation;+3V3;;;centre;;3.3v
+H15;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI2 through resistor (10K ohm) is allowed. CLAMP=OFF
+H16;VDDAUX2;;alimentation;+3V3;;;centre;;3.3v
+H17;VDDI2;;alimentation;+3V3;;;centre;;3.3v
+H18;XCVR_VREF;;alimentation;XCVR_VREF;;;droite;;Must connect to VSS through resistor (10K ohm)
+H19;XCVR_VREF;;alimentation;XCVR_VREF;;;droite;;Must connect to VSS through resistor (10K ohm)
+H20;VSS;;alimentation;GND;;;droite;;VSS
+H21;XCVR_0_TX1_N;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+H22;XCVR_0_TX1_P;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+J1;GPIO71NB4;Bank4;signal;tvp_d[2];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT2;tvp_d[2]
+J2;GPIO74NB4;Bank4;signal;tvp_d[1];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT1;tvp_d[1]
+J3;GPIO73PB4/DQS;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+J4;GPIO75NB4;Bank4;signal;tvp_d[3];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT3;tvp_d[3]
+J5;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+J6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+J7;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+J8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+J9;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+J10;VSS;;alimentation;GND;;;centre;;VSS
+J11;VDDI3;;alimentation;VDDI3;;;centre;;Must connect VDDI3 to 1.8v/2.5v/3.3v
+J12;VSS;;alimentation;GND;;;centre;;VSS
+J13;VDDAUX2;;alimentation;+3V3;;;centre;;3.3v
+J14;VSS;;alimentation;GND;;;centre;;VSS
+J15;VDD;;alimentation;VDD;;;centre;;1.0v
+J16;VSS;;alimentation;GND;;;centre;;VSS
+J17;VDD25;;alimentation;VDD25;;;centre;;Must connect VDD25 to 2.5v
+J18;VDDA25;;alimentation;VDDA25;;;droite;;Must connect VDDA25 directly to 2.5v or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDD25A to VSS through resistor (10K ohm)
+J19;XCVR_0C_REFCLK_P;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+J20;XCVR_0C_REFCLK_N;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+J21;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+J22;VSS;;alimentation;GND;;;droite;;VSS
+K1;GPIO70PB4;Bank4;signal;tvp_d[4];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT4;tvp_d[4]
+K2;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+K3;GPIO73NB4/DQS;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K4;GPIO75PB4/CLKIN_W_3/CCC_SW_CLKIN_W_3;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K5;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K7;VSS;;alimentation;GND;;;centre;;VSS
+K8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K9;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+K10;VDDAUX4;;alimentation;+3V3;;;centre;;3.3v
+K11;VSS;;alimentation;GND;;;centre;;VSS
+K12;VDD;;alimentation;VDD;;;centre;;1.0v
+K13;VSS;;alimentation;GND;;;centre;;VSS
+K14;VDD;;alimentation;VDD;;;centre;;1.0v
+K15;VSS;;alimentation;GND;;;centre;;VSS
+K16;VDD;;alimentation;VDD;;;centre;;1.0v
+K17;VSS;;alimentation;GND;;;centre;;VSS
+K18;VDD_XCVR_CLK;;alimentation;VDD_XCVR_CLK;;;droite;;Must connect VDD_XCVR_CLK directly to 2.5v/3.3v when VDDA is connected to 1.0V/1.05V. If VDDA is connected to VSS, VDD_XCVR_CLK must connect to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDD_XCVR_CLK to VSS through resistor (10k ohm)
+K19;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+K20;VSS;;alimentation;GND;;;droite;;VSS
+K21;XCVR_0_RX1_P;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+K22;XCVR_0_RX1_N;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+L1;GPIO70NB4;Bank4;signal;tvp_d[5];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT5;tvp_d[5]
+L2;GPIO72NB4;Bank4;signal;tvp_d[6];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT6;tvp_d[6]
+L3;GPIO72PB4/CLKIN_W_4/CCC_NW_CLKIN_W_4;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+L4;VSS;;alimentation;GND;;;gauche;;VSS
+L5;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+L6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+L7;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+L8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+L9;VDDI4;;alimentation;+3V3;;;centre;;3.3v
+L10;VSS;;alimentation;GND;;;centre;;VSS
+L11;VDD;;alimentation;VDD;;;centre;;1.0v
+L12;VSS;;alimentation;GND;;;centre;;VSS
+L13;VDD25;;alimentation;VDD25;;;centre;;Must connect VDD25 to 2.5v
+L14;VSS;;alimentation;GND;;;centre;;VSS
+L15;VDD;;alimentation;VDD;;;centre;;1.0v
+L16;VSS;;alimentation;GND;;;centre;;VSS
+L17;VDD;;alimentation;VDD;;;centre;;1.0v
+L18;VSS;;alimentation;GND;;;droite;;VSS
+L19;XCVR_0A_REFCLK_P;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+L20;XCVR_0A_REFCLK_N;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+L21;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+L22;VSS;;alimentation;GND;;;droite;;VSS
+M1;VSS;;alimentation;GND;;;gauche;;VSS
+M2;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M3;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M4;GPIO68NB4;Bank4;signal;tvp_d[7];INPUT;LVCMOS33;gauche;TVP5150AM1 YOUT7;tvp_d[7]
+M5;GPIO68PB4/CLKIN_W_6/CCC_NW_CLKIN_W_6/CCC_NW_PLL0_OUT1;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M6;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+M7;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M9;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+M10;VDDAUX4;;alimentation;+3V3;;;centre;;3.3v
+M11;VSS;;alimentation;GND;;;centre;;VSS
+M12;VDD;;alimentation;VDD;;;centre;;1.0v
+M13;VSS;;alimentation;GND;;;centre;;VSS
+M14;VDD;;alimentation;VDD;;;centre;;1.0v
+M15;VSS;;alimentation;GND;;;centre;;VSS
+M16;VDD;;alimentation;VDD;;;centre;;1.0v
+M17;VSS;;alimentation;GND;;;centre;;VSS
+M18;VDDA25;;alimentation;VDDA25;;;droite;;Must connect VDDA25 directly to 2.5v or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDD25A to VSS through resistor (10K ohm)
+M19;VSS;;alimentation;GND;;;droite;;VSS
+M20;VSS;;alimentation;GND;;;droite;;VSS
+M21;XCVR_0_RX2_P;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+M22;XCVR_0_RX2_N;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+N1;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N2;GPIO69PB4/DQS/CCC_NW_PLL0_OUT0;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N3;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+N4;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N5;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N7;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+N9;VDDAUX4;;alimentation;+3V3;;;centre;;3.3v
+N10;VSS;;alimentation;GND;;;centre;;VSS
+N11;VDD;;alimentation;VDD;;;centre;;1.0v
+N12;VSS;;alimentation;GND;;;centre;;VSS
+N13;VDD;;alimentation;VDD;;;centre;;1.0v
+N14;VDD18;;alimentation;VDD18;;;centre;;Must connect VDD18 to 1.8v
+N15;VDD;;alimentation;VDD;;;centre;;1.0v
+N16;VSS;;alimentation;GND;;;centre;;VSS
+N17;VDD;;alimentation;VDD;;;centre;;1.0v
+N18;VSS;;alimentation;GND;;;droite;;VSS
+N19;XCVR_0B_REFCLK_P;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+N20;XCVR_0B_REFCLK_N;;émetteur-récepteur inutilisé;;;;droite;;DNC, LiberoSOC Defined. Connection to VSS through resistor (100K ohm) for higher noise immunity is allowed. CLAMP=OFF
+N21;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+N22;VSS;;alimentation;GND;;;droite;;VSS
+P1;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P2;GPIO69NB4/DQS;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P3;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P4;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P5;VSS;;alimentation;GND;;;gauche;;VSS
+P6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P7;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P8;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P9;NC;;absente sur MPF050T;;;;centre;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+P10;VDD18;;alimentation;VDD18;;;centre;;Must connect VDD18 to 1.8v
+P11;VSS;;alimentation;GND;;;centre;;VSS
+P12;VDD18;;alimentation;VDD18;;;centre;;Must connect VDD18 to 1.8v
+P13;VSS;;alimentation;GND;;;centre;;VSS
+P14;VDD18;;alimentation;VDD18;;;centre;;Must connect VDD18 to 1.8v
+P15;VSS;;alimentation;GND;;;centre;;VSS
+P16;VDD18;;alimentation;VDD18;;;centre;;Must connect VDD18 to 1.8v
+P17;VSS;;alimentation;GND;;;centre;;VSS
+P18;VDD_XCVR_CLK;;alimentation;VDD_XCVR_CLK;;;droite;;Must connect VDD_XCVR_CLK directly to 2.5v/3.3v when VDDA is connected to 1.0V/1.05V. If VDDA is connected to VSS, VDD_XCVR_CLK must connect to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDD_XCVR_CLK to VSS through resistor (10k ohm)
+P19;VDDA;;alimentation;VDDA;;;droite;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+P20;VSS;;alimentation;GND;;;droite;;VSS
+P21;XCVR_0_TX2_N;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+P22;XCVR_0_TX2_P;;émetteur-récepteur inutilisé;;;;droite;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+R1;GPIO66PB4/CLKIN_W_7/CCC_NW_CLKIN_W_7/CCC_NW_PLL0_OUT0;Bank4;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+R2;VSS;;alimentation;GND;;;gauche;;VSS
+R3;GPIO67PB4/DQS;Bank4;signal;led_pll;OUTPUT;LVCMOS33;gauche;LED PLL verrouillés, active à 1;led_pll
+R4;GPIO67NB4/DQS;Bank4;signal;led_tvp;OUTPUT;LVCMOS33;gauche;LED décodeur présent, active à 1;led_tvp
+R5;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+R6;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+R7;VDDI4;;alimentation;+3V3;;;bas;;3.3v
+R8;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+R9;VDD25;;alimentation;VDD25;;;bas;;Must connect VDD25 to 2.5v
+R10;HSIO45NB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R11;HSIO42NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R12;HSIO42PB0/CLKIN_N_5;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R13;HSIO41NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R14;HSIO41PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R15;HSIO35NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R16;HSIO35PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+R17;VDD25;;alimentation;VDD25;;;bas;;Must connect VDD25 to 2.5v
+R18;VSS;;alimentation;GND;;;bas;;VSS
+R19;XCVR_0_RX3_N;;émetteur-récepteur inutilisé;;;;bas;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+R20;XCVR_0_RX3_P;;émetteur-récepteur inutilisé;;;;bas;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (100K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+R21;VDDA;;alimentation;VDDA;;;bas;;Must connect VDDA directly to 1.0v/1.05v, or to VSS through resistor (10K ohm). For PolarFire CORE devices: Must connect VDDA to VSS through resistor (10K ohm)
+R22;VSS;;alimentation;GND;;;bas;;VSS
+T1;GPIO66NB4;Bank4;signal;led_video;OUTPUT;LVCMOS33;gauche;LED vidéo verrouillée, active à 1;led_video
+T2;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+T3;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+T4;VDDI4;;alimentation;+3V3;;;gauche;;3.3v
+T5;NC;;absente sur MPF050T;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDDI4 through resistor (10K ohm) is allowed. CLAMP=OFF
+T6;HSIO55PB0;Bank0;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T7;HSIO55NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T8;HSIO47NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T9;VSS;;alimentation;GND;;;bas;;VSS
+T10;HSIO45PB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T11;HSIO46PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T12;HSIO40NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T13;HSIO40PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T14;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+T15;HSIO34PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T16;HSIO33PB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T17;HSIO33NB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+T18;VSS;;alimentation;GND;;;bas;;VSS
+T19;VSS;;alimentation;GND;;;bas;;VSS
+T20;VSS;;alimentation;GND;;;bas;;VSS
+T21;XCVR_0_TX3_N;;émetteur-récepteur inutilisé;;;;bas;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+T22;XCVR_0_TX3_P;;émetteur-récepteur inutilisé;;;;bas;;Safety Critical Applications: DNC, LiberoSOC Defined. Connect to VSS through resistor (10K ohm) for higher noise immunity is allowed. All other applications:DNC, LiberoSOC Defined
+U1;VDDI0;;alimentation;VDDI0;;;gauche;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+U2;HSIO64NB0;Bank0;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U3;HSIO64PB0/CCC_NW_CLKIN_N_1;Bank0;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U4;HSIO59PB0;Bank0;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U5;HSIO59NB0;Bank0;entrée-sortie libre;;;;gauche;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U6;VSS;;alimentation;GND;;;gauche;;VSS
+U7;HSIO57PB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U8;HSIO47PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U9;HSIO44NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U10;HSIO46NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U11;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+U12;HSIO36PB1/CLKIN_N_7;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U13;HSIO38PB1/CLKIN_N_6;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U14;HSIO38NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U15;HSIO34NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U16;VSS;;alimentation;GND;;;bas;;VSS
+U17;HSIO32NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U18;HSIO32PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U19;HSIO30PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+U20;VSS;;alimentation;GND;;;bas;;VSS
+U21;VSS;;alimentation;GND;;;bas;;VSS
+U22;VSS;;alimentation;GND;;;bas;;VSS
+V1;HSIO63NB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V2;HSIO63PB0/DQS/CCC_NW_PLL1_OUT0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V3;VSS;;alimentation;GND;;;bas;;VSS
+V4;HSIO58NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V5;HSIO56PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V6;HSIO56NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V7;HSIO57NB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V8;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+V9;HSIO44PB0/CLKIN_N_4;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V10;HSIO43NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V11;HSIO43PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V12;HSIO36NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V13;VSS;;alimentation;GND;;;bas;;VSS
+V14;HSIO39NB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V15;HSIO39PB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V16;HSIO31PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V17;HSIO31NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V18;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+V19;HSIO30NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V20;HSIO18NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V21;HSIO18PB1/CCC_NE_CLKIN_N_11;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+V22;HSIO19NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W1;HSIO60NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W2;HSIO60PB0/CLKIN_N_3/CCC_NW_CLKIN_N_3;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W3;HSIO61PB0/CCC_NW_PLL1_OUT1;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W4;HSIO58PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W5;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+W6;HSIO54PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W7;HSIO54NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W8;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W9;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W10;VSS;;alimentation;GND;;;bas;;VSS
+W11;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W12;HSIO37NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W13;HSIO37PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W14;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W15;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+W16;HSIO29PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W17;HSIO25PB1/CCC_NE_PLL1_OUT1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W18;HSIO25NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W19;HSIO24NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W20;VSS;;alimentation;GND;;;bas;;VSS
+W21;HSIO21NB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+W22;HSIO19PB1/CCC_NE_PLL0_OUT1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y1;HSIO65PB0/CCC_NW_CLKIN_N_0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y2;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+Y3;HSIO61NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y4;HSIO50PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y5;HSIO53PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y6;HSIO53NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y7;VSS;;alimentation;GND;;;bas;;VSS
+Y8;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y9;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y10;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y11;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y12;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+Y13;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y14;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y15;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y16;HSIO29NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y17;VSS;;alimentation;GND;;;bas;;VSS
+Y18;HSIO26NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y19;HSIO24PB1/CLKIN_N_9/CCC_NE_CLKIN_N_9;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y20;HSIO22NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y21;HSIO21PB1/DQS/CCC_NE_PLL0_OUT0;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+Y22;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+AA1;HSIO65NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA2;HSIO62PB0/CLKIN_N_2/CCC_NW_CLKIN_N_2/CCC_NW_PLL1_OUT0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA3;HSIO52PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA4;VSS;;alimentation;GND;;;bas;;VSS
+AA5;HSIO50NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA6;HSIO49PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA7;HSIO49NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA8;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA9;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+AA10;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA11;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA12;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA13;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA14;VSS;;alimentation;GND;;;bas;;VSS
+AA15;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA16;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA17;HSIO28NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA18;HSIO26PB1/CLKIN_N_8/CCC_NE_CLKIN_N_8/CCC_NE_PLL1_OUT0;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA19;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+AA20;HSIO22PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA21;HSIO20PB1/CCC_NE_CLKIN_N_10/CCC_NE_PLL0_OUT0;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AA22;HSIO20NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB1;VSS;;alimentation;GND;;;bas;;VSS
+AB2;HSIO62NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB3;HSIO52NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB4;HSIO51PB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB5;HSIO51NB0/DQS;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB6;VDDI0;;alimentation;VDDI0;;;bas;;Must connect VDDI0 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+AB7;HSIO48PB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB8;HSIO48NB0;Bank0;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB9;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB10;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB11;VSS;;alimentation;GND;;;bas;;VSS
+AB12;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB13;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB14;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB15;NC;;absente sur MPF050T;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB16;VDDI1;;alimentation;VDDI1;;;bas;;Must connect VDDI1 directly to 1.2v/1.5v/1.8v, or to VSS through resistor (10K ohm)
+AB17;HSIO28PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB18;HSIO27PB1/DQS/CCC_NE_PLL1_OUT0;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB19;HSIO27NB1/DQS;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB20;HSIO23PB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB21;HSIO23NB1;Bank1;entrée-sortie libre;;;;bas;;DNC, LiberoSOC Defined High-Z with weak pull up ON. Connection to VDD18 through resistor (10K ohm) is allowed. CLAMP=ON
+AB22;VSS;;alimentation;GND;;;bas;;VSS
