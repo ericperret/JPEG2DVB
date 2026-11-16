@@ -1,0 +1,91 @@
+2026-11-16 11:44:46  ===== jpeg2dvb_libero.tcl 1.2 =====
+2026-11-16 11:44:47  table des broches : 485 broches, banques GPIO : Bank2 Bank4
+2026-11-16 11:44:47  DEBUT  projet mpf050t (MPF050T-FCVG484, STD, IND)
+2026-11-16 11:44:48  OK     projet mpf050t (MPF050T-FCVG484, STD, IND)
+2026-11-16 11:44:48  DEBUT  réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-16 11:44:48  OK     réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-16 11:44:48  DEBUT  import du VHDL
+2026-11-16 11:44:48  OK     import du VHDL
+2026-11-16 11:44:48  DEBUT  cœur PF_CCC_SYS
+2026-11-16 11:44:52  OK     cœur PF_CCC_SYS
+2026-11-16 11:44:52  DEBUT  cœur PF_CCC_TVP
+2026-11-16 11:44:55  OK     cœur PF_CCC_TVP
+2026-11-16 11:44:55  DEBUT  cœur PF_IOD_TX_CCC_IOD
+2026-11-16 11:44:58  OK     cœur PF_IOD_TX_CCC_IOD
+2026-11-16 11:44:58  DEBUT  cœur PF_IOD_TX_SD
+2026-11-16 11:45:03  OK     cœur PF_IOD_TX_SD
+2026-11-16 11:45:03  DEBUT  hiérarchie
+2026-11-16 11:45:04  OK     hiérarchie
+2026-11-16 11:45:04  DEBUT  racine jpeg2dvb_top
+2026-11-16 11:45:05  OK     racine jpeg2dvb_top
+2026-11-16 11:45:05  DEBUT  import du SDC
+2026-11-16 11:45:05  OK     import du SDC
+2026-11-16 11:45:05  DEBUT  horloges des PLL (derive_constraints_sdc)
+2026-11-16 11:45:10  OK     horloges des PLL (derive_constraints_sdc)
+2026-11-16 11:45:10  brochage imposé : /home/eperret/dvb_lot/jpeg2dvb_top.pdc
+2026-11-16 11:45:10  DEBUT  import du PDC
+2026-11-16 11:45:10  OK     import du PDC
+2026-11-16 11:45:10  DEBUT  contraintes de la synthèse
+2026-11-16 11:45:10  OK     contraintes de la synthèse
+2026-11-16 11:45:10  DEBUT  contraintes du placement-routage
+2026-11-16 11:45:10  OK     contraintes du placement-routage
+2026-11-16 11:45:10  DEBUT  contraintes du timing
+2026-11-16 11:45:10  OK     contraintes du timing
+2026-11-16 11:45:10  DEBUT  réglages de la synthèse
+2026-11-16 11:45:10  OK     réglages de la synthèse
+2026-11-16 11:45:10  DEBUT  réglages du placement-routage
+2026-11-16 11:45:10  OK     réglages du placement-routage
+2026-11-16 11:45:10  DEBUT  réglages du timing
+2026-11-16 11:45:10  OK     réglages du timing
+2026-11-16 11:45:10  DEBUT  SYNTHESE MPF050T
+2026-11-16 11:49:41  OK     SYNTHESE MPF050T
+2026-11-16 11:49:41  DEBUT  PLACEMENT-ROUTAGE MPF050T (brochage essai 0)
+2026-11-16 12:04:12  OK     PLACEMENT-ROUTAGE MPF050T (brochage essai 0)
+2026-11-16 12:04:12  DEBUT  TIMING MPF050T
+2026-11-16 12:07:43  OK     TIMING MPF050T
+2026-11-16 12:07:44  MPF050T : placé-routé (brochage essai 0)
+2026-11-16 12:07:44  DEBUT  projet mpf100t (MPF100T-FCVG484, STD, IND)
+2026-11-16 12:07:44  OK     projet mpf100t (MPF100T-FCVG484, STD, IND)
+2026-11-16 12:07:44  DEBUT  réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-16 12:07:44  OK     réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-16 12:07:44  DEBUT  import du VHDL
+2026-11-16 12:07:44  OK     import du VHDL
+2026-11-16 12:07:44  DEBUT  cœur PF_CCC_SYS
+2026-11-16 12:07:47  OK     cœur PF_CCC_SYS
+2026-11-16 12:07:47  DEBUT  cœur PF_CCC_TVP
+2026-11-16 12:07:50  OK     cœur PF_CCC_TVP
+2026-11-16 12:07:50  DEBUT  cœur PF_IOD_TX_CCC_IOD
+2026-11-16 12:07:52  OK     cœur PF_IOD_TX_CCC_IOD
+2026-11-16 12:07:52  DEBUT  cœur PF_IOD_TX_SD
+2026-11-16 12:07:55  OK     cœur PF_IOD_TX_SD
+2026-11-16 12:07:55  DEBUT  hiérarchie
+2026-11-16 12:07:56  OK     hiérarchie
+2026-11-16 12:07:56  DEBUT  racine jpeg2dvb_top
+2026-11-16 12:07:57  OK     racine jpeg2dvb_top
+2026-11-16 12:07:57  DEBUT  import du SDC
+2026-11-16 12:07:57  OK     import du SDC
+2026-11-16 12:07:57  DEBUT  horloges des PLL (derive_constraints_sdc)
+2026-11-16 12:08:01  OK     horloges des PLL (derive_constraints_sdc)
+2026-11-16 12:08:01  brochage imposé : /home/eperret/dvb_lot/jpeg2dvb_top.pdc
+2026-11-16 12:08:01  DEBUT  import du PDC
+2026-11-16 12:08:01  OK     import du PDC
+2026-11-16 12:08:01  DEBUT  contraintes de la synthèse
+2026-11-16 12:08:01  OK     contraintes de la synthèse
+2026-11-16 12:08:01  DEBUT  contraintes du placement-routage
+2026-11-16 12:08:01  OK     contraintes du placement-routage
+2026-11-16 12:08:01  DEBUT  contraintes du timing
+2026-11-16 12:08:01  OK     contraintes du timing
+2026-11-16 12:08:01  DEBUT  réglages de la synthèse
+2026-11-16 12:08:01  OK     réglages de la synthèse
+2026-11-16 12:08:01  DEBUT  réglages du placement-routage
+2026-11-16 12:08:01  OK     réglages du placement-routage
+2026-11-16 12:08:01  DEBUT  réglages du timing
+2026-11-16 12:08:01  OK     réglages du timing
+2026-11-16 12:08:01  DEBUT  SYNTHESE MPF100T
+2026-11-16 12:12:26  OK     SYNTHESE MPF100T
+2026-11-16 12:12:26  DEBUT  PLACEMENT-ROUTAGE MPF100T (brochage essai 0)
+2026-11-16 12:23:15  OK     PLACEMENT-ROUTAGE MPF100T (brochage essai 0)
+2026-11-16 12:23:15  DEBUT  TIMING MPF100T
+2026-11-16 12:26:09  OK     TIMING MPF100T
+2026-11-16 12:26:09  MPF100T : placé-routé (brochage essai 0)
+2026-11-16 12:26:09  même brochage sur les deux composants : OUI

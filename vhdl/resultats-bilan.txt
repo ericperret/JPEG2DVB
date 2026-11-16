@@ -1,0 +1,68 @@
+================ MPF050T ================
+Resource Usage
++-----------------------------+-------+-------+------------+
+| Type                        | Used  | Total | Percentage |
++-----------------------------+-------+-------+------------+
+| 4LUT                        | 35287 | 48144 | 73.29      |
+| DFF                         | 13859 | 48144 | 28.79      |
+| User I/O                    | 22    | 188   | 11.70      |
+| -- Single-ended I/O         | 18    | 188   | 9.57       |
+| -- Differential I/O Pairs   | 2     | 94    | 2.13       |
+| -- I/Os using I/O Registers | 0     | 188   | 0.00       |
+| I/O Register Flip-Flops     | 0     | 564   | 0.00       |
+| -- Input  I/O Flip-Flops    | 0     | 188   | 0.00       |
+| -- Output I/O Flip-Flops    | 0     | 188   | 0.00       |
+| -- Enable I/O Flip-Flops    | 0     | 188   | 0.00       |
+| uSRAM                       | 13    | 450   | 2.89       |
+| LSRAM                       | 143   | 160   | 89.38      |
+| Math                        | 56    | 150   | 37.33      |
+| H-Chip Global               | 5     | 24    | 20.83      |
+| PLL                         | 3     | 8     | 37.50      |
+| DLL                         | 0     | 8     | 0.00       |
+| CRN_INT                     | 3     | 24    | 12.50      |
+| Transceiver Lanes           | 0     | 4     | 0.00       |
+| Transceiver PCIe            | 0     | 2     | 0.00       |
+| ICB_CLKINT                  | 3     | 48    | 6.25       |
++-----------------------------+-------+-------+------------+
+
+--- TIMING MAX (setup) : domaine, période (ns), fréquence (MHz), marge (ns), coin
+osc_50  |  20.000  |  50.000  |  tvp_sclk  |  37.037  |  27.000  |  30.062  |  slow_lv_ht  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT0  |  3.125  |  320.000  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT1  |  12.500  |  80.000  |  0.507  |  slow_lv_lt  |  u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0/OUT0  |  12.500  |  80.000  |  u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0/OUT0  |  69.842  |  14.318
+--- TIMING MIN (hold) : domaine, période (ns), fréquence (MHz), marge (ns), coin
+osc_50  |  20.000  |  50.000  |  tvp_sclk  |  37.037  |  27.000  |  0.080  |  fast_hv_lt  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT0  |  3.125  |  320.000  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT1  |  12.500  |  80.000  |  0.072  |  fast_hv_lt  |  u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0/OUT0  |  12.500  |  80.000  |  u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0/OUT0  |  69.842  |  14.318
+--- VIOLATIONS MAX : No Path
+--- VIOLATIONS MIN : No Path
+
+================ MPF100T ================
+Resource Usage
++-----------------------------+-------+--------+------------+
+| Type                        | Used  | Total  | Percentage |
++-----------------------------+-------+--------+------------+
+| 4LUT                        | 35287 | 108600 | 32.49      |
+| DFF                         | 13859 | 108600 | 12.76      |
+| User I/O                    | 22    | 284    | 7.75       |
+| -- Single-ended I/O         | 18    | 284    | 6.34       |
+| -- Differential I/O Pairs   | 2     | 142    | 1.41       |
+| -- I/Os using I/O Registers | 0     | 284    | 0.00       |
+| I/O Register Flip-Flops     | 0     | 852    | 0.00       |
+| -- Input  I/O Flip-Flops    | 0     | 284    | 0.00       |
+| -- Output I/O Flip-Flops    | 0     | 284    | 0.00       |
+| -- Enable I/O Flip-Flops    | 0     | 284    | 0.00       |
+| uSRAM                       | 13    | 1008   | 1.29       |
+| LSRAM                       | 143   | 352    | 40.62      |
+| Math                        | 56    | 336    | 16.67      |
+| H-Chip Global               | 5     | 48     | 10.42      |
+| PLL                         | 3     | 8      | 37.50      |
+| DLL                         | 0     | 8      | 0.00       |
+| CRN_INT                     | 3     | 24     | 12.50      |
+| Transceiver Lanes           | 0     | 4      | 0.00       |
+| Transceiver PCIe            | 0     | 2      | 0.00       |
+| ICB_CLKINT                  | 3     | 72     | 4.17       |
++-----------------------------+-------+--------+------------+
+
+--- TIMING MAX (setup) : domaine, période (ns), fréquence (MHz), marge (ns), coin
+osc_50  |  20.000  |  50.000  |  tvp_sclk  |  37.037  |  27.000  |  30.138  |  slow_lv_ht  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT0  |  3.125  |  320.000  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT1  |  12.500  |  80.000  |  0.346  |  slow_lv_lt  |  u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0/OUT0  |  12.500  |  80.000  |  u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0/OUT0  |  69.842  |  14.318
+--- TIMING MIN (hold) : domaine, période (ns), fréquence (MHz), marge (ns), coin
+osc_50  |  20.000  |  50.000  |  tvp_sclk  |  37.037  |  27.000  |  0.072  |  fast_hv_lt  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT0  |  3.125  |  320.000  |  u_horl/u_iod/PF_CCC_0/pll_inst_0/OUT1  |  12.500  |  80.000  |  0.067  |  fast_hv_lt  |  u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0/OUT0  |  12.500  |  80.000  |  u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0/OUT0  |  69.842  |  14.318
+--- VIOLATIONS MAX : No Path
+--- VIOLATIONS MIN : No Path
+
