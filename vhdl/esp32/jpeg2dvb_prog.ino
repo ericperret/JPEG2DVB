@@ -11,12 +11,13 @@
  *               - FPGA PolarFire (IC1) : JTAG-DirectC v2021.2, fichier /fpga.dat en FFat
  *  Auteur   : Eric PERRET
  *  Date     : 2026-11-23
- *  Version  : 1.1.0
+ *  Version  : 1.1.1
  *  Historique : 1.0.0  2026-11-21  création
  *             1.1.0  2026-11-23  PIC : modèle reconnu par le DEVID (8 PIC broche à broche
  *                                compatibles), lecture du contenu, première programmation
  *                                distincte de l'écriture de la fréquence (EEPROM seule),
  *                                repère JPEG2DVB + version en User ID
+ *             1.1.1  2026-11-23  Wi-Fi : SSID « dvbs », mot de passe « dvbs1234 », mDNS dvbs.local
  *  Cible    : M5Stack CoreS3 (ESP32-S3)
  *  Compilé  : arduino-esp32 3.3.12 + M5Unified 0.2.25 (voir build.sh)
  *  FQBN     : esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M,
@@ -46,12 +47,12 @@
 //  CONFIGURATION
 // ══════════════════════════════════════════════════════════════
 
-#define VERSION_FW      "1.1.0"
+#define VERSION_FW      "1.1.1"
 
 // ── Wi-Fi ──
-#define AP_SSID         "jpeg2dvb.local"
-#define AP_MDP          "jpeg2dvb.local"
-#define MDNS_NOM        "jpeg2dvb"
+#define AP_SSID         "dvbs"
+#define AP_MDP          "dvbs1234"           // WPA2 : 8 caractères au moins
+#define MDNS_NOM        "dvbs"
 #define HTTP_PORT       80
 #define DNS_PORT        53
 

@@ -4,7 +4,7 @@
   Objet    : câblage, compilation, utilisation et premier essai du firmware jpeg2dvb_prog
   Auteur   : Eric PERRET
   Date     : 2026-11-23
-  Version  : 1.1.0
+  Version  : 1.1.1
 -->
 
 # jpeg2dvb_prog — firmware du M5Stack CoreS3
@@ -63,8 +63,12 @@ cd esp32
 
 ## Utilisation
 
-1. Se connecter au Wi-Fi `jpeg2dvb.local`, mot de passe `jpeg2dvb.local`. Le portail captif ouvre la page
-   (sinon `http://192.168.4.1/` ou `http://jpeg2dvb.local/`).
+![Page web du CoreS3](capture_page.png)
+
+*Page servie par le CoreS3 (capture d'illustration, valeurs de démonstration).*
+
+1. Se connecter au Wi-Fi `dvbs`, mot de passe `dvbs1234`. Le portail captif ouvre la page
+   (sinon `http://192.168.4.1/` ou `http://dvbs.local/`).
 2. **PIC** : « Lire le PIC » affiche le modèle (F ou LF), la mémoire programme, le contenu (vierge, programme JPEG2DVB
    et sa version, autre programme) et la fréquence en EEPROM. « Programmer le PIC » (première programmation ou PIC
    remplacé) efface, programme et vérifie : programme, repère User ID, configuration, EEPROM à la fréquence du bloc PLL.

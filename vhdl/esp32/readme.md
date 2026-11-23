@@ -3,13 +3,13 @@
   Projet   : JPEG2DVB — Chantier 2 : Programmation du PIC et du FPGA depuis l'ESP32 (M5Stack CoreS3)
   Auteur   : Eric PERRET
   Date     : 2026-11-23
-  Version  : 1.1.0
+  Version  : 1.1.1
 -->
 
 # `jpeg2dvb_prog` — Firmware M5Stack CoreS3
 
 ![Target](https://img.shields.io/badge/cible-M5Stack%20CoreS3-orange.svg)
-![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)
 ![Protocol](https://img.shields.io/badge/interfaces-ICSP%20%7C%20JTAG--DirectC-brightgreen.svg)
 
 Firmware d'interface web pour le **M5Stack CoreS3** permettant la programmation in-situ du microcontrôleur **PIC** de U6 (ICSP basse tension ; PIC16(L)F18323, 18324, 18325, 18326 reconnus par leur DEVID) et du FPGA **Microchip PolarFire** (JTAG-DirectC) via un réseau Wi-Fi local.
@@ -116,10 +116,14 @@ cd esp32
 
 ## 🌐 Utilisation de l'Interface Web
 
+![Page web du CoreS3](capture_page.png)
+
+*Page servie par le CoreS3 (capture d'illustration, valeurs de démonstration).*
+
 1. **Connexion au point d'accès Wi-Fi** :
-   - **SSID** : `jpeg2dvb.local`
-   - **Mot de passe** : `jpeg2dvb.local`
-   - Le portail captif redirige automatiquement vers l'interface. En cas d'échec, ouvrez votre navigateur sur `http://192.168.4.1/` ou `http://jpeg2dvb.local/`.
+   - **SSID** : `dvbs`
+   - **Mot de passe** : `dvbs1234`
+   - Le portail captif redirige automatiquement vers l'interface. En cas d'échec, ouvrez votre navigateur sur `http://192.168.4.1/` ou `http://dvbs.local/`.
 
 2. **Section PIC (U6)** :
    - **« Lire le PIC »** : modèle (F ou LF) reconnu par le DEVID, mémoire programme, contenu (vierge, programme JPEG2DVB et sa version, autre programme), fréquence en EEPROM.
