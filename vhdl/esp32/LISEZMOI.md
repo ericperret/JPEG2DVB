@@ -3,13 +3,14 @@
   Projet   : JPEG2DVB — chantier 2 : programmation du PIC et du FPGA depuis l'ESP32 (M5Stack CoreS3)
   Objet    : câblage, compilation, utilisation et premier essai du firmware jpeg2dvb_prog
   Auteur   : Eric PERRET
-  Date     : 2026-11-21
-  Version  : 1.0.0
+  Date     : 2026-11-23
+  Version  : 1.1.0
 -->
 
 # jpeg2dvb_prog — firmware du M5Stack CoreS3
 
-Programme le PIC16F18323 (U6, ICSP basse tension) et le FPGA PolarFire (IC1, JTAG-DirectC) par une page web en Wi-Fi.
+Programme le PIC de U6 (ICSP basse tension) et le FPGA PolarFire (IC1, JTAG-DirectC) par une page web en Wi-Fi.
+PIC acceptés, reconnus par leur DEVID (broche à broche compatibles) : PIC16(L)F18323, 18324, 18325, 18326.
 L'émetteur fonctionne sans le CoreS3.
 
 ## Câblage J7 ↔ CoreS3
@@ -33,42 +34,57 @@ sauf MCLR tenu à 0 pendant la programmation du FPGA (HF coupée).
 
 ## Compilation et flashage
 
-Environnement de DroneRX : `arduino-cli` dans `~/bin`, cœur esp32 3.3.12, M5Unified 0.2.25, `git`, `gcc`, `node`.
+Environnement de DroneRX : `arduino-cli` dans `~/bin`, cœur esp32 3.3.12, M5Unified 0.2.25, `unzip`, `gcc`, `node`.
+
+Tous les fichiers sont à plat dans `esp32/`, sans sous-dossier ; `build.sh` est autonome (aucun téléchargement)
+et ne crée rien dans ce dossier : il compile dans une copie, `~/.cache/jpeg2dvb_esp32`.
+
+| Fichier | Rôle |
+|---|---|
+| `jpeg2dvb_prog.ino`, `prog_page.h`, `pic_fw.h` | firmware (copiés dans `~/.cache` pour la compilation) |
+| `pll_boot.asm` | source du programme du PIC (`pic_fw.h` en est produit par `pic14.js`) |
+| `pic14.js`, `test_adf4351.c` | contrôles sur PC (`./build.sh controle`) |
+| `directc.zip` | JTAG-DirectC v2021.2 de Microchip prêt à compiler + adaptation ESP32 ; **sur le PC seulement, jamais sur GitHub** (licence Microchip) |
+
+`directc.zip` contient les sources Microchip (dépôt public MicrochipTech/adg_fpga_reconfiguration, commit `2de7cdc`)
+et les fichiers d'adaptation : `dpuser.c`, `gpio_hw_interface.c`, `jpeg2dvb_port.h`, `reglages.sh`
+(G5 PolarFire activé, RTG4 désactivé, lecture paginée du `.dat`).
 
 ```
 cd esp32
-./build.sh compile      # récupère JTAG-DirectC (1re fois), compile
+./build.sh compile      # compile (directc.zip doit être à côté de build.sh)
 ./build.sh flash        # compile + téléverse (CoreS3 en USB, /dev/ttyACM*)
 ./build.sh mon          # moniteur série 115200
 ./build.sh all          # compile + téléverse + moniteur
 ./build.sh controle     # contrôles sur PC : calcul ADF4351 (gcc), PIC assemblé et simulé (node)
 ```
 
-- JTAG-DirectC v2021.2 (commit `2de7cdc` de MicrochipTech/adg_fpga_reconfiguration) est récupéré par `build.sh`
-  dans `jpeg2dvb_prog/src/directc/` (licence Microchip : jamais versionné, voir `.gitignore`),
-  puis complété par les fichiers de `jpeg2dvb_prog/portage/`.
-- `pic_fw.h` est livré assemblé. Après modification de `pic/pll_boot.asm` :
-  `node outils/pic14.js asm jpeg2dvb_prog/pic/pll_boot.asm jpeg2dvb_prog/pic_fw.h`
+- `pic_fw.h` est livré assemblé. Après modification de `pll_boot.asm` : `node pic14.js asm pll_boot.asm pic_fw.h`
 
 ## Utilisation
 
 1. Se connecter au Wi-Fi `jpeg2dvb.local`, mot de passe `jpeg2dvb.local`. Le portail captif ouvre la page
    (sinon `http://192.168.4.1/` ou `http://jpeg2dvb.local/`).
-2. **PLL** : saisir la fréquence (950,0 à 2150,0 MHz, pas de 0,5 MHz) ; diviseur, INT, FRAC et R0 à R5 s'affichent.
-   « Écrire dans le PIC » efface, programme et vérifie le PIC (programme + configuration + EEPROM),
-   puis attend LD au plus 1 s. La dernière fréquence écrite est gardée et réaffichée.
-3. **FPGA** : choisir le `.dat` exporté par Libero (Export Bitstream, format DAT), « Envoyer » (stocké en `/fpga.dat`,
+2. **PIC** : « Lire le PIC » affiche le modèle (F ou LF), la mémoire programme, le contenu (vierge, programme JPEG2DVB
+   et sa version, autre programme) et la fréquence en EEPROM. « Programmer le PIC » (première programmation ou PIC
+   remplacé) efface, programme et vérifie : programme, repère User ID, configuration, EEPROM à la fréquence du bloc PLL.
+3. **PLL** : saisir la fréquence (950,0 à 2150,0 MHz, pas de 0,5 MHz) ; diviseur, INT, FRAC et R0 à R5 s'affichent.
+   « Écrire la fréquence » ne réécrit que l'EEPROM du PIC (le programme JPEG2DVB doit être en place), puis attend LD
+   au plus 1 s. La dernière fréquence écrite est gardée et réaffichée.
+4. **FPGA** : choisir le `.dat` exporté par Libero (Export Bitstream, format DAT), « Envoyer » (stocké en `/fpga.dat`,
    taille et CRC32 affichés). « Identifier » lit l'IDCODE et les informations du composant.
    « Programmer et vérifier » efface puis programme et vérifie le FPGA (confirmation demandée).
-4. Le bloc « État » et le journal se mettent à jour chaque seconde. L'écran du CoreS3 montre SSID, IP, LD
+5. Le bloc « État » et le journal se mettent à jour chaque seconde. L'écran du CoreS3 montre SSID, IP, LD
    et la dernière action avec son résultat.
 
 ## Premier essai sur carte
 
 1. **CoreS3 seul** (hors carte, alimenté en USB) : `./build.sh all`, vérifier l'écran (SSID, IP), se connecter au Wi-Fi,
    ouvrir la page, saisir 1250,0 : registres affichés (R0 `00320000`, R4 `009C843C`).
-2. **PIC à 1250,0 MHz** (CoreS3 sur J7, carte alimentée) : « Écrire dans le PIC ». Attendu : DEVID `3067h`,
-   « PIC programmé et vérifié … PLL verrouillée », LD verrouillée sur l'écran et la page, HF présente sur RFOUTA.
+2. **PIC à 1250,0 MHz** (CoreS3 sur J7, carte alimentée) : « Lire le PIC » (modèle reconnu), puis 1250,0 et
+   « Programmer le PIC ». Attendu : « PIC16F18323 programmé et vérifié à 1250,0 MHz — PLL verrouillée »,
+   LD verrouillée sur l'écran et la page, HF présente sur RFOUTA. « Écrire la fréquence » à 1300,0 puis à 1250,0 :
+   seule l'EEPROM change, LD se reverrouille.
    Couper puis remettre l'alimentation : la PLL doit se reverrouiller seule.
 3. **Identifier le FPGA** : envoyer le `.dat`, « Identifier ». Attendu : IDCODE `?F8111CFh` (MPF100T)
    ou `?F8101CFh` (MPF050T), « ? » étant la révision du composant, code DirectC 0. La HF revient à la fin (le PIC redémarre).

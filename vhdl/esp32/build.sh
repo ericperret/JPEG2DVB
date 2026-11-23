@@ -3,14 +3,16 @@
 # Nom      : build.sh
 # Projet   : JPEG2DVB — chantier 2 : programmation du PIC et du FPGA depuis l'ESP32
 # Objet    : compile / flash / moniteur du firmware jpeg2dvb_prog (M5Stack CoreS3),
-#            mise en place de JTAG-DirectC (Microchip, non redistribué),
-#            contrôles sur PC (calcul ADF4351, programme du PIC)
+#            contrôles sur PC (calcul ADF4351, programme du PIC) ; autonome,
+#            aucun téléchargement
 # Auteur   : Eric PERRET
 # Date     : 2026-11-23
-# Version  : 1.1.0
+# Version  : 1.2.0
 # Historique : 1.0.0  2026-11-21  création
-#              1.1.0  2026-11-23  dossiers à plat (dépôt) : portage DirectC et outils à côté
-#                                 de build.sh, pll_boot.asm dans jpeg2dvb_prog/
+#              1.1.0  2026-11-23  dossiers à plat (dépôt)
+#              1.2.0  2026-11-23  autonome : JTAG-DirectC lu dans directc.zip (local, jamais
+#                                 poussé : licence Microchip), plus de téléchargement ; tout à
+#                                 plat à côté de build.sh ; compilation dans ~/.cache
 # ------------------------------------------------------------
 # Usage :
 #   ./build.sh            compile seulement
@@ -20,24 +22,29 @@
 #   ./build.sh all        compile + téléverse + moniteur
 #   ./build.sh controle   contrôles sur PC : calcul ADF4351 (gcc),
 #                         assemblage et simulation du PIC (node)
-# Environnement : arduino-cli dans ~/bin, cœur esp32 3.3.12, M5Unified 0.2.25
+# Environnement : arduino-cli dans ~/bin, cœur esp32 3.3.12, M5Unified 0.2.25, unzip
+# Rangement     : tout à plat à côté de build.sh, rien n'est créé dans ce dossier :
+#                   jpeg2dvb_prog.ino, prog_page.h, pic_fw.h, pll_boot.asm, pic14.js,
+#                   test_adf4351.c, directc.zip (sur le PC seulement, jamais sur GitHub)
+#                 La compilation se fait dans ~/.cache/jpeg2dvb_esp32 (copie du sketch,
+#                 DirectC décompressé, sorties de compilation).
 # ============================================================
 
 set -e
 export PATH="$PATH:$HOME/bin"
 
 ICI="$(cd "$(dirname "$0")" && pwd)"
-SKETCH="$ICI/jpeg2dvb_prog"
+CACHE="$HOME/.cache/jpeg2dvb_esp32"
+SKETCH="$CACHE/jpeg2dvb_prog"          # copie du sketch (Arduino : dossier = nom du .ino)
 DC="$SKETCH/src/directc"
-BUILD="$ICI/.build"
+BUILD="$CACHE/build"
+ZIP_DC="$ICI/directc.zip"              # JTAG-DirectC v2021.2 prêt à compiler (local)
+FICHIERS_SKETCH="jpeg2dvb_prog.ino prog_page.h pic_fw.h"
 FQBN="esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M,FlashMode=qio,PartitionScheme=app3M_fat9M_16MB"
 COEUR_VERSION="3.3.12"
 M5U_VERSION="0.2.25"
 BAUD=115200
 
-DIRECTC_DEPOT="https://github.com/MicrochipTech/adg_fpga_reconfiguration.git"
-DIRECTC_COMMIT="2de7cdc9d2c7ecadb0da81ac5ed396a9a5affea3"
-DIRECTC_CHEMIN="fpga_reconfiguration/firmware/src/DirectC"
 
 # fichiers du projet (avertissements interdits) ; le reste de src/directc est DirectC
 MOTIF_PROJET='(jpeg2dvb_prog\.ino|prog_page\.h|pic_fw\.h|/src/directc/(dpuser\.c|gpio_hw_interface\.c|jpeg2dvb_port\.h)):[0-9]+:'
@@ -45,6 +52,7 @@ MOTIF_PROJET='(jpeg2dvb_prog\.ino|prog_page\.h|pic_fw\.h|/src/directc/(dpuser\.c
 # --- environnement de compilation ---------------------------
 verifier_outils() {
     command -v arduino-cli >/dev/null || { echo "ERREUR: arduino-cli introuvable (attendu dans ~/bin)"; exit 1; }
+    command -v unzip >/dev/null || { echo "ERREUR: unzip introuvable"; exit 1; }
     local c m
     c=$(arduino-cli core list 2>/dev/null | awk '$1=="esp32:esp32"{print $2}')
     [ "$c" = "$COEUR_VERSION" ] || { echo "ERREUR: cœur esp32:esp32 $COEUR_VERSION requis (installé : ${c:-aucun})"; exit 1; }
@@ -52,34 +60,19 @@ verifier_outils() {
     [ "$m" = "$M5U_VERSION" ] || { echo "ERREUR: M5Unified $M5U_VERSION requise (installée : ${m:-aucune})"; exit 1; }
 }
 
-# --- JTAG-DirectC : récupération (une seule fois) + portage -
+# --- copie neuve du sketch + JTAG-DirectC (directc.zip) dans ~/.cache ---
 preparer_directc() {
-    if [ ! -f "$DC/dpalg.c" ]; then
-        command -v git >/dev/null || { echo "ERREUR: git introuvable"; exit 1; }
-        local TMP S
-        TMP=$(mktemp -d)
-        trap 'rm -rf "$TMP"' EXIT
-        echo "=== Récupération de JTAG-DirectC (Microchip, commit ${DIRECTC_COMMIT:0:7}) ==="
-        git -C "$TMP" init -q
-        git -C "$TMP" remote add origin "$DIRECTC_DEPOT"
-        git -C "$TMP" fetch -q --depth 1 origin "$DIRECTC_COMMIT"
-        git -C "$TMP" checkout -q FETCH_HEAD
-        S="$TMP/$DIRECTC_CHEMIN"
-        [ -f "$S/dpalg.c" ] || { echo "ERREUR: $DIRECTC_CHEMIN introuvable dans le dépôt Microchip"; exit 1; }
-        mkdir -p "$DC"
-        # copie à plat (Arduino ne met pas les sous-dossiers de src/ dans les chemins d'inclusion) :
-        # racine, G5Algo (PolarFire) et JTAG ; seulement les en-têtes de G3Algo, G4Algo et RTG4Algo
-        # (inclus par dpalg.c, familles non compilées)
-        cp "$S"/*.c "$S"/*.h "$DC/"
-        cp "$S"/G5Algo/*.c "$S"/G5Algo/*.h "$DC/"
-        cp "$S"/JTAG/*.c "$S"/JTAG/*.h "$DC/"
-        cp "$S"/G3Algo/*.h "$S"/G4Algo/*.h "$S"/RTG4Algo/*.h "$DC/"
-        cp "$TMP/license.md" "$DC/LICENCE_MICROCHIP.md"
-        rm -rf "$TMP"
-        trap - EXIT
-    fi
-    cp "$ICI/dpuser.c" "$ICI/gpio_hw_interface.c" "$ICI/jpeg2dvb_port.h" "$DC/"
-    bash "$ICI/reglages.sh" "$DC"
+    local f
+    for f in $FICHIERS_SKETCH; do
+        [ -f "$ICI/$f" ] || { echo "ERREUR: $f absent de $ICI"; exit 1; }
+    done
+    [ -f "$ZIP_DC" ] || { echo "ERREUR: directc.zip absent de $ICI (livré à part, jamais sur GitHub)"; exit 1; }
+    rm -rf "$SKETCH"
+    mkdir -p "$DC"
+    for f in $FICHIERS_SKETCH; do cp "$ICI/$f" "$SKETCH/"; done
+    unzip -q -o "$ZIP_DC" -d "$DC"
+    [ -f "$DC/dpalg.c" ] && [ -f "$DC/reglages.sh" ] || { echo "ERREUR: directc.zip incomplet"; exit 1; }
+    bash "$DC/reglages.sh" "$DC"
 }
 
 # --- bilan des avertissements -------------------------------
@@ -143,7 +136,7 @@ controler() {
     T=$(mktemp -d)
     trap 'rm -rf "$T"' EXIT
     echo "=== Calcul des registres ADF4351 (fonction du firmware, gcc) ==="
-    sed -n '/^\/\/ >>> CALCUL_ADF4351/,/^\/\/ <<< CALCUL_ADF4351/p' "$SKETCH/jpeg2dvb_prog.ino" > "$T/adf4351_extrait.c"
+    sed -n '/^\/\/ >>> CALCUL_ADF4351/,/^\/\/ <<< CALCUL_ADF4351/p' "$ICI/jpeg2dvb_prog.ino" > "$T/adf4351_extrait.c"
     [ -s "$T/adf4351_extrait.c" ] || { echo "ERREUR: bloc CALCUL_ADF4351 introuvable"; exit 1; }
     cp "$ICI/test_adf4351.c" "$T/"
     gcc -std=c11 -Wall -Wextra -Werror -O2 -o "$T/test_adf4351" "$T/test_adf4351.c"
@@ -151,12 +144,12 @@ controler() {
     [ "${PIPESTATUS[0]}" -eq 0 ] || exit 1
     IMAGES=$(grep '^IMAGE ' "$T/sortie.txt" | cut -d' ' -f2)
     echo "=== Programme du PIC (pic14.js : assemblage et simulation) ==="
-    node "$ICI/pic14.js" asm "$SKETCH/pll_boot.asm" "$T/pic_fw.h"
-    cmp -s "$T/pic_fw.h" "$SKETCH/pic_fw.h" \
-        || { echo "ERREUR: pic_fw.h n'est pas à jour : node pic14.js asm jpeg2dvb_prog/pll_boot.asm jpeg2dvb_prog/pic_fw.h"; exit 1; }
+    node "$ICI/pic14.js" asm "$ICI/pll_boot.asm" "$T/pic_fw.h"
+    cmp -s "$T/pic_fw.h" "$ICI/pic_fw.h" \
+        || { echo "ERREUR: pic_fw.h n'est pas à jour : node pic14.js asm pll_boot.asm pic_fw.h"; exit 1; }
     echo "pic_fw.h à jour"
     # shellcheck disable=SC2086
-    node "$ICI/pic14.js" sim "$SKETCH/pll_boot.asm" $IMAGES
+    node "$ICI/pic14.js" sim "$ICI/pll_boot.asm" $IMAGES
     rm -rf "$T"
     trap - EXIT
     echo "=== CONTRÔLES OK ==="
