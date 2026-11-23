@@ -4,8 +4,8 @@
  *  Projet   : JPEG2DVB — chantier 2 : programmation du PIC et du FPGA depuis l'ESP32
  *  Objet    : page web embarquée (HTML/CSS/JavaScript, sans ressource externe)
  *  Auteur   : Eric PERRET
- *  Date     : 2026-11-21
- *  Version  : 1.0.0
+ *  Date     : 2026-11-23
+ *  Version  : 1.1.0
  * ══════════════════════════════════════════════════════════════
  */
 #pragma once
@@ -14,10 +14,15 @@ static const char PAGE_PROG[] PROGMEM = R"PAGEPROG(<!DOCTYPE html>
 <!--
   Nom      : jpeg2dvb_prog (page servie par le CoreS3, prog_page.h)
   Projet   : JPEG2DVB — chantier 2 : programmation du PIC et du FPGA
-  Objet    : état, réglage de la PLL (PIC16F18323), programmation du FPGA (JTAG-DirectC)
+  Objet    : état, PIC de U6 (lecture, première programmation), fréquence de la PLL
+             (EEPROM du PIC), programmation du FPGA (JTAG-DirectC)
   Auteur   : Eric PERRET
-  Date     : 2026-11-21
-  Version  : 1.0.0
+  Date     : 2026-11-23
+  Version  : 1.1.0
+  Historique : 1.0.0  2026-11-21  création
+               1.1.0  2026-11-23  bloc PIC (modèle, contenu, première programmation),
+                                  fréquence = EEPROM seule ; saisie : erreur affichée
+                                  seulement à la validation, ESP32 injoignable signalé
 -->
 <html lang="fr">
 <head>
@@ -68,7 +73,6 @@ static const char PAGE_PROG[] PROGMEM = R"PAGEPROG(<!DOCTYPE html>
 <section>
   <h2>État</h2>
   <table>
-    <tr><td>DEVID du PIC (dernière programmation)</td><td id="e_devid" class="mono">—</td></tr>
     <tr><td>PLL (LD)</td><td id="e_ld">—</td></tr>
     <tr><td>FPGA (dernière identification)</td><td id="e_fpga" class="mono">—</td></tr>
     <tr><td>Espace libre FFat</td><td id="e_ffat">—</td></tr>
@@ -79,13 +83,32 @@ static const char PAGE_PROG[] PROGMEM = R"PAGEPROG(<!DOCTYPE html>
 </section>
 
 <section>
+  <h2>PIC (U6)</h2>
+  <table>
+    <tr><td>Modèle</td><td id="c_modele">—</td></tr>
+    <tr><td>DEVID / révision</td><td id="c_devid" class="mono">—</td></tr>
+    <tr><td>Mémoire programme</td><td id="c_flash">—</td></tr>
+    <tr><td>Contenu</td><td id="c_contenu">—</td></tr>
+    <tr><td>Fréquence en EEPROM</td><td id="c_ee">—</td></tr>
+  </table>
+  <div class="ligne">
+    <button id="b_pic_lire" class="second">Lire le PIC</button>
+    <button id="b_pic_prog" class="danger">Programmer le PIC</button>
+  </div>
+  <div class="note">Première programmation ou PIC remplacé : effacement, programme JPEG2DVB
+    <span id="c_fw">—</span>, configuration, repère, puis EEPROM à la fréquence du bloc PLL.<br>
+    Modèles acceptés (reconnus par leur DEVID) : <span id="c_modeles">—</span>.</div>
+</section>
+
+<section>
   <h2>PLL (ADF4351 programmé par le PIC)</h2>
   <div class="ligne">
     <label for="freq">Fréquence (MHz)</label>
     <input type="text" id="freq" inputmode="decimal" autocomplete="off" placeholder="1250,0">
-    <button id="b_pic">Écrire dans le PIC</button>
+    <button id="b_freq">Écrire la fréquence</button>
   </div>
-  <div class="note">950,0 à 2150,0 MHz, par pas de 0,5 MHz. Référence 50 MHz, PFD 25 MHz, MOD 25.</div>
+  <div class="note">950,0 à 2150,0 MHz, par pas de 0,5 MHz. Référence 50 MHz, PFD 25 MHz, MOD 25.
+    Seule l'EEPROM du PIC est réécrite : le programme JPEG2DVB doit être en place.</div>
   <div id="pll_msg" class="note"></div>
   <table class="regs" id="pll_regs" style="margin-top:8px">
     <tr><td>Diviseur de sortie</td><td id="p_div">—</td></tr>
@@ -132,6 +155,7 @@ let E = null;               // dernier état reçu
 let jSuivant = 0;           // prochaine ligne du journal à demander
 let envoiActif = false;
 let tempo = null;
+let seqCalc = 0;            // numéro de la dernière demande de calcul (réponses en retard ignorées)
 
 function octets(n) {
   if (n >= 1048576) return (n / 1048576).toFixed(2).replace('.', ',') + ' Mo';
@@ -153,7 +177,9 @@ async function requete(url, corps) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(corps || {}).toString()
   };
-  const r = await fetch(url, opt);
+  let r;
+  try { r = await fetch(url, opt); }
+  catch (e) { return { ok: false, reseau: true, erreur: 'ESP32 injoignable' }; }
   let j = null;
   try { j = await r.json(); } catch (e) { j = { ok: false, erreur: 'réponse illisible' }; }
   if (!r.ok && j.ok === undefined) j.ok = false;
@@ -171,27 +197,69 @@ function afficherPll(j) {
   for (let i = 0; i < 6; i++) $('p_r' + i).textContent = j.r[i];
 }
 
+function effacerPll() {
+  $('pll_msg').textContent = '';
+  afficherPll(null);
+}
+
+function refus() {
+  $('freq').classList.add('faux');
+  $('pll_msg').innerHTML = '<span class="erreur">Fréquence refusée : 950,0 à 2150,0 MHz, par pas de 0,5 MHz</span>';
+  afficherPll(null);
+}
+
+// saisie : pas d'erreur pendant la frappe ; calcul dès que la valeur est bonne
+function saisie() {
+  clearTimeout(tempo);
+  seqCalc++;
+  $('freq').classList.remove('faux');
+  effacerPll();
+  if (freqValide($('freq').value) !== null) tempo = setTimeout(calculer, 350);
+  majBoutons();
+}
+
+// validation (Entrée, sortie du champ) : erreur affichée si la valeur est refusée
+function valider() {
+  const t = $('freq').value.trim();
+  if (t !== '' && freqValide(t) === null) refus();
+}
+
 async function calculer() {
   const s = freqValide($('freq').value);
-  $('freq').classList.toggle('faux', s === null);
-  if (s === null) {
-    $('pll_msg').innerHTML = '<span class="erreur">Fréquence refusée : 950,0 à 2150,0 MHz, par pas de 0,5 MHz</span>';
-    afficherPll(null);
-    majBoutons();
-    return;
-  }
+  if (s === null) { majBoutons(); return; }
+  const n = ++seqCalc;
   const j = await requete('/pll', { frequence: s, ecrire: '0' });
+  if (n !== seqCalc) return;
   $('pll_msg').innerHTML = j.ok ? '' : '<span class="erreur">' + (j.erreur || 'erreur') + '</span>';
   afficherPll(j);
   majBoutons();
 }
 
-async function ecrirePic() {
+async function ecrireFreq() {
   const s = freqValide($('freq').value);
-  if (s === null) { calculer(); return; }
+  if (s === null) { refus(); return; }
   const j = await requete('/pll', { frequence: s, ecrire: '1' });
   if (!j.ok) $('pll_msg').innerHTML = '<span class="erreur">' + (j.erreur || 'erreur') + '</span>';
-  else { $('pll_msg').textContent = 'Programmation du PIC lancée à ' + j.frequence + ' MHz'; afficherPll(j); }
+  else { $('pll_msg').textContent = 'Écriture de la fréquence ' + j.frequence + ' MHz lancée'; afficherPll(j); }
+  etat();
+}
+
+async function lirePic() {
+  const j = await requete('/pic/lire', {});
+  if (!j.ok) $('e_res').innerHTML = '<span class="erreur">' + (j.erreur || 'erreur') + '</span>';
+  etat();
+}
+
+async function programmerPic() {
+  const s = freqValide($('freq').value);
+  if (s === null) { refus(); return; }
+  if (!confirm('Programmer le PIC (première programmation) ?\n\n' +
+               'Le PIC est EFFACÉ, puis reçoit le programme JPEG2DVB ' + (E ? E.pic_fw_version : '') +
+               ', sa configuration et l\'EEPROM à ' + s + ' MHz.\n' +
+               'Modèle reconnu automatiquement par son DEVID.')) return;
+  const j = await requete('/pic/programmer', { frequence: s });
+  if (!j.ok) $('pll_msg').innerHTML = '<span class="erreur">' + (j.erreur || 'erreur') + '</span>';
+  else afficherPll(j);
   etat();
 }
 
@@ -246,21 +314,51 @@ async function fpga(action) {
 
 function majBoutons() {
   const occ = envoiActif || !E || E.occupe;
-  $('b_pic').disabled = occ || freqValide($('freq').value) === null;
+  const fv = freqValide($('freq').value) !== null;
+  $('b_pic_lire').disabled = occ;
+  $('b_pic_prog').disabled = occ || !fv;
+  $('b_freq').disabled = occ || !fv;
   $('b_envoi').disabled = occ;
   $('b_id').disabled = occ || !E.dat_present;
   $('b_prog').disabled = occ || !E.dat_present;
 }
 
+function afficherPic(j) {
+  $('c_fw').textContent = j.pic_fw_version;
+  $('c_modeles').textContent = j.pic_modeles.join(', ');
+  if (j.pic_devid === null) {
+    ['c_modele', 'c_devid', 'c_flash', 'c_contenu', 'c_ee'].forEach(id => $(id).textContent = '—');
+    $('c_modele').textContent = 'pas encore lu';
+    return;
+  }
+  $('c_devid').textContent = j.pic_devid + 'h, rév. ' + j.pic_revid + 'h';
+  if (!j.pic_modele) {
+    $('c_modele').innerHTML = '<span class="erreur">non pris en charge</span>';
+    ['c_flash', 'c_contenu', 'c_ee'].forEach(id => $(id).textContent = '—');
+    return;
+  }
+  $('c_modele').innerHTML = '<span class="ok">' + j.pic_modele + '</span> ' +
+    (j.pic_lf ? '(LF, 1,8 à 3,6 V)' : '(F, 2,3 à 5,5 V)');
+  $('c_flash').textContent = (j.pic_flash / 1024) + 'K mots';
+  let c = '—';
+  if (j.pic_contenu === 'vierge') c = '<span class="alerte">vierge</span>';
+  else if (j.pic_contenu === 'autre') c = '<span class="erreur">autre programme</span>';
+  else if (j.pic_contenu === 'jpeg2dvb')
+    c = '<span class="ok">programme JPEG2DVB ' + j.pic_version + '</span>' +
+        (j.pic_version === j.pic_fw_version ? '' : ' <span class="alerte">(version du firmware : ' + j.pic_fw_version + ')</span>');
+  $('c_contenu').innerHTML = c;
+  $('c_ee').innerHTML = j.pic_ee === 'valide' ? '<span class="ok">' + j.pic_ee_freq + ' MHz</span>'
+    : j.pic_ee === 'invalide' ? '<span class="alerte">aucune image valide</span>' : '—';
+}
+
 async function etat() {
   let j;
-  try { j = await requete('/etat'); } catch (e) { $('entete').textContent = 'liaison perdue'; return; }
+  j = await requete('/etat');
+  if (j.reseau) { $('entete').textContent = 'liaison perdue (ESP32 injoignable)'; return; }
   const premier = (E === null);
   E = j;
   $('entete').textContent = j.ssid + ' — ' + j.ip + ' — firmware ' + j.version;
-  $('e_devid').innerHTML = j.pic_devid === null ? '—'
-    : (j.pic_devid === j.pic_devid_attendu ? '<span class="ok">' : '<span class="erreur">') +
-      j.pic_devid + 'h</span> (rév. ' + j.pic_revid + 'h, attendu ' + j.pic_devid_attendu + 'h)';
+  afficherPic(j);
   $('e_ld').innerHTML = j.ld ? '<span class="ok">verrouillée</span>' : '<span class="erreur">non verrouillée</span>';
   $('e_fpga').textContent = j.fpga_idcode === null ? '—' : j.fpga_idcode + 'h — ' + j.fpga_nom;
   $('e_ffat').textContent = octets(j.ffat_libre) + ' sur ' + octets(j.ffat_total);
@@ -277,7 +375,8 @@ async function etat() {
 async function journal() {
   for (let n = 0; n < 8; n++) {
     let j;
-    try { j = await requete('/journal?depuis=' + jSuivant); } catch (e) { return; }
+    j = await requete('/journal?depuis=' + jSuivant);
+    if (j.reseau || !Array.isArray(j.lignes)) return;
     const p = $('journal');
     if (j.debut !== jSuivant && jSuivant !== 0) p.textContent += '[… lignes perdues …]\n';
     if (j.lignes.length) {
@@ -292,9 +391,16 @@ async function journal() {
   }
 }
 
-$('freq').addEventListener('input', () => { clearTimeout(tempo); tempo = setTimeout(calculer, 350); });
-$('freq').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !$('b_pic').disabled) ecrirePic(); });
-$('b_pic').addEventListener('click', ecrirePic);
+$('freq').addEventListener('input', saisie);
+$('freq').addEventListener('change', valider);
+$('freq').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  valider();
+  if (!$('b_freq').disabled) ecrireFreq();
+});
+$('b_freq').addEventListener('click', ecrireFreq);
+$('b_pic_lire').addEventListener('click', lirePic);
+$('b_pic_prog').addEventListener('click', programmerPic);
 $('b_envoi').addEventListener('click', envoyer);
 $('b_id').addEventListener('click', () => fpga('id'));
 $('b_prog').addEventListener('click', () => fpga('prog'));

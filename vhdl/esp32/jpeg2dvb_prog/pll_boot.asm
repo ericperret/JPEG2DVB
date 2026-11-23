@@ -1,12 +1,17 @@
 ; ==========================================================================
 ;  Nom      : pll_boot.asm
-;  Projet   : JPEG2DVB — chantier 2 : programme fixe du PIC16F18323 (U6)
+;  Projet   : JPEG2DVB — chantier 2 : programme fixe du PIC de U6
+;             (PIC16(L)F18323, 18324, 18325, 18326 : même code, mêmes registres)
 ;  Objet    : au démarrage, lit dans l'EEPROM les 6 registres de l'ADF4351,
 ;             vérifie signature et somme, les écrit en SPI 3 fils (R5 → R0),
 ;             puis PDBRF (RC3) recopie LD (RA2) toutes les ~1 ms
 ;  Auteur   : Eric PERRET
-;  Date     : 2026-11-21
-;  Version  : 1.0.0
+;  Date     : 2026-11-23
+;  Version  : 1.1.0
+;  Historique : 1.0.0  2026-11-21  création
+;               1.1.0  2026-11-23  code inchangé ; accepté sur les 8 PIC broche à broche
+;                                  compatibles (adresses des registres identiques, pack
+;                                  Microchip PIC16F1xxxx_DFP 1.32.471)
 ;  Outil    : outils/pic14.js (assembleur + simulateur) → pic_fw.h
 ;  Réf.     : DS40001799 (PIC16(L)F18313/18323), DS40001738 (programmation)
 ; ==========================================================================

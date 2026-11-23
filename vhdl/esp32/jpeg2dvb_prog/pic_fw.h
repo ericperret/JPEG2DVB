@@ -1,20 +1,37 @@
 /*
  * ══════════════════════════════════════════════════════════════
  *  Nom      : pic_fw.h
- *  Projet   : JPEG2DVB — chantier 2 : programme du PIC16F18323 (U6)
- *  Objet    : programme du PIC en mots de 14 bits + 4 mots de configuration
+ *  Projet   : JPEG2DVB — chantier 2 : programme du PIC de U6
+ *  Objet    : programme du PIC en mots de 14 bits, 4 mots de configuration,
+ *             repère User ID, table des PIC acceptés (DEVID, mémoire programme)
  *  Auteur   : Eric PERRET
- *  Date     : 2026-11-21
- *  Version  : 1.0.0
- *  Origine  : produit par outils/pic14.js à partir de pic/pll_boot.asm (ne pas modifier)
+ *  Date     : 2026-11-23
+ *  Version  : 1.1.0
+ *  Origine  : produit par pic14.js à partir de pll_boot.asm (ne pas modifier)
  * ══════════════════════════════════════════════════════════════
  */
 #pragma once
 #include <stdint.h>
 
-#define PIC_FW_DEVID     0x3067u   /* PIC16F18323 (DS40001799) */
 #define PIC_FW_NB_MOTS   78u
-#define PIC_FW_FLASH     2048u
+#define PIC_FW_VERSION   "1.1.0"
+
+/* User ID 8000h-8003h : repère « J2D » + version (majeur << 8 | mineur << 4 | correctif) */
+static const uint16_t pic_fw_userid[4] = { 0x004A, 0x0032, 0x0044, 0x0110 };
+
+/* PIC 14 broches acceptés (broche à broche compatibles avec U6) */
+typedef struct { const char *nom; uint16_t devid; uint16_t flash; uint8_t lf; } pic_modele_t;
+#define PIC_NB_MODELES   8u
+static const pic_modele_t pic_modeles[PIC_NB_MODELES] = {
+  { "PIC16F18323", 0x3067u, 2048u, 0u },
+  { "PIC16LF18323", 0x3069u, 2048u, 1u },
+  { "PIC16F18324", 0x303Au, 4096u, 0u },
+  { "PIC16LF18324", 0x303Cu, 4096u, 1u },
+  { "PIC16F18325", 0x303Eu, 8192u, 0u },
+  { "PIC16LF18325", 0x3040u, 8192u, 1u },
+  { "PIC16F18326", 0x30A4u, 16384u, 0u },
+  { "PIC16LF18326", 0x30A6u, 16384u, 1u }
+};
 
 /* mémoire programme, à partir de 0000h (mot non utilisé = 3FFFh) */
 static const uint16_t pic_fw_mots[PIC_FW_NB_MOTS] = {

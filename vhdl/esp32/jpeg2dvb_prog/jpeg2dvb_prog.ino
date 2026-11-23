@@ -4,17 +4,24 @@
  *  Projet   : JPEG2DVB — chantier 2 : programmation du PIC et du FPGA depuis l'ESP32
  *  Objet    : firmware du M5Stack CoreS3 branché sur J7 :
  *               - point d'accès Wi-Fi + portail captif + page web (prog_page.h)
- *               - PIC16F18323 (U6) : ICSP basse tension (DS40001738), programme fixe
- *                 (pic_fw.h) + registres de l'ADF4351 en EEPROM
+ *               - PIC de U6 (PIC16(L)F18323, 18324, 18325, 18326, reconnu par son DEVID) :
+ *                 ICSP basse tension (DS40001738), lecture, première programmation
+ *                 (programme fixe pic_fw.h, configuration, repère User ID, EEPROM),
+ *                 écriture de la fréquence (EEPROM seule : registres de l'ADF4351)
  *               - FPGA PolarFire (IC1) : JTAG-DirectC v2021.2, fichier /fpga.dat en FFat
  *  Auteur   : Eric PERRET
- *  Date     : 2026-11-21
- *  Version  : 1.0.0
+ *  Date     : 2026-11-23
+ *  Version  : 1.1.0
+ *  Historique : 1.0.0  2026-11-21  création
+ *             1.1.0  2026-11-23  PIC : modèle reconnu par le DEVID (8 PIC broche à broche
+ *                                compatibles), lecture du contenu, première programmation
+ *                                distincte de l'écriture de la fréquence (EEPROM seule),
+ *                                repère JPEG2DVB + version en User ID
  *  Cible    : M5Stack CoreS3 (ESP32-S3)
  *  Compilé  : arduino-esp32 3.3.12 + M5Unified 0.2.25 (voir build.sh)
  *  FQBN     : esp32:esp32:esp32s3:CDCOnBoot=cdc,PSRAM=opi,FlashSize=16M,
  *             FlashMode=qio,PartitionScheme=app3M_fat9M_16MB
- *  Fichiers : jpeg2dvb_prog.ino, prog_page.h, pic_fw.h,
+ *  Fichiers : jpeg2dvb_prog.ino, prog_page.h, pic_fw.h, pll_boot.asm (source de pic_fw.h),
  *             src/directc/ (JTAG-DirectC + portage, mis en place par build.sh)
  * ══════════════════════════════════════════════════════════════
  */
@@ -39,7 +46,7 @@
 //  CONFIGURATION
 // ══════════════════════════════════════════════════════════════
 
-#define VERSION_FW      "1.0.0"
+#define VERSION_FW      "1.1.0"
 
 // ── Wi-Fi ──
 #define AP_SSID         "jpeg2dvb.local"
@@ -58,7 +65,7 @@
 #define F_DAT           "/fpga.dat"
 #define F_TMP           "/fpga.tmp"
 
-// ── ICSP basse tension PIC16F183XX (DS40001738, tableau 8-1) ──
+// ── ICSP basse tension PIC16(L)F183XX (DS40001738, tableau 8-1) ──
 #define ICSP_DEMI_US        1u          // TCKH, TCKL, TDS, TDH ≥ 100 ns
 #define ICSP_TDLY_US        2u          // TDLY ≥ 1 µs
 #define ICSP_TENTH_US       500u        // TENTH ≥ 250 µs
@@ -202,9 +209,12 @@ static int adf4351_calculer(uint32_t f_demi, adf4351_t *c)
 //  TYPES ET ÉTAT GLOBAL
 // ══════════════════════════════════════════════════════════════
 
-enum Tache : uint8_t { T_AUCUNE = 0, T_PIC, T_FPGA_ID, T_FPGA_PROG };
+enum Tache : uint8_t { T_AUCUNE = 0, T_PIC_LIRE, T_PIC_PROG, T_PIC_EE, T_FPGA_ID, T_FPGA_PROG };
 
-enum Resultat : uint8_t { R_AUCUN = 0, R_OK, R_ALERTE, R_ERREUR };
+// contenu de la mémoire programme du PIC
+enum Contenu : uint8_t { C_INCONNU = 0, C_VIERGE, C_JPEG2DVB, C_AUTRE };
+
+enum Resultat : uint8_t { Q_AUCUN = 0, Q_OK, Q_ALERTE, Q_ERREUR };
 
 struct Etat {
     char     phase[64];
@@ -212,9 +222,14 @@ struct Etat {
     char     resultat[128];
     uint8_t  qualite;           // Resultat
     uint8_t  progression;       // 0..100
-    bool     devid_lu;
+    bool     pic_lu;            // DEVID lu au moins une fois
     uint16_t devid;
     uint16_t revid;
+    int8_t   pic_idx;           // indice dans pic_modeles, -1 si DEVID inconnu
+    uint8_t  pic_contenu;       // Contenu
+    char     pic_version[24];   // version du programme JPEG2DVB (repère User ID)
+    uint8_t  pic_ee;            // 0 non lue, 1 image valide, 2 image invalide ou vide
+    uint32_t pic_ee_freq;       // fréquence de l'image EEPROM (demi-MHz), 0 si invalide
     bool     idcode_lu;
     uint32_t idcode;
     char     fpga_nom[24];
@@ -490,7 +505,7 @@ extern "C" uint32_t jpeg2dvb_lire_dat(uint32_t adresse, uint8_t *tampon, uint32_
 
 
 // ══════════════════════════════════════════════════════════════
-//  ICSP BASSE TENSION — PIC16F18323 (DS40001738)
+//  ICSP BASSE TENSION — PIC16(L)F183XX (DS40001738)
 //  Données posées sur le front montant d'ICSPCLK, lues par le PIC au front
 //  descendant ; commandes 6 bits et données 16 bits, bit de poids faible en premier.
 // ══════════════════════════════════════════════════════════════
@@ -578,30 +593,148 @@ static void icsp_sortir()
     pinMode(BR_MCLR, INPUT);                   // R47 remonte MCLR : le PIC redémarre
 }
 
-// écrit puis vérifie tout le PIC ; msg reçoit le diagnostic
-static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
+static const pic_modele_t *pic_modele(uint16_t devid)
 {
-    uint16_t devid, revid, v;
+    for (uint32_t i = 0; i < PIC_NB_MODELES; i++)
+        if (pic_modeles[i].devid == devid) return &pic_modeles[i];
+    return nullptr;
+}
 
+static const char *pic_contenu_texte(uint8_t c)
+{
+    return c == C_VIERGE ? "vierge" : c == C_JPEG2DVB ? "programme JPEG2DVB" : c == C_AUTRE ? "autre programme" : "inconnu";
+}
+
+static uint32_t lire_be32(const uint8_t *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+// fréquence de sortie (demi-MHz) d'une image EEPROM ; 0 si signature, somme ou registres incohérents
+static uint32_t eeprom_frequence(const uint8_t *ee)
+{
+    uint32_t somme = 0;
+    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) somme += ee[i];
+    if (ee[24] != ADF_SIGNATURE || (somme & 0xFFu) != 0u) return 0;
+    const uint32_t r0 = lire_be32(ee + 20), r1 = lire_be32(ee + 16), r4 = lire_be32(ee + 4);
+    const uint32_t int_n = (r0 >> 15) & 0xFFFFu, frac = (r0 >> 3) & 0xFFFu, mod = (r1 >> 3) & 0xFFFu;
+    const uint32_t div = 1u << ((r4 >> 20) & 7u);
+    if (mod < 2u || frac >= mod) return 0;
+    const uint32_t num = 2u * ADF_PFD_MHZ * (int_n * mod + frac), den = mod * div;
+    if (num % den) return 0;
+    const uint32_t f = num / den;
+    return (f >= ADF_F_MIN_DEMI && f <= ADF_F_MAX_DEMI) ? f : 0;
+}
+
+// entrée en programmation, DEVID et REVID ; renvoie le modèle, ou nullptr après sortie
+static const pic_modele_t *pic_identifier(char *msg, size_t lmsg)
+{
     etat_phase("Entrée en programmation basse tension", 2);
     icsp_entrer();
     icsp_pc(PIC_ADR_DEVID);
-    devid = icsp_lire(CMD_LIRE);
+    const uint16_t devid = icsp_lire(CMD_LIRE);
     icsp_pc(PIC_ADR_REVID);
-    revid = icsp_lire(CMD_LIRE);
+    const uint16_t revid = icsp_lire(CMD_LIRE);
+    const pic_modele_t *m = pic_modele(devid);
     xSemaphoreTake(verrou, portMAX_DELAY);
+    etat.pic_lu = true;
     etat.devid = devid;
     etat.revid = revid;
-    etat.devid_lu = true;
+    etat.pic_idx = m ? (int8_t)(m - pic_modeles) : -1;
+    etat.pic_contenu = C_INCONNU;
+    etat.pic_version[0] = '\0';
+    etat.pic_ee = 0;
+    etat.pic_ee_freq = 0;
     xSemaphoreGive(verrou);
-    journal_printf("PIC : DEVID %04Xh, REVID %04Xh", devid, revid);
-    if (devid != PIC_FW_DEVID) {
+    journal_printf("PIC : DEVID %04Xh, REVID %04Xh — %s", devid, revid, m ? m->nom : "modèle non pris en charge");
+    if (!m) {
         icsp_sortir();
-        snprintf(msg, lmsg, "PIC : DEVID lu %04Xh, attendu %04Xh (PIC16F18323) — arrêt", devid, (unsigned)PIC_FW_DEVID);
-        return false;
+        if (devid == 0x3FFFu || devid == 0x0000u)
+            snprintf(msg, lmsg, "PIC : pas de réponse (DEVID %04Xh) — PIC absent, non alimenté ou LVP désactivé", devid);
+        else
+            snprintf(msg, lmsg, "PIC : DEVID %04Xh non pris en charge — modèles acceptés : PIC16(L)F18323, 18324, 18325, 18326", devid);
     }
+    return m;
+}
 
-    // effacement global : mémoire programme, ID, configuration, puis EEPROM
+// lecture complète (mémoire programme, configuration, User ID, EEPROM) ; met à jour l'état
+static uint8_t pic_examiner(const pic_modele_t *m, uint8_t p0, uint8_t p1)
+{
+    bool vierge = true, fw = true;
+    uint16_t cfg[4], uid[4];
+    uint8_t ee[ADF_EEPROM_OCTETS];
+    icsp_pc(0);
+    for (uint32_t a = 0; a < m->flash; a++) {
+        const uint16_t v = icsp_lire(CMD_LIRE_INC);
+        if (v != 0x3FFFu) vierge = false;
+        if (v != ((a < PIC_FW_NB_MOTS) ? pic_fw_mots[a] : 0x3FFFu)) fw = false;
+        if ((a & 511u) == 511u) etat_phase("Lecture de la mémoire programme", p0 + (uint8_t)((p1 - p0) * a / m->flash));
+    }
+    icsp_pc(PIC_ADR_USERID);
+    for (uint32_t k = 0; k < 4; k++) uid[k] = icsp_lire(CMD_LIRE_INC);
+    icsp_pc(PIC_ADR_CONFIG);
+    for (uint32_t k = 0; k < 4; k++) {
+        cfg[k] = icsp_lire(CMD_LIRE_INC);
+        if ((cfg[k] ^ pic_fw_config[k]) & pic_fw_config_masque[k]) fw = false;
+    }
+    icsp_pc(PIC_ADR_EEPROM);
+    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) ee[i] = (uint8_t)icsp_lire(CMD_LIRE_INC);
+
+    const uint8_t contenu = vierge ? C_VIERGE : fw ? C_JPEG2DVB : C_AUTRE;
+    char version[24] = "";
+    if (contenu == C_JPEG2DVB) {
+        if (uid[0] == pic_fw_userid[0] && uid[1] == pic_fw_userid[1] && uid[2] == pic_fw_userid[2])
+            snprintf(version, sizeof version, "%u.%u.%u", (unsigned)(uid[3] >> 8), (unsigned)((uid[3] >> 4) & 15u), (unsigned)(uid[3] & 15u));
+        else
+            strlcpy(version, "1.0.0 (sans repère)", sizeof version);
+    }
+    const uint32_t f = eeprom_frequence(ee);
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    etat.pic_contenu = contenu;
+    strlcpy(etat.pic_version, version, sizeof etat.pic_version);
+    etat.pic_ee = f ? 1 : 2;
+    etat.pic_ee_freq = f;
+    xSemaphoreGive(verrou);
+    char t[24] = "";
+    if (f) frequence_texte(f, t, sizeof t);
+    journal_printf("PIC : %s%s%s, configuration %04X %04X %04X %04X, User ID %04X %04X %04X %04X, EEPROM %s%s",
+                   pic_contenu_texte(contenu), version[0] ? " " : "", version,
+                   cfg[0], cfg[1], cfg[2], cfg[3], uid[0], uid[1], uid[2], uid[3],
+                   f ? t : "sans image valide", f ? " MHz" : "");
+    return contenu;
+}
+
+// écriture des 26 octets d'EEPROM (zone effacée) puis relecture
+static bool pic_eeprom(const uint8_t *ee, uint8_t p0, char *msg, size_t lmsg)
+{
+    icsp_pc(PIC_ADR_EEPROM);
+    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) {
+        etat_phase("Écriture de l'EEPROM", p0 + (uint8_t)(10 * i / ADF_EEPROM_OCTETS));
+        icsp_charger(CMD_CHARGER, ee[i]);
+        icsp_commande(CMD_PROG_INTERNE);
+        attente_ms(ICSP_TPINT_EE_MS);
+        icsp_commande(CMD_INCREMENTER);
+    }
+    icsp_pc(PIC_ADR_EEPROM);
+    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) {
+        const uint16_t v = icsp_lire(CMD_LIRE_INC) & 0xFFu;
+        if (v != ee[i]) {
+            snprintf(msg, lmsg, "PIC : EEPROM %02lXh fausse : lu %02Xh, attendu %02Xh",
+                     (unsigned long)i, v, ee[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+// première programmation : effacement, programme, User ID, configuration, EEPROM, vérification
+static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
+{
+    uint16_t v;
+    const pic_modele_t *m = pic_identifier(msg, lmsg);
+    if (!m) return false;
+
+    // effacement global : mémoire programme, User ID, configuration, puis EEPROM
     etat_phase("Effacement global", 5);
     icsp_pc(PIC_ADR_USERID);
     icsp_commande(CMD_EFFACER_TOUT);
@@ -613,7 +746,7 @@ static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
     // mémoire programme par rangées de 32 mots
     const uint32_t rangees = (PIC_FW_NB_MOTS + ICSP_RANGEE - 1) / ICSP_RANGEE;
     for (uint32_t r = 0; r < rangees; r++) {
-        etat_phase("Écriture de la mémoire programme", 10 + (uint8_t)(30 * r / rangees));
+        etat_phase("Écriture de la mémoire programme", 10 + (uint8_t)(20 * r / rangees));
         icsp_pc(r * ICSP_RANGEE);
         for (uint32_t i = 0; i < ICSP_RANGEE; i++) {
             uint32_t a = r * ICSP_RANGEE + i;
@@ -624,8 +757,17 @@ static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
         attente_ms(ICSP_TPINT_PROG_MS);
     }
 
-    // mots de configuration
-    etat_phase("Écriture de la configuration", 42);
+    // User ID (repère JPEG2DVB + version), un mot à la fois
+    etat_phase("Écriture du repère User ID", 32);
+    for (uint32_t k = 0; k < 4; k++) {
+        icsp_pc(PIC_ADR_USERID + k);
+        icsp_charger(CMD_CHARGER, pic_fw_userid[k]);
+        icsp_commande(CMD_PROG_INTERNE);
+        attente_ms(ICSP_TPINT_CONF_MS);
+    }
+
+    // mots de configuration (mêmes valeurs et mêmes masques sur les 8 modèles)
+    etat_phase("Écriture de la configuration", 36);
     for (uint32_t k = 0; k < 4; k++) {
         icsp_pc(PIC_ADR_CONFIG + k);
         icsp_charger(CMD_CHARGER, pic_fw_config[k]);
@@ -633,20 +775,16 @@ static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
         attente_ms(ICSP_TPINT_CONF_MS);
     }
 
-    // EEPROM, un octet à la fois
-    icsp_pc(PIC_ADR_EEPROM);
-    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) {
-        etat_phase("Écriture de l'EEPROM", 50 + (uint8_t)(20 * i / ADF_EEPROM_OCTETS));
-        icsp_charger(CMD_CHARGER, ee[i]);
-        icsp_commande(CMD_PROG_INTERNE);
-        attente_ms(ICSP_TPINT_EE_MS);
-        icsp_commande(CMD_INCREMENTER);
+    // EEPROM, un octet à la fois, puis relecture
+    if (!pic_eeprom(ee, 40, msg, lmsg)) {
+        icsp_sortir();
+        return false;
     }
 
-    // relecture
-    etat_phase("Vérification", 72);
+    // relecture de toute la mémoire programme du modèle
+    etat_phase("Vérification", 52);
     icsp_pc(0);
-    for (uint32_t a = 0; a < PIC_FW_FLASH; a++) {
+    for (uint32_t a = 0; a < m->flash; a++) {
         uint16_t attendu = (a < PIC_FW_NB_MOTS) ? pic_fw_mots[a] : 0x3FFFu;
         v = icsp_lire(CMD_LIRE_INC);
         if (v != attendu) {
@@ -655,7 +793,17 @@ static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
                      (unsigned long)a, v, attendu);
             return false;
         }
-        if ((a & 255u) == 255u) etat_phase("Vérification", 72 + (uint8_t)(20 * a / PIC_FW_FLASH));
+        if ((a & 511u) == 511u) etat_phase("Vérification", 52 + (uint8_t)(40 * a / m->flash));
+    }
+    icsp_pc(PIC_ADR_USERID);
+    for (uint32_t k = 0; k < 4; k++) {
+        v = icsp_lire(CMD_LIRE_INC);
+        if (v != pic_fw_userid[k]) {
+            icsp_sortir();
+            snprintf(msg, lmsg, "PIC : User ID %04lXh faux : lu %04Xh, attendu %04Xh",
+                     (unsigned long)(PIC_ADR_USERID + k), v, pic_fw_userid[k]);
+            return false;
+        }
     }
     icsp_pc(PIC_ADR_CONFIG);
     for (uint32_t k = 0; k < 4; k++) {
@@ -667,19 +815,45 @@ static bool pic_programmer(const uint8_t *ee, char *msg, size_t lmsg)
             return false;
         }
     }
-    icsp_pc(PIC_ADR_EEPROM);
-    for (uint32_t i = 0; i < ADF_EEPROM_OCTETS; i++) {
-        v = icsp_lire(CMD_LIRE_INC) & 0xFFu;
-        if (v != ee[i]) {
-            icsp_sortir();
-            snprintf(msg, lmsg, "PIC : EEPROM %02lXh fausse : lu %02Xh, attendu %02Xh",
-                     (unsigned long)i, v, ee[i]);
-            return false;
-        }
+    etat_phase("Sortie de programmation", 96);
+    icsp_sortir();
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    etat.pic_contenu = C_JPEG2DVB;
+    strlcpy(etat.pic_version, PIC_FW_VERSION, sizeof etat.pic_version);
+    etat.pic_ee = 1;
+    etat.pic_ee_freq = eeprom_frequence(ee);
+    xSemaphoreGive(verrou);
+    snprintf(msg, lmsg, "%s programmé et vérifié", m->nom);
+    return true;
+}
+
+// écriture de la fréquence : EEPROM seule, si le programme JPEG2DVB est en place
+static bool pic_frequence(const uint8_t *ee, char *msg, size_t lmsg)
+{
+    const pic_modele_t *m = pic_identifier(msg, lmsg);
+    if (!m) return false;
+    const uint8_t c = pic_examiner(m, 5, 70);
+    if (c != C_JPEG2DVB) {
+        icsp_sortir();
+        snprintf(msg, lmsg, "%s %s : utiliser « Programmer le PIC » (première programmation)",
+                 m->nom, c == C_VIERGE ? "vierge" : "avec un autre programme");
+        return false;
+    }
+    etat_phase("Effacement de l'EEPROM", 75);
+    icsp_pc(PIC_ADR_EEPROM);                   // F000h : EEPROM seule (DS40001738, tableau 3-2)
+    icsp_commande(CMD_EFFACER_TOUT);
+    attente_ms(ICSP_TERAB_MS);
+    if (!pic_eeprom(ee, 80, msg, lmsg)) {
+        icsp_sortir();
+        return false;
     }
     etat_phase("Sortie de programmation", 96);
     icsp_sortir();
-    snprintf(msg, lmsg, "PIC programmé et vérifié");
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    etat.pic_ee = 1;
+    etat.pic_ee_freq = eeprom_frequence(ee);
+    xSemaphoreGive(verrou);
+    snprintf(msg, lmsg, "%s : EEPROM écrite et vérifiée", m->nom);
     return true;
 }
 
@@ -697,22 +871,49 @@ static bool attendre_ld()
     return false;
 }
 
-static void travail_pic()
+static void travail_pic_lire()
+{
+    char msg[160];
+    etat_texte(etat.action, sizeof etat.action, "PIC : lecture");
+    etat_resultat(Q_AUCUN, "En cours");
+    const pic_modele_t *m = pic_identifier(msg, sizeof msg);
+    if (!m) {
+        etat_resultat(Q_ERREUR, msg);
+        return;
+    }
+    const uint8_t c = pic_examiner(m, 5, 95);
+    icsp_sortir();
+    Etat e;
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    e = etat;
+    xSemaphoreGive(verrou);
+    char t[24] = "";
+    if (e.pic_ee_freq) frequence_texte(e.pic_ee_freq, t, sizeof t);
+    snprintf(msg, sizeof msg, "%s : %s%s%s — EEPROM %s%s", m->nom, pic_contenu_texte(c),
+             e.pic_version[0] ? " " : "", e.pic_version,
+             e.pic_ee_freq ? t : "sans image valide", e.pic_ee_freq ? " MHz" : "");
+    etat_phase("Terminé", 100);
+    etat_resultat(c == C_JPEG2DVB && e.pic_ee_freq ? Q_OK : Q_ALERTE, msg);
+}
+
+// complet : première programmation ; sinon fréquence seule (EEPROM)
+static void travail_pic(bool complet)
 {
     adf4351_t c = pll_demande;
     const uint32_t f = pll_demande_f;
-    char t[24], msg[128];
+    char t[24], msg[160];
     frequence_texte(f, t, sizeof t);
     {
         char a[64];
-        snprintf(a, sizeof a, "PIC : écriture %s MHz", t);
+        snprintf(a, sizeof a, complet ? "PIC : programmation complète, %s MHz" : "PIC : fréquence %s MHz", t);
         etat_texte(etat.action, sizeof etat.action, a);
     }
-    etat_resultat(R_AUCUN, "En cours");
-    journal_printf("PIC : programmation pour %s MHz (diviseur %lu, INT %lu, FRAC %lu)",
-                   t, (unsigned long)c.diviseur, (unsigned long)c.int_n, (unsigned long)c.frac);
-    if (!pic_programmer(c.eeprom, msg, sizeof msg)) {
-        etat_resultat(R_ERREUR, msg);
+    etat_resultat(Q_AUCUN, "En cours");
+    journal_printf("PIC : %s pour %s MHz (diviseur %lu, INT %lu, FRAC %lu)",
+                   complet ? "programmation complète" : "écriture de la fréquence", t,
+                   (unsigned long)c.diviseur, (unsigned long)c.int_n, (unsigned long)c.frac);
+    if (!(complet ? pic_programmer(c.eeprom, msg, sizeof msg) : pic_frequence(c.eeprom, msg, sizeof msg))) {
+        etat_resultat(Q_ERREUR, msg);
         return;
     }
     journal_ligne(msg);
@@ -721,12 +922,13 @@ static void travail_pic()
     xSemaphoreGive(verrou);
     prefs.putUInt("freq2", f);
     etat_phase("Attente du verrouillage de la PLL", 98);
+    const size_t n = strlen(msg);
     if (attendre_ld()) {
-        snprintf(msg, sizeof msg, "PIC programmé et vérifié à %s MHz — PLL verrouillée", t);
-        etat_resultat(R_OK, msg);
+        snprintf(msg + n, sizeof msg - n, " à %s MHz — PLL verrouillée", t);
+        etat_resultat(Q_OK, msg);
     } else {
-        snprintf(msg, sizeof msg, "PIC programmé et vérifié à %s MHz — PLL non verrouillée", t);
-        etat_resultat(R_ALERTE, msg);
+        snprintf(msg + n, sizeof msg - n, " à %s MHz — PLL non verrouillée", t);
+        etat_resultat(Q_ALERTE, msg);
     }
 }
 
@@ -779,10 +981,10 @@ static void travail_fpga(bool programmer)
 {
     char msg[128];
     etat_texte(etat.action, sizeof etat.action, programmer ? "FPGA : programmer et vérifier" : "FPGA : identifier");
-    etat_resultat(R_AUCUN, "En cours");
+    etat_resultat(Q_AUCUN, "En cours");
     if (FFat.exists(F_DAT)) dat_fichier = FFat.open(F_DAT, FILE_READ);
     if (!dat_fichier) {
-        etat_resultat(R_ERREUR, "FPGA : fichier /fpga.dat absent");
+        etat_resultat(Q_ERREUR, "FPGA : fichier /fpga.dat absent");
         return;
     }
     // HF coupée : PIC tenu en reset, PDBRF tombe à 0 par R46
@@ -823,10 +1025,10 @@ static void travail_fpga(bool programmer)
                             (unsigned long)id, nom_fpga(id));
         else snprintf(msg, sizeof msg, "FPGA : %s réussie", programmer ? "programmation et vérification" : "identification");
         etat_phase("Terminé", 100);
-        etat_resultat(R_OK, msg);
+        etat_resultat(Q_OK, msg);
     } else {
         snprintf(msg, sizeof msg, "FPGA : échec de la %s — code DirectC %u : %s", etape, err, texte_directc(err));
-        etat_resultat(R_ERREUR, msg);
+        etat_resultat(Q_ERREUR, msg);
     }
 }
 
@@ -840,7 +1042,9 @@ static void tache_travail(void *)
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         switch (tache_en_cours) {
-            case T_PIC:       travail_pic(); break;
+            case T_PIC_LIRE:  travail_pic_lire(); break;
+            case T_PIC_PROG:  travail_pic(true); break;
+            case T_PIC_EE:    travail_pic(false); break;
             case T_FPGA_ID:   travail_fpga(false); break;
             case T_FPGA_PROG: travail_fpga(true); break;
             default: break;
@@ -979,12 +1183,12 @@ static void http_envoi_donnees()
                 char m[96];
                 snprintf(m, sizeof m, "Fichier DAT enregistré : %lu octets, CRC32 %08lX",
                          (unsigned long)envoi.taille, (unsigned long)crc);
-                etat_resultat(R_OK, m);
+                etat_resultat(Q_OK, m);
             } else {
                 if (FFat.exists(F_TMP)) FFat.remove(F_TMP);
                 char m[96];
                 snprintf(m, sizeof m, "Envoi du fichier DAT : échec, %s", envoi.erreur);
-                etat_resultat(R_ERREUR, m);
+                etat_resultat(Q_ERREUR, m);
             }
             envoi.actif = false;
             break;
@@ -997,7 +1201,7 @@ static void http_envoi_donnees()
             envoi.ok = false;
             envoi.n = 0;
             strlcpy(envoi.erreur, "envoi interrompu", sizeof envoi.erreur);
-            if (envoi.actif) etat_resultat(R_ERREUR, "Envoi du fichier DAT interrompu");
+            if (envoi.actif) etat_resultat(Q_ERREUR, "Envoi du fichier DAT interrompu");
             envoi.actif = false;
             break;
         }
@@ -1042,16 +1246,31 @@ static void http_etat()
     const uint8_t t = tache_en_cours;
     char b[48];
     String s;
-    s.reserve(1024);
+    s.reserve(1536);
     s += "{\"version\":";       json_texte(s, VERSION_FW);
     s += ",\"ssid\":";          json_texte(s, AP_SSID);
     s += ",\"ip\":";            json_texte(s, WiFi.softAPIP().toString().c_str());
     s += ",\"pic_devid\":";
-    if (e.devid_lu) { snprintf(b, sizeof b, "\"%04X\"", e.devid); s += b; } else s += "null";
+    if (e.pic_lu) { snprintf(b, sizeof b, "\"%04X\"", e.devid); s += b; } else s += "null";
     s += ",\"pic_revid\":";
-    if (e.devid_lu) { snprintf(b, sizeof b, "\"%04X\"", e.revid); s += b; } else s += "null";
-    s += ",\"pic_devid_attendu\":";
-    snprintf(b, sizeof b, "\"%04X\"", (unsigned)PIC_FW_DEVID); s += b;
+    if (e.pic_lu) { snprintf(b, sizeof b, "\"%04X\"", e.revid); s += b; } else s += "null";
+    {
+        const pic_modele_t *m = (e.pic_lu && e.pic_idx >= 0) ? &pic_modeles[e.pic_idx] : nullptr;
+        s += ",\"pic_modele\":";  json_texte(s, m ? m->nom : "");
+        s += ",\"pic_lf\":";      s += (m && m->lf) ? "true" : "false";
+        s += ",\"pic_flash\":";   s += String(m ? m->flash : 0);
+    }
+    s += ",\"pic_contenu\":";
+    json_texte(s, e.pic_contenu == C_VIERGE ? "vierge" : e.pic_contenu == C_JPEG2DVB ? "jpeg2dvb"
+                : e.pic_contenu == C_AUTRE ? "autre" : "");
+    s += ",\"pic_version\":";   json_texte(s, e.pic_version);
+    s += ",\"pic_fw_version\":"; json_texte(s, PIC_FW_VERSION);
+    s += ",\"pic_ee\":";        json_texte(s, e.pic_ee == 1 ? "valide" : e.pic_ee == 2 ? "invalide" : "");
+    s += ",\"pic_ee_freq\":";
+    if (e.pic_ee_freq) { frequence_texte(e.pic_ee_freq, b, sizeof b); json_texte(s, b); } else s += "\"\"";
+    s += ",\"pic_modeles\":[";
+    for (uint32_t i = 0; i < PIC_NB_MODELES; i++) { if (i) s += ','; json_texte(s, pic_modeles[i].nom); }
+    s += ']';
     s += ",\"ld\":";            s += digitalRead(BR_LD) ? "1" : "0";
     s += ",\"fpga_idcode\":";
     if (e.idcode_lu) { snprintf(b, sizeof b, "\"%08lX\"", (unsigned long)e.idcode); s += b; } else s += "null";
@@ -1064,13 +1283,14 @@ static void http_etat()
     snprintf(b, sizeof b, "\"%08lX\"", (unsigned long)e.dat_crc); s += b;
     s += ",\"occupe\":";        s += (t != T_AUCUNE || envoi.actif) ? "true" : "false";
     s += ",\"tache\":";
-    json_texte(s, t == T_PIC ? "pic" : t == T_FPGA_ID ? "fpga_id" : t == T_FPGA_PROG ? "fpga_prog" : envoi.actif ? "envoi" : "");
+    json_texte(s, t == T_PIC_LIRE ? "pic_lire" : t == T_PIC_PROG ? "pic_prog" : t == T_PIC_EE ? "pic_ee"
+                : t == T_FPGA_ID ? "fpga_id" : t == T_FPGA_PROG ? "fpga_prog" : envoi.actif ? "envoi" : "");
     s += ",\"phase\":";         json_texte(s, e.phase);
     s += ",\"progression\":";   s += String(e.progression);
     s += ",\"action\":";        json_texte(s, e.action);
     s += ",\"resultat\":";      json_texte(s, e.resultat);
     s += ",\"qualite\":";
-    json_texte(s, e.qualite == R_OK ? "ok" : e.qualite == R_ALERTE ? "alerte" : e.qualite == R_ERREUR ? "erreur" : "");
+    json_texte(s, e.qualite == Q_OK ? "ok" : e.qualite == Q_ALERTE ? "alerte" : e.qualite == Q_ERREUR ? "erreur" : "");
     s += ",\"journal\":";       s += String(jt);
     s += ",\"freq\":";
     if (e.freq_demi) { frequence_texte(e.freq_demi, b, sizeof b); json_texte(s, b); } else s += "\"\"";
@@ -1108,7 +1328,8 @@ static void http_journal()
     repondre_json(200, s);
 }
 
-static void http_pll()
+// /pll (ecrire=1 : fréquence seule, EEPROM) et /pic/programmer (première programmation)
+static void http_pll_commun(bool programmer)
 {
     uint32_t f;
     if (!serveur.hasArg("frequence") || adf4351_analyser(serveur.arg("frequence").c_str(), &f) != 0) {
@@ -1117,7 +1338,7 @@ static void http_pll()
     }
     adf4351_t c;
     adf4351_calculer(f, &c);
-    const bool ecrire = serveur.arg("ecrire") == "1";
+    const bool ecrire = programmer || serveur.arg("ecrire") == "1";
     if (ecrire) {
         if (occupe()) {
             repondre_erreur(409, "Occupé : une opération est en cours");
@@ -1125,7 +1346,7 @@ static void http_pll()
         }
         pll_demande = c;
         pll_demande_f = f;
-        demander(T_PIC);
+        demander(programmer ? T_PIC_PROG : T_PIC_EE);
     }
     char b[24];
     String s;
@@ -1147,6 +1368,16 @@ static void http_pll()
     s += ecrire ? "true" : "false";
     s += '}';
     repondre_json(200, s);
+}
+
+static void http_pic_lire()
+{
+    if (occupe()) {
+        repondre_erreur(409, "Occupé : une opération est en cours");
+        return;
+    }
+    demander(T_PIC_LIRE);
+    repondre_json(200, "{\"ok\":true}");
 }
 
 static void http_fpga(uint8_t t)
@@ -1264,8 +1495,8 @@ static void ecran_dessiner(bool ld)
         y = ecran_texte(y, TFT_LIGHTGREY, b, 2);
     }
     if (e.resultat[0]) {
-        const uint16_t c = e.qualite == R_OK ? TFT_GREEN : e.qualite == R_ALERTE ? TFT_ORANGE
-                         : e.qualite == R_ERREUR ? TFT_RED : TFT_LIGHTGREY;
+        const uint16_t c = e.qualite == Q_OK ? TFT_GREEN : e.qualite == Q_ALERTE ? TFT_ORANGE
+                         : e.qualite == Q_ERREUR ? TFT_RED : TFT_LIGHTGREY;
         ecran_texte(y, c, e.resultat, 5);
     }
     M5.Display.endWrite();
@@ -1316,6 +1547,7 @@ void setup()
 
     journal_printf("JPEG2DVB prog v%s", VERSION_FW);
     prefs.begin("jpeg2dvb", false);
+    etat.pic_idx = -1;
     etat.freq_demi = prefs.getUInt("freq2", 0);
     if (etat.freq_demi && (etat.freq_demi < ADF_F_MIN_DEMI || etat.freq_demi > ADF_F_MAX_DEMI)) etat.freq_demi = 0;
 
@@ -1336,7 +1568,9 @@ void setup()
     serveur.on("/", HTTP_GET, http_page);
     serveur.on("/etat", HTTP_GET, http_etat);
     serveur.on("/journal", HTTP_GET, http_journal);
-    serveur.on("/pll", HTTP_POST, http_pll);
+    serveur.on("/pll", HTTP_POST, []() { http_pll_commun(false); });
+    serveur.on("/pic/lire", HTTP_POST, http_pic_lire);
+    serveur.on("/pic/programmer", HTTP_POST, []() { http_pll_commun(true); });
     serveur.on("/fpga/envoi", HTTP_POST, http_envoi_fin, http_envoi_donnees);
     serveur.on("/fpga/id", HTTP_POST, []() { http_fpga(T_FPGA_ID); });
     serveur.on("/fpga/prog", HTTP_POST, []() { http_fpga(T_FPGA_PROG); });
