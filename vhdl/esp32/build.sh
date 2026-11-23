@@ -6,8 +6,11 @@
 #            mise en place de JTAG-DirectC (Microchip, non redistribué),
 #            contrôles sur PC (calcul ADF4351, programme du PIC)
 # Auteur   : Eric PERRET
-# Date     : 2026-11-21
-# Version  : 1.0.0
+# Date     : 2026-11-23
+# Version  : 1.1.0
+# Historique : 1.0.0  2026-11-21  création
+#              1.1.0  2026-11-23  dossiers à plat (dépôt) : portage DirectC et outils à côté
+#                                 de build.sh, pll_boot.asm dans jpeg2dvb_prog/
 # ------------------------------------------------------------
 # Usage :
 #   ./build.sh            compile seulement
@@ -75,8 +78,8 @@ preparer_directc() {
         rm -rf "$TMP"
         trap - EXIT
     fi
-    cp "$SKETCH/portage/dpuser.c" "$SKETCH/portage/gpio_hw_interface.c" "$SKETCH/portage/jpeg2dvb_port.h" "$DC/"
-    bash "$SKETCH/portage/reglages.sh" "$DC"
+    cp "$ICI/dpuser.c" "$ICI/gpio_hw_interface.c" "$ICI/jpeg2dvb_port.h" "$DC/"
+    bash "$ICI/reglages.sh" "$DC"
 }
 
 # --- bilan des avertissements -------------------------------
@@ -142,18 +145,18 @@ controler() {
     echo "=== Calcul des registres ADF4351 (fonction du firmware, gcc) ==="
     sed -n '/^\/\/ >>> CALCUL_ADF4351/,/^\/\/ <<< CALCUL_ADF4351/p' "$SKETCH/jpeg2dvb_prog.ino" > "$T/adf4351_extrait.c"
     [ -s "$T/adf4351_extrait.c" ] || { echo "ERREUR: bloc CALCUL_ADF4351 introuvable"; exit 1; }
-    cp "$ICI/outils/test_adf4351.c" "$T/"
+    cp "$ICI/test_adf4351.c" "$T/"
     gcc -std=c11 -Wall -Wextra -Werror -O2 -o "$T/test_adf4351" "$T/test_adf4351.c"
     "$T/test_adf4351" | tee "$T/sortie.txt"
     [ "${PIPESTATUS[0]}" -eq 0 ] || exit 1
     IMAGES=$(grep '^IMAGE ' "$T/sortie.txt" | cut -d' ' -f2)
     echo "=== Programme du PIC (pic14.js : assemblage et simulation) ==="
-    node "$ICI/outils/pic14.js" asm "$SKETCH/pic/pll_boot.asm" "$T/pic_fw.h"
+    node "$ICI/pic14.js" asm "$SKETCH/pll_boot.asm" "$T/pic_fw.h"
     cmp -s "$T/pic_fw.h" "$SKETCH/pic_fw.h" \
-        || { echo "ERREUR: pic_fw.h n'est pas à jour : node outils/pic14.js asm jpeg2dvb_prog/pic/pll_boot.asm jpeg2dvb_prog/pic_fw.h"; exit 1; }
+        || { echo "ERREUR: pic_fw.h n'est pas à jour : node pic14.js asm jpeg2dvb_prog/pll_boot.asm jpeg2dvb_prog/pic_fw.h"; exit 1; }
     echo "pic_fw.h à jour"
     # shellcheck disable=SC2086
-    node "$ICI/outils/pic14.js" sim "$SKETCH/pic/pll_boot.asm" $IMAGES
+    node "$ICI/pic14.js" sim "$SKETCH/pll_boot.asm" $IMAGES
     rm -rf "$T"
     trap - EXIT
     echo "=== CONTRÔLES OK ==="

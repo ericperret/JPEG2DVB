@@ -2,12 +2,15 @@
 /*
  * ══════════════════════════════════════════════════════════════
  *  Nom      : pic14.js
- *  Projet   : JPEG2DVB — chantier 2 : programme du PIC16F18323 (U6)
+ *  Projet   : JPEG2DVB — chantier 2 : programme du PIC de U6 (PIC16(L)F18323/18324/18325/18326)
  *  Objet    : assembleur + simulateur PIC 14 bits (cœur « enhanced mid-range »),
  *             limité aux instructions de pll_boot.asm ; produit pic_fw.h
  *  Auteur   : Eric PERRET
- *  Date     : 2026-11-21
- *  Version  : 1.0.0
+ *  Date     : 2026-11-23
+ *  Version  : 1.1.0
+ *  Historique : 1.0.0  2026-11-21  création (PIC16F18323)
+ *             1.1.0  2026-11-23  table des 8 PIC broche à broche compatibles (DEVID,
+ *                                mémoire programme), repère JPEG2DVB + version en User ID
  *  Usage    : node pic14.js asm <source.asm> <pic_fw.h>
  *             node pic14.js sim <source.asm> <image_hex_26_octets> [...]
  *  Dépend.  : Node.js seul, aucune bibliothèque
@@ -17,13 +20,27 @@
 const fs = require('fs');
 const path = require('path');
 
-// ── Composant cible : PIC16F18323 (DS40001799) ──
+// ── Composants acceptés : PIC 14 broches broche à broche compatibles avec U6 ──
+//    DEVID et mémoire programme : fichiers .PIC du pack Microchip PIC16F1xxxx_DFP 1.32.471 ;
+//    mots de configuration : mêmes champs et mêmes masques sur les 8 modèles (bits implémentés)
+const MODELES = [
+  { nom: 'PIC16F18323',  devid: 0x3067, flash: 2048,  lf: false },
+  { nom: 'PIC16LF18323', devid: 0x3069, flash: 2048,  lf: true  },
+  { nom: 'PIC16F18324',  devid: 0x303A, flash: 4096,  lf: false },
+  { nom: 'PIC16LF18324', devid: 0x303C, flash: 4096,  lf: true  },
+  { nom: 'PIC16F18325',  devid: 0x303E, flash: 8192,  lf: false },
+  { nom: 'PIC16LF18325', devid: 0x3040, flash: 8192,  lf: true  },
+  { nom: 'PIC16F18326',  devid: 0x30A4, flash: 16384, lf: false },
+  { nom: 'PIC16LF18326', devid: 0x30A6, flash: 16384, lf: true  }
+];
+// le programme doit tenir dans le plus petit modèle (2K mots)
 const COMPOSANT = {
   nom: 'PIC16F18323',
-  devid: 0x3067,
-  flash: 2048,
+  flash: Math.min(...MODELES.map(m => m.flash)),
   config: { 0x8007: 0x2977, 0x8008: 0x3AEF, 0x8009: 0x2003, 0x800A: 0x0003 } // masques des bits implémentés
 };
+// repère User ID 8000h-8003h : « J », « 2 », « D », version (majeur << 8 | mineur << 4 | correctif)
+const REPERE = [0x004A, 0x0032, 0x0044];
 
 // ══════════════════════════════════════════════════════════════
 //  ASSEMBLEUR
@@ -185,20 +202,33 @@ function generer_h(res, source) {
   o.push('/*');
   o.push(' * ══════════════════════════════════════════════════════════════');
   o.push(' *  Nom      : pic_fw.h');
-  o.push(' *  Projet   : JPEG2DVB — chantier 2 : programme du PIC16F18323 (U6)');
-  o.push(' *  Objet    : programme du PIC en mots de 14 bits + 4 mots de configuration');
+  o.push(' *  Projet   : JPEG2DVB — chantier 2 : programme du PIC de U6');
+  o.push(' *  Objet    : programme du PIC en mots de 14 bits, 4 mots de configuration,');
+  o.push(' *             repère User ID, table des PIC acceptés (DEVID, mémoire programme)');
   o.push(' *  Auteur   : Eric PERRET');
   o.push(' *  Date     : ' + (res.entete.date || ''));
   o.push(' *  Version  : ' + (res.entete.version || ''));
-  o.push(' *  Origine  : produit par outils/pic14.js à partir de ' + source + ' (ne pas modifier)');
+  o.push(' *  Origine  : produit par pic14.js à partir de ' + source + ' (ne pas modifier)');
   o.push(' * ══════════════════════════════════════════════════════════════');
   o.push(' */');
   o.push('#pragma once');
   o.push('#include <stdint.h>');
   o.push('');
-  o.push('#define PIC_FW_DEVID     0x' + hex(COMPOSANT.devid, 4) + 'u   /* ' + COMPOSANT.nom + ' (DS40001799) */');
+  const v = (res.entete.version || '0.0.0').split('.').map(n => parseInt(n, 10) || 0);
+  if (v.length !== 3 || v[0] > 63 || v[1] > 15 || v[2] > 15) throw new Error('version « ' + res.entete.version + ' » non codable en User ID');
+  const vmot = (v[0] << 8) | (v[1] << 4) | v[2];
   o.push('#define PIC_FW_NB_MOTS   ' + res.image.length + 'u');
-  o.push('#define PIC_FW_FLASH     ' + COMPOSANT.flash + 'u');
+  o.push('#define PIC_FW_VERSION   "' + v.join('.') + '"');
+  o.push('');
+  o.push('/* User ID 8000h-8003h : repère « J2D » + version (majeur << 8 | mineur << 4 | correctif) */');
+  o.push('static const uint16_t pic_fw_userid[4] = { ' + REPERE.concat([vmot]).map(m => '0x' + hex(m, 4)).join(', ') + ' };');
+  o.push('');
+  o.push('/* PIC 14 broches acceptés (broche à broche compatibles avec U6) */');
+  o.push('typedef struct { const char *nom; uint16_t devid; uint16_t flash; uint8_t lf; } pic_modele_t;');
+  o.push('#define PIC_NB_MODELES   ' + MODELES.length + 'u');
+  o.push('static const pic_modele_t pic_modeles[PIC_NB_MODELES] = {');
+  MODELES.forEach((m, i) => o.push('  { "' + m.nom + '", 0x' + hex(m.devid, 4) + 'u, ' + m.flash + 'u, ' + (m.lf ? 1 : 0) + 'u }' + (i < MODELES.length - 1 ? ',' : '')));
+  o.push('};');
   o.push('');
   o.push('/* mémoire programme, à partir de 0000h (mot non utilisé = 3FFFh) */');
   o.push('static const uint16_t pic_fw_mots[PIC_FW_NB_MOTS] = {');
@@ -488,7 +518,7 @@ function principal() {
   const res = assembler(fs.readFileSync(src, 'utf8'));
   if (cmd === 'asm') {
     if (!reste[0]) { console.error('fichier de sortie attendu'); process.exit(2); }
-    fs.writeFileSync(reste[0], generer_h(res, 'pic/' + path.basename(src)));
+    fs.writeFileSync(reste[0], generer_h(res, path.basename(src)));
     console.log('pic14 : ' + res.image.length + ' mots, configuration ' +
       Object.keys(res.config).map(a => hex(Number(a), 4) + 'h=' + hex(res.config[a], 4) + 'h').join(' ') +
       ' → ' + reste[0]);
