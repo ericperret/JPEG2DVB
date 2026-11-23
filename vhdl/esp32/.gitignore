@@ -1,5 +1,0 @@
-# Nom : .gitignore — Projet : JPEG2DVB chantier 2 (firmware ESP32) — Auteur : Eric PERRET — Date : 2026-11-21 — Version : 1.0.0
-# JTAG-DirectC Microchip : licence sans droit de redistribution, récupéré par build.sh
-jpeg2dvb_prog/
-# sorties de compilation
-.build/
