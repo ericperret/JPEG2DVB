@@ -1,0 +1,1078 @@
+Info: Current Vault Location = /usr/local/microchip/common/vault
+2026-11-23 13:08:07  ===== jpeg2dvb_libero.tcl 1.3 =====
+2026-11-23 13:08:07  table des broches : 485 broches, banques GPIO : Bank2 Bank4
+2026-11-23 13:08:07  DEBUT  projet mpf050t (MPF050T-FCVG484, STD, IND)
+Info: This version of Libero supports only the enhanced constraint flow.
+The mpf050t project was created.
+2026-11-23 13:08:09  OK     projet mpf050t (MPF050T-FCVG484, STD, IND)
+2026-11-23 13:08:09  DEBUT  réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-23 13:08:09  OK     réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-23 13:08:09  DEBUT  import du VHDL
+2026-11-23 13:08:09  OK     import du VHDL
+2026-11-23 13:08:09  DEBUT  cœur PF_CCC_SYS
+Warning: SmartDesign 'PF_CCC_SYS' design rules check succeeded, but with warnings
+Warning: Design rules check of "PF_CCC_SYS" has warning messages, Please check the Log Window for more details.
+          [OK]
+Warning: 'Core Validation' : PLL_FEEDBACK_MODE_0 If you select Post-VCO as a Feedback Mode, outputs will be resynchronized between each other after the PLL locks, but will not be resynchronized with the PLL reference clock
+Info: 'Core Validation' : PLL_EXPORT_PWRDWN It is recommended that the PLL_POWERDOWN_N_0 input be enabled and asserted by the user at PLL start-up until the reference clock is stable. For more information, refer to UG0684: PolarFire FPGA Clocking Resources
+Info: 'Core Validation' : The current configuration of instance : PF_CCC_SYS_0 has warning or information messages. Consult the User Guide for configuration of this core.
+Info: 'PF_CCC_SYS' was successfully generated.
+Info: Design "PF_CCC_SYS" was successfully generated.
+       [OK]
+Info: 'PF_CCC_SYS' manifest file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_SYS/PF_CCC_SYS_manifest.txt' was successfully generated.
+
+Info: Component 'PF_CCC_SYS' was successfully created and configured with vendor:Actel library:SgCore name:PF_CCC version:2.2.222.
+2026-11-23 13:08:12  OK     cœur PF_CCC_SYS
+2026-11-23 13:08:12  DEBUT  cœur PF_CCC_TVP
+Warning: SmartDesign 'PF_CCC_TVP' design rules check succeeded, but with warnings
+Warning: Design rules check of "PF_CCC_TVP" has warning messages, Please check the Log Window for more details.
+          [OK]
+Warning: 'Core Validation' : PLL_FEEDBACK_MODE_0 If you select Post-VCO as a Feedback Mode, outputs will be resynchronized between each other after the PLL locks, but will not be resynchronized with the PLL reference clock
+Info: 'Core Validation' : PLL_EXPORT_PWRDWN It is recommended that the PLL_POWERDOWN_N_0 input be enabled and asserted by the user at PLL start-up until the reference clock is stable. For more information, refer to UG0684: PolarFire FPGA Clocking Resources
+Info: 'Core Validation' : The current configuration of instance : PF_CCC_TVP_0 has warning or information messages. Consult the User Guide for configuration of this core.
+Info: 'PF_CCC_TVP' was successfully generated.
+Info: Design "PF_CCC_TVP" was successfully generated.
+       [OK]
+Info: 'PF_CCC_TVP' manifest file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_TVP/PF_CCC_TVP_manifest.txt' was successfully generated.
+
+Info: Component 'PF_CCC_TVP' was successfully created and configured with vendor:Actel library:SgCore name:PF_CCC version:2.2.222.
+2026-11-23 13:08:15  OK     cœur PF_CCC_TVP
+2026-11-23 13:08:15  DEBUT  cœur PF_IOD_TX_CCC_IOD
+Info: Disconnecting pin 'BCLK_IGEAR_RX' from net 'BCLK_IGEAR_RX' because it is no longer a valid connection.
+#BCLKSCLK_TRN_MODE = 0
+Info: 'PF_IOD_TX_CCC_IOD_TR' was successfully generated.
+Info: 'PF_IOD_TX_CCC_IOD_TR' manifest file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_CCC_IOD_TR' was successfully created and configured with vendor:Actel library:DirectCore name:COREBCLKSCLKALIGN version:3.0.100.
+Info: 'PF_IOD_TX_CCC_IOD' was successfully generated.
+Info: 'PF_IOD_TX_CCC_IOD' manifest file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD/PF_IOD_TX_CCC_IOD_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_CCC_IOD' was successfully created and configured with vendor:Actel library:SystemBuilder name:PF_IOD_TX_CCC version:1.0.131.
+2026-11-23 13:08:18  OK     cœur PF_IOD_TX_CCC_IOD
+2026-11-23 13:08:18  DEBUT  cœur PF_IOD_TX_SD
+Info: The connection is being dropped from the net 'TX_CLK' because the pin 'TX_CLK' does not exist.
+Info: The connection is being dropped from the net 'PAD' because the pin 'PAD' does not exist.
+Info: The connection is being dropped from the net 'PAD' because the pin 'PAD' does not exist.
+Info: 'PF_IOD_TX_SD' was successfully generated.
+Info: 'PF_IOD_TX_SD' manifest file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/PF_IOD_TX_SD_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_SD' was successfully created and configured with vendor:Actel library:SystemBuilder name:PF_IOD_GENERIC_TX version:2.0.117.
+2026-11-23 13:08:22  OK     cœur PF_IOD_TX_SD
+2026-11-23 13:08:22  DEBUT  hiérarchie
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_SYS/PF_CCC_SYS.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_SYS/PF_CCC_SYS_0/PF_CCC_SYS_PF_CCC_SYS_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_TVP/PF_CCC_TVP.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_CCC_TVP/PF_CCC_TVP_0/PF_CCC_TVP_PF_CCC_TVP_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD/PF_IOD_TX_CCC_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD/PF_CCC_0/PF_IOD_TX_CCC_IOD_PF_CCC_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/core/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/core/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0_PF_CCC_C0_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0_PF_DRI_C0_0_PF_DRI.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_FIFO_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_RXCLK_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_RX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_LANECTRL_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_CLK_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC_2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/core/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/BclkSclk_PLL_TX2_1200mbps_SD_wrap.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/BclkSclk_PLL_TX2_1200mbps_TB.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0_PF_CCC_C0_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0_PF_DRI_C0_0_PF_DRI.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_FIFO_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_RXCLK_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_RX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_LANECTRL_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_CLK_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC_2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/prbscheck_parallel_fab_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/prbsgen_parallel_fab_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/rev_bits_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/PF_IOD_TX_SD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/LANECTRL_ADDR_CMD_0/PF_IOD_TX_SD_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/LANECTRL_ADDR_CMD_0/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/PF_IOD_CLK_TRAINING/PF_IOD_TX_SD_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/component/work/PF_IOD_TX_SD/PF_IOD_TX/PF_IOD_TX_SD_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf050t/hdl/jpeg2dvb_fpga.vhd'.
+2026-11-23 13:08:23  OK     hiérarchie
+2026-11-23 13:08:23  DEBUT  racine jpeg2dvb_top
+Software Version: 2026.1.0.17
+2026-11-23 13:08:25  OK     racine jpeg2dvb_top
+2026-11-23 13:08:25  DEBUT  import du SDC
+2026-11-23 13:08:25  OK     import du SDC
+2026-11-23 13:08:25  DEBUT  horloges des PLL (derive_constraints_sdc)
+To automatically associate the derived constraint SDC file to the 'Synthesis', 'Place and Route' and 'Timing Verification' tools click 'Yes' else click 'No'. [YES]
+Info: /home/eperret/dvb_lot/travail/mpf050t/constraint/jpeg2dvb_top_derived_constraints.sdc was successfully generated.
+2026-11-23 13:08:29  OK     horloges des PLL (derive_constraints_sdc)
+2026-11-23 13:08:29  brochage imposé : /home/eperret/dvb_lot/jpeg2dvb_top.pdc
+2026-11-23 13:08:29  DEBUT  import du PDC
+2026-11-23 13:08:29  OK     import du PDC
+2026-11-23 13:08:29  DEBUT  contraintes de la synthèse
+2026-11-23 13:08:29  OK     contraintes de la synthèse
+2026-11-23 13:08:29  DEBUT  contraintes du placement-routage
+2026-11-23 13:08:29  OK     contraintes du placement-routage
+2026-11-23 13:08:29  DEBUT  contraintes du timing
+2026-11-23 13:08:29  OK     contraintes du timing
+2026-11-23 13:08:29  DEBUT  réglages de la synthèse
+2026-11-23 13:08:29  OK     réglages de la synthèse
+2026-11-23 13:08:29  DEBUT  réglages du placement-routage
+2026-11-23 13:08:29  OK     réglages du placement-routage
+2026-11-23 13:08:29  DEBUT  réglages du timing
+2026-11-23 13:08:29  OK     réglages du timing
+2026-11-23 13:08:29  DEBUT  SYNTHESE MPF050T
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Synthesis tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool
+
+Info: Active implementation is 'synthesis'
+Starting Synplify Pro ME...
+-03
+/proc/sys/vm/admin_reserve_kbytes:8192
+/proc/sys/vm/compact_unevictable_allowed:1
+/proc/sys/vm/compaction_proactiveness:20
+/proc/sys/vm/defrag_mode:0
+/proc/sys/vm/dirty_background_bytes:0
+/proc/sys/vm/dirty_background_ratio:10
+/proc/sys/vm/dirty_bytes:0
+/proc/sys/vm/dirty_expire_centisecs:3000
+/proc/sys/vm/dirty_ratio:20
+/proc/sys/vm/dirty_writeback_centisecs:500
+/proc/sys/vm/dirtytime_expire_seconds:43200
+/proc/sys/vm/enable_soft_offline:1
+/proc/sys/vm/extfrag_threshold:500
+/proc/sys/vm/hugetlb_optimize_vmemmap:0
+/proc/sys/vm/hugetlb_shm_group:0
+/proc/sys/vm/laptop_mode:0
+/proc/sys/vm/legacy_va_layout:0
+/proc/sys/vm/lowmem_reserve_ratio:256        256        32        0        0
+/proc/sys/vm/max_map_count:1048576
+/proc/sys/vm/memfd_noexec:0
+/proc/sys/vm/memory_failure_early_kill:0
+/proc/sys/vm/memory_failure_recovery:1
+/proc/sys/vm/min_free_kbytes:67584
+/proc/sys/vm/min_slab_ratio:5
+/proc/sys/vm/min_unmapped_ratio:1
+/proc/sys/vm/mmap_min_addr:65536
+/proc/sys/vm/movable_gigantic_pages:0
+/proc/sys/vm/nr_hugepages:0
+/proc/sys/vm/nr_hugepages_mempolicy:0
+/proc/sys/vm/nr_overcommit_hugepages:0
+/proc/sys/vm/numa_stat:1
+/proc/sys/vm/numa_zonelist_order:Node
+/proc/sys/vm/oom_dump_tasks:1
+/proc/sys/vm/oom_kill_allocating_task:0
+/proc/sys/vm/overcommit_kbytes:0
+/proc/sys/vm/overcommit_memory:0
+/proc/sys/vm/overcommit_ratio:50
+/proc/sys/vm/page-cluster:3
+/proc/sys/vm/page_lock_unfairness:5
+/proc/sys/vm/panic_on_oom:0
+/proc/sys/vm/percpu_pagelist_high_fraction:0
+/proc/sys/vm/stat_interval:1
+/proc/sys/vm/swappiness:60
+/proc/sys/vm/unprivileged_userfaultfd:0
+/proc/sys/vm/user_reserve_kbytes:131072
+/proc/sys/vm/vfs_cache_pressure:100
+/proc/sys/vm/vfs_cache_pressure_denom:100
+/proc/sys/vm/watermark_boost_factor:15000
+/proc/sys/vm/watermark_scale_factor:10
+/proc/sys/vm/zone_reclaim_mode:0
+Ubuntu 24.04.5 LTS
+
+------ Message Queues --------
+key        msqid      owner      perms      used-bytes   messages
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status
+0x008011b4 0          postgres   600        56         6
+
+------ Semaphore Arrays --------
+key        semid      owner      perms      nsems
+
+###########################################################[
+Option definition override for: enable_hydra_infer_clocks_from_latch_data
+
+                               Synplify Pro (R)
+
+                 Version Y-2026.03M for linux64 - May 25, 2026
+
+                    Copyright (c) 1988 - 2026 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+Starting:    /usr/local/microchip/Libero_SoC_2026.1/Libero_SoC/Synplify_Pro/linux_a_64/mbin/synbatch
+Install:     /usr/local/microchip/Libero_SoC_2026.1/Libero_SoC/Synplify_Pro
+Hostname:    eperret-Think
+Date:        Mon Nov 23 13:08:39 2026
+Version:     Y-2026.03M
+
+Arguments:   -product synplify_base -licensetype synplifypro_actel -batch -log synplify.log jpeg2dvb_top_syn.tcl
+ProductType: synplify_pro
+
+License checkout: synplifypro_actel
+License: synplifypro_actel from server eperret-Think
+Licensed Vendor: actel
+License Option: actel_oem
+
+Running in Vendor Mode
+
+
+
+
+Implementation not found: synthesis
+log file: "/home/eperret/dvb_lot/travail/mpf050t/synthesis/jpeg2dvb_top.srr"
+Running: synthesis in foreground
+
+Running jpeg2dvb_top_syn|synthesis
+
+Running Flow: compile (Compile) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:08:40 2026
+
+Running Flow: compile_flow (Compile Process) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:08:40 2026
+
+Running: compiler (Compile Input) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:08:40 2026
+Process ID: 6063
+Copied /home/eperret/dvb_lot/travail/mpf050t/synthesis/synwork/jpeg2dvb_top_comp.srs to /home/eperret/dvb_lot/travail/mpf050t/synthesis/jpeg2dvb_top.srs
+
+compiler completed
+# Mon Nov 23 13:09:19 2026
+
+Return Code: 0
+Run Time:00h:00m:38s
+
+Running: multi_srs_gen (Multi-srs Generator) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:09:19 2026
+Process ID: 6253
+
+multi_srs_gen completed
+# Mon Nov 23 13:09:20 2026
+
+Return Code: 0
+Run Time:00h:00m:01s
+Copied /home/eperret/dvb_lot/travail/mpf050t/synthesis/synwork/jpeg2dvb_top_mult.srs to /home/eperret/dvb_lot/travail/mpf050t/synthesis/jpeg2dvb_top.srs
+Complete: Compile Process on jpeg2dvb_top_syn|synthesis
+
+Running: premap (Premap) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:09:20 2026
+Process ID: 6269
+
+premap completed with warnings
+# Mon Nov 23 13:09:26 2026
+
+Return Code: 1
+Run Time:00h:00m:06s
+Complete: Compile on jpeg2dvb_top_syn|synthesis
+
+Running Flow: map (Map) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:09:26 2026
+License granted for 4 parallel jobs
+
+Running: fpga_mapper (Map & Optimize) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:09:26 2026
+Process ID: 6284
+Copied /home/eperret/dvb_lot/travail/mpf050t/synthesis/synwork/jpeg2dvb_top_m.srm to /home/eperret/dvb_lot/travail/mpf050t/synthesis/jpeg2dvb_top.srm
+
+fpga_mapper completed with warnings
+# Mon Nov 23 13:12:37 2026
+
+Return Code: 1
+Run Time:00h:03m:11s
+Complete: Map on jpeg2dvb_top_syn|synthesis
+Complete: Logic Synthesis on jpeg2dvb_top_syn|synthesis
+Copied /home/eperret/dvb_lot/travail/mpf050t/synthesis/jpeg2dvb_top.srr to /home/eperret/dvb_lot/travail/mpf050t/synthesis/backup/jpeg2dvb_top.srr
+TCL script complete: "jpeg2dvb_top_syn.tcl"
+exit status=0
+exit status=0
+License checkin: synplifypro_actel
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_sys/PF_CCC_SYS_0/clkint_0:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0:REF_CLK_0'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_tvp/PF_CCC_TVP_0/clkint_0:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0:REF_CLK_0'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_iod/PF_CCC_0/clkint_4:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_iod/PF_CCC_0/pll_inst_0:REF_CLK_0'.
+
+===============================================================================.
+
+Info: Global design data:
+      Total globals:                       5
+      Globals that cannot be demoted:      3
+      Globals considered for demotion:     2
+
+
+Info: List of globals that cannot be demoted:
+    CLK    ASYN   DATA   Instance Name
+    ---    ----   ----   -------------
+    6705   0      0      'u_horl/u_iod/PF_CCC_0/clkint_4'
+    0      0      1      'u_horl/u_sys/PF_CCC_SYS_0/clkint_0'
+    0      0      1      'u_horl/u_tvp/PF_CCC_TVP_0/clkint_0'
+
+Info: List of globals considered for demotion:
+    CLK    ASYN   DATA   Instance Name
+    ---    ----   ----   -------------
+    223    0      0      'tvp_sclk_cZ'
+    0      0      2      'osc_50_cZ'
+
+Info: Demotion information:
+Info: [127205381]:  CMPPF_302: Added 0 row global instances.
+Info: [127205382]:  CMPPF_303: Deleted 0 global instances.
+
+===============================================================================.
+
+Synthesis completed.
+2026-11-23 13:13:02  OK     SYNTHESE MPF050T
+2026-11-23 13:13:02  DEBUT  PLACEMENT-ROUTAGE MPF050T (brochage essai 0)
+INFO: Reading User SDC file /home/eperret/dvb_lot/travail/mpf050t/constraint/jpeg2dvb_top_derived_constraints.sdc.
+INFO: Reading User SDC file /home/eperret/dvb_lot/travail/mpf050t/constraint/jpeg2dvb_top.sdc.
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Place & Route tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool.
+
+No errors or warnings found.
+INFO: The option "Abort flow if errors are found in PDC" is turned ON in Project Settings> Design flow page. The Place & Route tool will fail if errors are found in associated PDC files. Please uncheck the option to ignore the errors and continue running the tool
+***** Place and Route Configurations *****
+Timing-driven            : ON
+Power-driven             : OFF
+I/O Register Combining   : OFF
+Global Pins Demotion     : ON
+Driver Replication       : OFF
+High-effort              : OFF
+Repair min-delay         : OFF
+Incremental              : OFF
+Inter-clock optimization : ON
+
+INFO: Reading User PDC file /home/eperret/dvb_lot/travail/mpf050t/constraint/io/jpeg2dvb_top.pdc. 0 error(s) and 0 warning(s)
+
+ Running Timing based Global Demotion.
+        Demoted 0 global pins.
+
+ Timing based Global Demotion completed successfully.
+
+Running the I/O Bank and Globals Assigner.
+Info:  I/O Bank and Globals Assigner identified 20 fixed I/O macros, 0 unfixed I/O macros
+
+I/O Bank and Globals Assigner completed successfully.
+Total time spent in I/O Bank and Globals Assigner: 4 seconds
+
+Placer V5.0 - 2026.1.0
+Design: jpeg2dvb_top                    Started: Mon Nov 23 13:14:21 2026
+
+Initializing Normal-Effort Timing-Driven Placement ...
+Clustering ...
+Placing ...
+Improving placement ...
+End of placement.
+
+Placer Runtime Summary   :
+Clustering (1 pass)      : 24 seconds
+Placement                : 101 seconds
+Improvement              : 518 seconds
+
+Placer completed successfully.
+
+Design: jpeg2dvb_top
+Finished: Mon Nov 23 13:26:21 2026
+Total CPU Time:     00:12:31            Total Elapsed Time: 00:12:00
+Total Memory Usage: 1349.5 Mbytes
+                        o - o - o - o - o - o
+
+
+Router
+Design: jpeg2dvb_top                    Started: Mon Nov 23 13:26:38 2026
+
+
+Router completed successfully.
+
+Design: jpeg2dvb_top
+Finished: Mon Nov 23 13:27:58 2026
+Total CPU Time:     00:01:23            Total Elapsed Time: 00:01:20
+Total Memory Usage: 1187.8 Mbytes
+                        o - o - o - o - o - o
+
+Resource Usage
++---------------------------+-------+-------+------------+
+| Type                      | Used  | Total | Percentage |
++---------------------------+-------+-------+------------+
+| 4LUT                      | 35287 | 48144 | 73.29      |
+| DFF                       | 13859 | 48144 | 28.79      |
+| Logic Element             | 36098 | 48144 | 74.98      |
+| I/Os using I/O Registers  | 0     | 188   | 0.00       |
+| I/O Register Flip-Flops   | 0     | 564   | 0.00       |
+| -- Input  I/O Flip-Flops  | 0     | 188   | 0.00       |
+| -- Output I/O Flip-Flops  | 0     | 188   | 0.00       |
+| -- Enable I/O Flip-Flops  | 0     | 188   | 0.00       |
++---------------------------+-------+-------+------------+
+
+I/O Placement
++--------+-------+------------+
+| Type   | Count | Percentage |
++--------+-------+------------+
+| Locked |  22   | 100.00%    |
+| Placed |  0    | 0.00%      |
++--------+-------+------------+
+
+Completed writing pin report files.
+Place and Route Elapsed Time: 15.20 minutes.
+2026-11-23 13:28:14  OK     PLACEMENT-ROUTAGE MPF050T (brochage essai 0)
+2026-11-23 13:28:14  DEBUT  TIMING MPF050T
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Verify Timing tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool.
+No errors or warnings found.
+Verify Timing Elapsed Time: 254.0816 seconds.
+Info: Timing constraints have been met.
+2026-11-23 13:32:28  OK     TIMING MPF050T
+2026-11-23 13:32:28  DEBUT  réglages du fichier de programmation MPF050T
+2026-11-23 13:32:28  OK     réglages du fichier de programmation MPF050T
+2026-11-23 13:32:28  DEBUT  DONNEES DE PROGRAMMATION MPF050T
+Generating FPGA array data.
+INFO: Writing PCBIT information for Lock Bits in file: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_init_config_lock_bits.txt ...
+INFO: PCBIT information used for generating Design_Initialization_Data_Report file.
+Info: Generated map file /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.map
+FPGA array data completed successfully.
+2026-11-23 13:33:31  OK     DONNEES DE PROGRAMMATION MPF050T
+2026-11-23 13:33:31  DEBUT  initialisation des mémoires MPF050T
+Info: Memory files have been generated successfully
+Info: 'Generate design initialization data' has completed successfully.
+Info: Stage 1 initialization client has been added to sNVM.
+Info: Stage 2_3 initialization client has been added to sNVM.
+2026-11-23 13:33:42  OK     initialisation des mémoires MPF050T
+2026-11-23 13:33:42  DEBUT  FICHIER DE PROGRAMMATION MPF050T
+Console Mode = Software Version: 2026.1.0.17
+creating folder: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp
+Created new project '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+The 'new_project' command succeeded.
+The 'add_actel_device' command succeeded.
+The 'enable_device' command succeeded.
+Project saved.
+The 'save_project' command succeeded.
+Project closed.
+The 'close_project' command succeeded.
+The Execute Script command succeeded.
+Exported log file /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp.log.
+Info: Bitstream not generated for uPROM. The configuration file:  is either absent, unreadable, or empty. Use the Design and Memory Initialization tool in the design flow to configure uPROM if needed.
+Info: Found sNVM configuration file: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/SNVM.cfg
+Info: Generated dca file /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.dca
+Generating Bitstream File to program Fabric and sNVM...
+Software Version: 2026.1.0.17
+Opened '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+PDB file '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.pdb' has been loaded successfully.
+DESIGN : jpeg2dvb_top;  CHECKSUM : F5E2;  PDB_VERSION : 1.9
+Load Programming Data(s) Finished : Mon Nov 23 13:33:59 2026 (Elapsed time 00:00:01)
+Info:  Programming Interface selected is JTAG.
+Info:  Design version: 0
+File/Folder '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.ppd' will be overwritten.
+Successfully exported PPD file for currently secured device: '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.ppd'; file programs Fabric and sNVM.
+Fabric component bitstream digest: eced54db2f7f9c6d13bec00e29ecd566f7b4c14988f3d85699d701e169516462
+sNVM component bitstream digest: bf91de18849e1b243e90ebd58b0e2db30a63b77f2fae436afd58ac3aacd80f2c
+Entire bitstream digest: 1236ffea3619e72370a4bc93d6eff493cd3acc64bf4a76f41b20b11de3e30c94
+Finished: Mon Nov 23 13:34:15 2026 (Elapsed time 00:00:16)
+
+Project saved.
+Project closed.
+Info: Exported log file: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top_generateBitstream.log
+Generating Bitstream File Finished: Mon Nov 23 13:34:19 2026 (Elapsed time 00:00:33)
+
+2026-11-23 13:34:19  OK     FICHIER DE PROGRAMMATION MPF050T
+2026-11-23 13:34:19  DEBUT  EXPORT DAT MPF050T (fabric + sNVM)
+Warning: Back Level protection is disabled in the Configure Security tool. Back Level version will not be programmed. To enable Back Level protection go to the Configure Security tool, Update policy
+Info: Bitstream not generated for uPROM. The configuration file:  is either absent, unreadable, or empty. Use the Design and Memory Initialization tool in the design flow to configure uPROM if needed.
+Info: Found sNVM configuration file: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/SNVM.cfg
+Info: Generated dca file /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.dca
+Exporting Bitstream File(s)...
+Software Version: 2026.1.0.17
+Opened '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+PDB file '/home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top.pdb' has been loaded successfully.
+DESIGN : jpeg2dvb_top;  CHECKSUM : F5E2;  PDB_VERSION : 1.9
+Load Programming Data(s) Finished : Mon Nov 23 13:34:30 2026 (Elapsed time 00:00:01)
+Info:  Programming Interface selected is JTAG.
+Info:  Design version: 0
+File/Folder '/home/eperret/dvb_lot/jpeg2dvb_MPF050T.dat' will be overwritten.
+Successfully exported DirectC file: '/home/eperret/dvb_lot/jpeg2dvb_MPF050T.dat'; file programs Fabric and sNVM.
+Fabric component bitstream digest: eced54db2f7f9c6d13bec00e29ecd566f7b4c14988f3d85699d701e169516462
+sNVM component bitstream digest: bf91de18849e1b243e90ebd58b0e2db30a63b77f2fae436afd58ac3aacd80f2c
+Entire bitstream digest: 1236ffea3619e72370a4bc93d6eff493cd3acc64bf4a76f41b20b11de3e30c94
+Finished: Mon Nov 23 13:34:40 2026 (Elapsed time 00:00:10)
+
+Project saved.
+Project closed.
+Info: Exported log file: /home/eperret/dvb_lot/travail/mpf050t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top_exportBitstream.log
+Exporting Bitstream File(s) Finished: Mon Nov 23 13:34:44 2026 (Elapsed time 00:00:23)
+
+2026-11-23 13:34:44  OK     EXPORT DAT MPF050T (fabric + sNVM)
+2026-11-23 13:34:44  DAT    jpeg2dvb_MPF050T.dat : 1631762 octets
+The mpf050t project was closed.
+2026-11-23 13:34:44  MPF050T : placé-routé (brochage essai 0)
+2026-11-23 13:34:44  DEBUT  projet mpf100t (MPF100T-FCVG484, STD, IND)
+Info: This version of Libero supports only the enhanced constraint flow.
+The mpf100t project was created.
+2026-11-23 13:34:45  OK     projet mpf100t (MPF100T-FCVG484, STD, IND)
+2026-11-23 13:34:45  DEBUT  réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-23 13:34:45  OK     réglages du projet (VHDL-2008, pas de mode bloc)
+2026-11-23 13:34:45  DEBUT  import du VHDL
+2026-11-23 13:34:45  OK     import du VHDL
+2026-11-23 13:34:45  DEBUT  cœur PF_CCC_SYS
+Warning: SmartDesign 'PF_CCC_SYS' design rules check succeeded, but with warnings
+Warning: Design rules check of "PF_CCC_SYS" has warning messages, Please check the Log Window for more details.
+          [OK]
+Warning: 'Core Validation' : PLL_FEEDBACK_MODE_0 If you select Post-VCO as a Feedback Mode, outputs will be resynchronized between each other after the PLL locks, but will not be resynchronized with the PLL reference clock
+Info: 'Core Validation' : PLL_EXPORT_PWRDWN It is recommended that the PLL_POWERDOWN_N_0 input be enabled and asserted by the user at PLL start-up until the reference clock is stable. For more information, refer to UG0684: PolarFire FPGA Clocking Resources
+Info: 'Core Validation' : The current configuration of instance : PF_CCC_SYS_0 has warning or information messages. Consult the User Guide for configuration of this core.
+Info: 'PF_CCC_SYS' was successfully generated.
+Info: Design "PF_CCC_SYS" was successfully generated.
+       [OK]
+Info: 'PF_CCC_SYS' manifest file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_SYS/PF_CCC_SYS_manifest.txt' was successfully generated.
+
+Info: Component 'PF_CCC_SYS' was successfully created and configured with vendor:Actel library:SgCore name:PF_CCC version:2.2.222.
+2026-11-23 13:34:48  OK     cœur PF_CCC_SYS
+2026-11-23 13:34:48  DEBUT  cœur PF_CCC_TVP
+Warning: SmartDesign 'PF_CCC_TVP' design rules check succeeded, but with warnings
+Warning: Design rules check of "PF_CCC_TVP" has warning messages, Please check the Log Window for more details.
+          [OK]
+Warning: 'Core Validation' : PLL_FEEDBACK_MODE_0 If you select Post-VCO as a Feedback Mode, outputs will be resynchronized between each other after the PLL locks, but will not be resynchronized with the PLL reference clock
+Info: 'Core Validation' : PLL_EXPORT_PWRDWN It is recommended that the PLL_POWERDOWN_N_0 input be enabled and asserted by the user at PLL start-up until the reference clock is stable. For more information, refer to UG0684: PolarFire FPGA Clocking Resources
+Info: 'Core Validation' : The current configuration of instance : PF_CCC_TVP_0 has warning or information messages. Consult the User Guide for configuration of this core.
+Info: 'PF_CCC_TVP' was successfully generated.
+Info: Design "PF_CCC_TVP" was successfully generated.
+       [OK]
+Info: 'PF_CCC_TVP' manifest file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_TVP/PF_CCC_TVP_manifest.txt' was successfully generated.
+
+Info: Component 'PF_CCC_TVP' was successfully created and configured with vendor:Actel library:SgCore name:PF_CCC version:2.2.222.
+2026-11-23 13:34:52  OK     cœur PF_CCC_TVP
+2026-11-23 13:34:52  DEBUT  cœur PF_IOD_TX_CCC_IOD
+Info: Disconnecting pin 'BCLK_IGEAR_RX' from net 'BCLK_IGEAR_RX' because it is no longer a valid connection.
+#BCLKSCLK_TRN_MODE = 0
+Info: 'PF_IOD_TX_CCC_IOD_TR' was successfully generated.
+Info: 'PF_IOD_TX_CCC_IOD_TR' manifest file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_CCC_IOD_TR' was successfully created and configured with vendor:Actel library:DirectCore name:COREBCLKSCLKALIGN version:3.0.100.
+Info: 'PF_IOD_TX_CCC_IOD' was successfully generated.
+Info: 'PF_IOD_TX_CCC_IOD' manifest file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD/PF_IOD_TX_CCC_IOD_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_CCC_IOD' was successfully created and configured with vendor:Actel library:SystemBuilder name:PF_IOD_TX_CCC version:1.0.131.
+2026-11-23 13:34:54  OK     cœur PF_IOD_TX_CCC_IOD
+2026-11-23 13:34:54  DEBUT  cœur PF_IOD_TX_SD
+Info: The connection is being dropped from the net 'TX_CLK' because the pin 'TX_CLK' does not exist.
+Info: The connection is being dropped from the net 'PAD' because the pin 'PAD' does not exist.
+Info: The connection is being dropped from the net 'PAD' because the pin 'PAD' does not exist.
+Info: 'PF_IOD_TX_SD' was successfully generated.
+Info: 'PF_IOD_TX_SD' manifest file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/PF_IOD_TX_SD_manifest.txt' was successfully generated.
+
+Info: Component 'PF_IOD_TX_SD' was successfully created and configured with vendor:Actel library:SystemBuilder name:PF_IOD_GENERIC_TX version:2.0.117.
+2026-11-23 13:34:58  OK     cœur PF_IOD_TX_SD
+2026-11-23 13:34:58  DEBUT  hiérarchie
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_SYS/PF_CCC_SYS.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_SYS/PF_CCC_SYS_0/PF_CCC_SYS_PF_CCC_SYS_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_TVP/PF_CCC_TVP.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_CCC_TVP/PF_CCC_TVP_0/PF_CCC_TVP_PF_CCC_TVP_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD/PF_IOD_TX_CCC_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD/PF_CCC_0/PF_IOD_TX_CCC_IOD_PF_CCC_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/core/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/core/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0_PF_CCC_C0_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0_PF_DRI_C0_0_PF_DRI.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_FIFO_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_RXCLK_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_RX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_LANECTRL_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_CLK_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC_2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/core/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/BclkSclk_PLL_TX2_1200mbps_SD_wrap.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/BclkSclk_PLL_TX2_1200mbps_TB.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/CoreBclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/ICB_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_CCC_C0_PF_CCC_C0_0_PF_CCC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_DRI_C0_PF_DRI_C0_0_PF_DRI.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_FIFO_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_CLK_DIV_RXCLK_PF_CLK_DIV_DELAY.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_IOD_RX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_RX_C1_PF_LANECTRL_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_CLK_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_IOD_GENERIC_TX_C0_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PF_LANECTRL_PAUSE_SYNC_2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/Actel/DirectCore/COREBCLKSCLKALIGN/3.0.100/rtl/vlog/test/user/PLL_BclkSclkAlign.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/prbscheck_parallel_fab_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/prbsgen_parallel_fab_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_CCC_IOD_TR/PF_IOD_TX_CCC_IOD_TR_0/rtl/vlog/test/user/rev_bits_x2.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/PF_IOD_TX_SD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/LANECTRL_ADDR_CMD_0/PF_IOD_TX_SD_LANECTRL_ADDR_CMD_0_PF_LANECTRL.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/LANECTRL_ADDR_CMD_0/PF_LANECTRL_PAUSE_SYNC.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/PF_IOD_CLK_TRAINING/PF_IOD_TX_SD_PF_IOD_CLK_TRAINING_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/component/work/PF_IOD_TX_SD/PF_IOD_TX/PF_IOD_TX_SD_PF_IOD_TX_PF_IOD.v'.
+Reading file '/home/eperret/dvb_lot/travail/mpf100t/hdl/jpeg2dvb_fpga.vhd'.
+2026-11-23 13:34:59  OK     hiérarchie
+2026-11-23 13:34:59  DEBUT  racine jpeg2dvb_top
+2026-11-23 13:34:59  OK     racine jpeg2dvb_top
+2026-11-23 13:34:59  DEBUT  import du SDC
+2026-11-23 13:34:59  OK     import du SDC
+2026-11-23 13:34:59  DEBUT  horloges des PLL (derive_constraints_sdc)
+To automatically associate the derived constraint SDC file to the 'Synthesis', 'Place and Route' and 'Timing Verification' tools click 'Yes' else click 'No'. [YES]
+Info: /home/eperret/dvb_lot/travail/mpf100t/constraint/jpeg2dvb_top_derived_constraints.sdc was successfully generated.
+2026-11-23 13:35:04  OK     horloges des PLL (derive_constraints_sdc)
+2026-11-23 13:35:04  brochage imposé : /home/eperret/dvb_lot/jpeg2dvb_top.pdc
+2026-11-23 13:35:04  DEBUT  import du PDC
+2026-11-23 13:35:05  OK     import du PDC
+2026-11-23 13:35:05  DEBUT  contraintes de la synthèse
+2026-11-23 13:35:05  OK     contraintes de la synthèse
+2026-11-23 13:35:05  DEBUT  contraintes du placement-routage
+2026-11-23 13:35:05  OK     contraintes du placement-routage
+2026-11-23 13:35:05  DEBUT  contraintes du timing
+2026-11-23 13:35:05  OK     contraintes du timing
+2026-11-23 13:35:05  DEBUT  réglages de la synthèse
+2026-11-23 13:35:05  OK     réglages de la synthèse
+2026-11-23 13:35:05  DEBUT  réglages du placement-routage
+2026-11-23 13:35:05  OK     réglages du placement-routage
+2026-11-23 13:35:05  DEBUT  réglages du timing
+2026-11-23 13:35:05  OK     réglages du timing
+2026-11-23 13:35:05  DEBUT  SYNTHESE MPF100T
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Synthesis tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool
+
+Info: Active implementation is 'synthesis'
+Starting Synplify Pro ME...
+/proc/sys/vm/admin_reserve_kbytes:8192
+/proc/sys/vm/compact_unevictable_allowed:1
+/proc/sys/vm/compaction_proactiveness:20
+/proc/sys/vm/defrag_mode:0
+/proc/sys/vm/dirty_background_bytes:0
+/proc/sys/vm/dirty_background_ratio:10
+/proc/sys/vm/dirty_bytes:0
+/proc/sys/vm/dirty_expire_centisecs:3000
+/proc/sys/vm/dirty_ratio:20
+/proc/sys/vm/dirty_writeback_centisecs:500
+/proc/sys/vm/dirtytime_expire_seconds:43200
+/proc/sys/vm/enable_soft_offline:1
+/proc/sys/vm/extfrag_threshold:500
+/proc/sys/vm/hugetlb_optimize_vmemmap:0
+/proc/sys/vm/hugetlb_shm_group:0
+/proc/sys/vm/laptop_mode:0
+/proc/sys/vm/legacy_va_layout:0
+/proc/sys/vm/lowmem_reserve_ratio:256        256        32        0        0
+/proc/sys/vm/max_map_count:1048576
+/proc/sys/vm/memfd_noexec:0
+/proc/sys/vm/memory_failure_early_kill:0
+/proc/sys/vm/memory_failure_recovery:1
+/proc/sys/vm/min_free_kbytes:67584
+/proc/sys/vm/min_slab_ratio:5
+/proc/sys/vm/min_unmapped_ratio:1
+/proc/sys/vm/mmap_min_addr:65536
+/proc/sys/vm/movable_gigantic_pages:0
+/proc/sys/vm/nr_hugepages:0
+/proc/sys/vm/nr_hugepages_mempolicy:0
+/proc/sys/vm/nr_overcommit_hugepages:0
+/proc/sys/vm/numa_stat:1
+/proc/sys/vm/numa_zonelist_order:Node
+/proc/sys/vm/oom_dump_tasks:1
+/proc/sys/vm/oom_kill_allocating_task:0
+/proc/sys/vm/overcommit_kbytes:0
+/proc/sys/vm/overcommit_memory:0
+/proc/sys/vm/overcommit_ratio:50
+/proc/sys/vm/page-cluster:3
+/proc/sys/vm/page_lock_unfairness:5
+/proc/sys/vm/panic_on_oom:0
+/proc/sys/vm/percpu_pagelist_high_fraction:0
+/proc/sys/vm/stat_interval:1
+/proc/sys/vm/swappiness:60
+/proc/sys/vm/unprivileged_userfaultfd:0
+/proc/sys/vm/user_reserve_kbytes:131072
+/proc/sys/vm/vfs_cache_pressure:100
+/proc/sys/vm/vfs_cache_pressure_denom:100
+/proc/sys/vm/watermark_boost_factor:15000
+/proc/sys/vm/watermark_scale_factor:10
+/proc/sys/vm/zone_reclaim_mode:0
+-03
+
+------ Message Queues --------
+key        msqid      owner      perms      used-bytes   messages
+
+------ Shared Memory Segments --------
+key        shmid      owner      perms      bytes      nattch     status
+0x008011b4 0          postgres   600        56         6
+
+------ Semaphore Arrays --------
+key        semid      owner      perms      nsems
+
+Ubuntu 24.04.5 LTS
+###########################################################[
+Option definition override for: enable_hydra_infer_clocks_from_latch_data
+
+                               Synplify Pro (R)
+
+                 Version Y-2026.03M for linux64 - May 25, 2026
+
+                    Copyright (c) 1988 - 2026 Synopsys, Inc.
+   This software and the associated documentation are proprietary to Synopsys,
+ Inc. This software may only be used in accordance with the terms and conditions
+ of a written license agreement with Synopsys, Inc. All other use, reproduction,
+   or distribution of this software is strictly prohibited.  Licensed Products
+     communicate with Synopsys servers for the purpose of providing software
+    updates, detecting software piracy and verifying that customers are using
+    Licensed Products in conformity with the applicable License Key for such
+  Licensed Products. Synopsys will use information gathered in connection with
+    this process to deliver software updates and pursue software pirates and
+                                   infringers.
+
+ Inclusivity & Diversity - Visit SolvNetPlus to read the "Synopsys Statement on
+            Inclusivity and Diversity" (Refer to article 000036315 at
+                        https://solvnetplus.synopsys.com)
+
+Starting:    /usr/local/microchip/Libero_SoC_2026.1/Libero_SoC/Synplify_Pro/linux_a_64/mbin/synbatch
+Install:     /usr/local/microchip/Libero_SoC_2026.1/Libero_SoC/Synplify_Pro
+Hostname:    eperret-Think
+Date:        Mon Nov 23 13:35:14 2026
+Version:     Y-2026.03M
+
+Arguments:   -product synplify_base -licensetype synplifypro_actel -batch -log synplify.log jpeg2dvb_top_syn.tcl
+ProductType: synplify_pro
+
+License checkout: synplifypro_actel
+License: synplifypro_actel from server eperret-Think
+Licensed Vendor: actel
+License Option: actel_oem
+
+Running in Vendor Mode
+
+
+
+
+Implementation not found: synthesis
+log file: "/home/eperret/dvb_lot/travail/mpf100t/synthesis/jpeg2dvb_top.srr"
+Running: synthesis in foreground
+
+Running jpeg2dvb_top_syn|synthesis
+
+Running Flow: compile (Compile) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:35:15 2026
+
+Running Flow: compile_flow (Compile Process) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:35:15 2026
+
+Running: compiler (Compile Input) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:35:15 2026
+Process ID: 8985
+Copied /home/eperret/dvb_lot/travail/mpf100t/synthesis/synwork/jpeg2dvb_top_comp.srs to /home/eperret/dvb_lot/travail/mpf100t/synthesis/jpeg2dvb_top.srs
+
+compiler completed
+# Mon Nov 23 13:36:00 2026
+
+Return Code: 0
+Run Time:00h:00m:44s
+
+Running: multi_srs_gen (Multi-srs Generator) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:36:00 2026
+Process ID: 9173
+
+multi_srs_gen completed
+# Mon Nov 23 13:36:01 2026
+
+Return Code: 0
+Run Time:00h:00m:01s
+Copied /home/eperret/dvb_lot/travail/mpf100t/synthesis/synwork/jpeg2dvb_top_mult.srs to /home/eperret/dvb_lot/travail/mpf100t/synthesis/jpeg2dvb_top.srs
+Complete: Compile Process on jpeg2dvb_top_syn|synthesis
+
+Running: premap (Premap) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:36:01 2026
+Process ID: 9189
+
+premap completed with warnings
+# Mon Nov 23 13:36:07 2026
+
+Return Code: 1
+Run Time:00h:00m:06s
+Complete: Compile on jpeg2dvb_top_syn|synthesis
+
+Running Flow: map (Map) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:36:07 2026
+License granted for 4 parallel jobs
+
+Running: fpga_mapper (Map & Optimize) on jpeg2dvb_top_syn|synthesis
+# Mon Nov 23 13:36:07 2026
+Process ID: 9205
+Copied /home/eperret/dvb_lot/travail/mpf100t/synthesis/synwork/jpeg2dvb_top_m.srm to /home/eperret/dvb_lot/travail/mpf100t/synthesis/jpeg2dvb_top.srm
+
+fpga_mapper completed with warnings
+# Mon Nov 23 13:39:45 2026
+
+Return Code: 1
+Run Time:00h:03m:38s
+Complete: Map on jpeg2dvb_top_syn|synthesis
+Complete: Logic Synthesis on jpeg2dvb_top_syn|synthesis
+Copied /home/eperret/dvb_lot/travail/mpf100t/synthesis/jpeg2dvb_top.srr to /home/eperret/dvb_lot/travail/mpf100t/synthesis/backup/jpeg2dvb_top.srr
+TCL script complete: "jpeg2dvb_top_syn.tcl"
+exit status=0
+exit status=0
+License checkin: synplifypro_actel
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_sys/PF_CCC_SYS_0/clkint_0:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_sys/PF_CCC_SYS_0/pll_inst_0:REF_CLK_0'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_tvp/PF_CCC_TVP_0/clkint_0:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_tvp/PF_CCC_TVP_0/pll_inst_0:REF_CLK_0'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:ICB_CLKINT' instance type before pin 'u_horl/u_iod/PF_CCC_0/clkint_4:A'.
+Info: [127205813]:  CMPPF_149: Added 'ADLIB:CRN_INT' instance type before pin 'u_horl/u_iod/PF_CCC_0/pll_inst_0:REF_CLK_0'.
+
+===============================================================================.
+
+Info: Global design data:
+      Total globals:                       5
+      Globals that cannot be demoted:      3
+      Globals considered for demotion:     2
+
+
+Info: List of globals that cannot be demoted:
+    CLK    ASYN   DATA   Instance Name
+    ---    ----   ----   -------------
+    6705   0      0      'u_horl/u_iod/PF_CCC_0/clkint_4'
+    0      0      1      'u_horl/u_sys/PF_CCC_SYS_0/clkint_0'
+    0      0      1      'u_horl/u_tvp/PF_CCC_TVP_0/clkint_0'
+
+Info: List of globals considered for demotion:
+    CLK    ASYN   DATA   Instance Name
+    ---    ----   ----   -------------
+    223    0      0      'tvp_sclk_cZ'
+    0      0      2      'osc_50_cZ'
+
+Info: Demotion information:
+Info: [127205381]:  CMPPF_302: Added 0 row global instances.
+Info: [127205382]:  CMPPF_303: Deleted 0 global instances.
+
+===============================================================================.
+
+Synthesis completed.
+2026-11-23 13:40:15  OK     SYNTHESE MPF100T
+2026-11-23 13:40:15  DEBUT  PLACEMENT-ROUTAGE MPF100T (brochage essai 0)
+INFO: Reading User SDC file /home/eperret/dvb_lot/travail/mpf100t/constraint/jpeg2dvb_top_derived_constraints.sdc.
+INFO: Reading User SDC file /home/eperret/dvb_lot/travail/mpf100t/constraint/jpeg2dvb_top.sdc.
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Place & Route tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool.
+
+No errors or warnings found.
+INFO: The option "Abort flow if errors are found in PDC" is turned ON in Project Settings> Design flow page. The Place & Route tool will fail if errors are found in associated PDC files. Please uncheck the option to ignore the errors and continue running the tool
+***** Place and Route Configurations *****
+Timing-driven            : ON
+Power-driven             : OFF
+I/O Register Combining   : OFF
+Global Pins Demotion     : ON
+Driver Replication       : OFF
+High-effort              : OFF
+Repair min-delay         : OFF
+Incremental              : OFF
+Inter-clock optimization : ON
+
+INFO: Reading User PDC file /home/eperret/dvb_lot/travail/mpf100t/constraint/io/jpeg2dvb_top.pdc. 0 error(s) and 0 warning(s)
+
+ Running Timing based Global Demotion.
+        Demoted 0 global pins.
+
+ Timing based Global Demotion completed successfully.
+
+Running the I/O Bank and Globals Assigner.
+Info:  I/O Bank and Globals Assigner identified 20 fixed I/O macros, 0 unfixed I/O macros
+
+I/O Bank and Globals Assigner completed successfully.
+Total time spent in I/O Bank and Globals Assigner: 5 seconds
+
+Placer V5.0 - 2026.1.0
+Design: jpeg2dvb_top                    Started: Mon Nov 23 13:41:40 2026
+
+Initializing Normal-Effort Timing-Driven Placement ...
+Clustering ...
+Placing ...
+Improving placement ...
+End of placement.
+
+Placer Runtime Summary   :
+Clustering (1 pass)      : 30 seconds
+Placement                : 106 seconds
+Improvement              : 295 seconds
+
+Placer completed successfully.
+
+Design: jpeg2dvb_top
+Finished: Mon Nov 23 13:50:14 2026
+Total CPU Time:     00:08:51            Total Elapsed Time: 00:08:34
+Total Memory Usage: 1512.5 Mbytes
+                        o - o - o - o - o - o
+
+
+Router
+Design: jpeg2dvb_top                    Started: Mon Nov 23 13:50:30 2026
+
+
+Router completed successfully.
+
+Design: jpeg2dvb_top
+Finished: Mon Nov 23 13:51:46 2026
+Total CPU Time:     00:01:17            Total Elapsed Time: 00:01:16
+Total Memory Usage: 2264.9 Mbytes
+                        o - o - o - o - o - o
+
+Resource Usage
++---------------------------+-------+--------+------------+
+| Type                      | Used  | Total  | Percentage |
++---------------------------+-------+--------+------------+
+| 4LUT                      | 35287 | 108600 | 32.49      |
+| DFF                       | 13859 | 108600 | 12.76      |
+| Logic Element             | 36145 | 108600 | 33.28      |
+| I/Os using I/O Registers  | 0     | 284    | 0.00       |
+| I/O Register Flip-Flops   | 0     | 852    | 0.00       |
+| -- Input  I/O Flip-Flops  | 0     | 284    | 0.00       |
+| -- Output I/O Flip-Flops  | 0     | 284    | 0.00       |
+| -- Enable I/O Flip-Flops  | 0     | 284    | 0.00       |
++---------------------------+-------+--------+------------+
+
+I/O Placement
++--------+-------+------------+
+| Type   | Count | Percentage |
++--------+-------+------------+
+| Locked |  22   | 100.00%    |
+| Placed |  0    | 0.00%      |
++--------+-------+------------+
+
+Completed writing pin report files.
+Place and Route Elapsed Time: 11.80 minutes.
+2026-11-23 13:52:03  OK     PLACEMENT-ROUTAGE MPF100T (brochage essai 0)
+2026-11-23 13:52:03  DEBUT  TIMING MPF100T
+INFO: The option "Abort flow if errors are found in SDC" is turned ON in Project Settings> Design flow page. The Verify Timing tool will fail if errors are found in associated SDC files. Please uncheck the option to ignore the errors and continue running the tool.
+No errors or warnings found.
+Verify Timing Elapsed Time: 174.0443 seconds.
+Info: Timing constraints have been met.
+2026-11-23 13:54:57  OK     TIMING MPF100T
+2026-11-23 13:54:57  DEBUT  réglages du fichier de programmation MPF100T
+2026-11-23 13:54:58  OK     réglages du fichier de programmation MPF100T
+2026-11-23 13:54:58  DEBUT  DONNEES DE PROGRAMMATION MPF100T
+Generating FPGA array data.
+INFO: Writing PCBIT information for Lock Bits in file: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_init_config_lock_bits.txt ...
+INFO: PCBIT information used for generating Design_Initialization_Data_Report file.
+Info: Generated map file /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.map
+FPGA array data completed successfully.
+2026-11-23 13:56:24  OK     DONNEES DE PROGRAMMATION MPF100T
+2026-11-23 13:56:24  DEBUT  initialisation des mémoires MPF100T
+Info: Memory files have been generated successfully
+Info: 'Generate design initialization data' has completed successfully.
+Info: Stage 1 initialization client has been added to sNVM.
+Info: Stage 2_3 initialization client has been added to sNVM.
+2026-11-23 13:56:33  OK     initialisation des mémoires MPF100T
+2026-11-23 13:56:33  DEBUT  FICHIER DE PROGRAMMATION MPF100T
+Console Mode = Software Version: 2026.1.0.17
+creating folder: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp
+Created new project '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+The 'new_project' command succeeded.
+The 'add_actel_device' command succeeded.
+The 'enable_device' command succeeded.
+Project saved.
+The 'save_project' command succeeded.
+Project closed.
+The 'close_project' command succeeded.
+The Execute Script command succeeded.
+Exported log file /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp.log.
+Info: Bitstream not generated for uPROM. The configuration file:  is either absent, unreadable, or empty. Use the Design and Memory Initialization tool in the design flow to configure uPROM if needed.
+Info: Found sNVM configuration file: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/SNVM.cfg
+Info: Generated dca file /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.dca
+Generating Bitstream File to program Fabric and sNVM...
+Software Version: 2026.1.0.17
+Opened '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+PDB file '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.pdb' has been loaded successfully.
+DESIGN : jpeg2dvb_top;  CHECKSUM : 2B5A;  PDB_VERSION : 1.9
+Load Programming Data(s) Finished : Mon Nov 23 13:56:47 2026 (Elapsed time 00:00:01)
+Info:  Programming Interface selected is JTAG.
+Info:  Design version: 0
+File/Folder '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.ppd' will be overwritten.
+Successfully exported PPD file for currently secured device: '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.ppd'; file programs Fabric and sNVM.
+Fabric component bitstream digest: a3e5b31027183a0106cf1abb264d6de31b99102947907c7c29c24f06532403ca
+sNVM component bitstream digest: bf91de18849e1b243e90ebd58b0e2db30a63b77f2fae436afd58ac3aacd80f2c
+Entire bitstream digest: c97dc29b53df4f5dbe7b5b29397e6b1b6d8bf8cd1438eccd74103cf4a6ebd31f
+Finished: Mon Nov 23 13:57:13 2026 (Elapsed time 00:00:26)
+
+Project saved.
+Project closed.
+Info: Exported log file: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top_generateBitstream.log
+Generating Bitstream File Finished: Mon Nov 23 13:57:20 2026 (Elapsed time 00:00:42)
+
+2026-11-23 13:57:20  OK     FICHIER DE PROGRAMMATION MPF100T
+2026-11-23 13:57:20  DEBUT  EXPORT DAT MPF100T (fabric + sNVM)
+Warning: Back Level protection is disabled in the Configure Security tool. Back Level version will not be programmed. To enable Back Level protection go to the Configure Security tool, Update policy
+Info: Bitstream not generated for uPROM. The configuration file:  is either absent, unreadable, or empty. Use the Design and Memory Initialization tool in the design flow to configure uPROM if needed.
+Info: Found sNVM configuration file: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/SNVM.cfg
+Info: Generated dca file /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.dca
+Exporting Bitstream File(s)...
+Software Version: 2026.1.0.17
+Opened '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top.pro'
+PDB file '/home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top.pdb' has been loaded successfully.
+DESIGN : jpeg2dvb_top;  CHECKSUM : 2B5A;  PDB_VERSION : 1.9
+Load Programming Data(s) Finished : Mon Nov 23 13:57:31 2026 (Elapsed time 00:00:01)
+Info:  Programming Interface selected is JTAG.
+Info:  Design version: 0
+File/Folder '/home/eperret/dvb_lot/jpeg2dvb_MPF100T.dat' will be overwritten.
+Successfully exported DirectC file: '/home/eperret/dvb_lot/jpeg2dvb_MPF100T.dat'; file programs Fabric and sNVM.
+Fabric component bitstream digest: a3e5b31027183a0106cf1abb264d6de31b99102947907c7c29c24f06532403ca
+sNVM component bitstream digest: bf91de18849e1b243e90ebd58b0e2db30a63b77f2fae436afd58ac3aacd80f2c
+Entire bitstream digest: c97dc29b53df4f5dbe7b5b29397e6b1b6d8bf8cd1438eccd74103cf4a6ebd31f
+Finished: Mon Nov 23 13:57:47 2026 (Elapsed time 00:00:16)
+
+Project saved.
+Project closed.
+Info: Exported log file: /home/eperret/dvb_lot/travail/mpf100t/designer/jpeg2dvb_top/jpeg2dvb_top_fp/jpeg2dvb_top_exportBitstream.log
+Exporting Bitstream File(s) Finished: Mon Nov 23 13:57:53 2026 (Elapsed time 00:00:31)
+
+2026-11-23 13:57:53  OK     EXPORT DAT MPF100T (fabric + sNVM)
+2026-11-23 13:57:53  DAT    jpeg2dvb_MPF100T.dat : 3528818 octets
+The mpf100t project was closed.
+2026-11-23 13:57:54  MPF100T : placé-routé (brochage essai 0)
+2026-11-23 13:57:54  même brochage sur les deux composants : OUI
+2026-11-23 13:57:54  jpeg2dvb_MPF050T.dat : 1631762 octets
+2026-11-23 13:57:54  jpeg2dvb_MPF100T.dat : 3528818 octets
+2026-11-23 13:57:54  archive : /home/eperret/dvb_lot/jpeg2dvb_resultats.tgz
+2026-11-23 13:57:54  ===== fin =====
+The Execute Script command succeeded.

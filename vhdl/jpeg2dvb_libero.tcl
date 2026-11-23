@@ -4,11 +4,12 @@
 #  Objet      : chaîne Libero SoC complète et sans intervention, tous réglages
 #               écrits ici (aucun réglage par défaut) : projet neuf, cœurs,
 #               contraintes, brochage, synthèse, placement-routage, timing,
-#               sur MPF050T puis MPF100T en boîtier FCVG484 (même carte) ;
-#               les rapports sont regroupés dans jpeg2dvb_resultats.tgz
+#               fichier de programmation DAT (DirectC), sur MPF050T puis MPF100T
+#               en boîtier FCVG484 (même carte) ; les rapports sont regroupés
+#               dans jpeg2dvb_resultats.tgz
 #  Auteur     : Eric PERRET
-#  Date       : 2026-11-16
-#  Version    : 1.2
+#  Date       : 2026-11-23
+#  Version    : 1.3
 #  Plateforme : Libero SoC 2026.1, mode script ; Libero (fenêtre) fermé
 #  Lancement  : dans le dossier du lot :
 #                 libero SCRIPT:jpeg2dvb_libero.tcl LOGFILE:jpeg2dvb_libero.log
@@ -17,12 +18,16 @@
 #               (brochage imposé, facultatif) dans le même dossier ;
 #               projet de référence /home/eperret/dvb (lecture seule) pour les
 #               paramètres exacts des quatre cœurs
-#  Sorties    : coeurs/*.tcl, travail/ (projets), resultats/ (rapports,
-#               journal.txt, bilan.txt), jpeg2dvb_resultats.tgz
+#  Sorties    : jpeg2dvb_MPF050T.dat et jpeg2dvb_MPF100T.dat dans le dossier
+#               du lot (programmation par l'ESP32, JTAG-DirectC), coeurs/*.tcl,
+#               travail/ (projets), resultats/ (rapports, journal.txt,
+#               bilan.txt), jpeg2dvb_resultats.tgz
 #  Étapes     : 1 cœurs du projet de référence exportés en Tcl
 #               2 table des broches du MPF050T-FCVG484 (design sonde)
 #               3 brochage provisoire calculé (une banque GPIO à 3,3 V)
-#               4 chaîne complète MPF050T, puis MPF100T avec le même brochage
+#               4 chaîne complète MPF050T, puis MPF100T avec le même brochage ;
+#                 si le timing passe : données de programmation, initialisation
+#                 des mémoires, fichier de programmation, export DAT
 #               5 bilan et archive
 #  Historique : 1.0  2026-11-16  création
 #               1.1  2026-11-16  brochage : les broches à fonction secondaire (DQS,
@@ -30,6 +35,8 @@
 #                                n'a pas assez de paires simples en banque 2)
 #               1.2  2026-11-16  brochage imposé si jpeg2dvb_top.pdc est dans le lot
 #                                (sinon brochage calculé, comme avant)
+#               1.3  2026-11-23  export DAT (fabric + sNVM) de chaque composant
+#                                dont le timing passe, à la racine du lot
 #===============================================================================
 
 set LOT      [file dirname [file normalize [info script]]]
@@ -362,6 +369,38 @@ proc archive {} {
 }
 
 #-------------------------------------------------------------------------------
+# exporter_dat : E : composant (projet ouvert, placé-routé, timing fait) → T :
+#   données de programmation, données d'initialisation des mémoires, fichier de
+#   programmation, export DAT fabric + sNVM (fabric seule si le sNVM est refusé)
+#   → S : jpeg2dvb_<composant>.dat dans le dossier du lot, 1 si exporté
+#-------------------------------------------------------------------------------
+proc exporter_dat {die} {
+    global LOT
+    set dat $LOT/jpeg2dvb_${die}.dat
+    catch {file delete -force $dat}
+    if {![etape "réglages du fichier de programmation $die" {configure_tool -name {GENERATEPROGRAMMINGFILE} \
+        -params {program_fabric:true} -params {program_security:false} \
+        -params {sanitize_snvm:false}}]} { return 0 }
+    if {![etape "DONNEES DE PROGRAMMATION $die" {run_tool -name {GENERATEPROGRAMMINGDATA}}]} { return 0 }
+    if {![etape "initialisation des mémoires $die" {generate_design_initialization_data}]} { return 0 }
+    if {![etape "FICHIER DE PROGRAMMATION $die" {run_tool -name {GENERATEPROGRAMMINGFILE}}]} { return 0 }
+    set commun [list -file_name jpeg2dvb_${die} -export_dir $LOT -format {DAT} \
+        -limit_SVF_file_size 0 -limit_SVF_file_by_max_filesize_or_vectors {SIZE} \
+        -svf_max_filesize {1024} -svf_max_vectors {1000} \
+        -trusted_facility_file 1 \
+        -zeroization_likenew_action 0 -zeroization_unrecoverable_action 0]
+    if {![etape "EXPORT DAT $die (fabric + sNVM)" [list export_bitstream_file {*}$commun -trusted_facility_file_components {FABRIC SNVM}]]} {
+        if {![etape "EXPORT DAT $die (fabric seule)" [list export_bitstream_file {*}$commun -trusted_facility_file_components {FABRIC}]]} { return 0 }
+    }
+    if {![file exists $dat]} {
+        journal "ECHEC  export DAT $die : $dat absent (DAT présents : [join [glob -nocomplain -directory $LOT -tails *.dat] {, }])"
+        return 0
+    }
+    journal "DAT    [file tail $dat] : [file size $dat] octets"
+    return 1
+}
+
+#-------------------------------------------------------------------------------
 # chaine : E : composant, table des broches, premier essai de brochage → T :
 #   projet neuf, cœurs, contraintes, synthèse, placement-routage (brochage
 #   suivant si refus dans les 5 premières minutes), timing, collecte → S :
@@ -453,8 +492,9 @@ proc chaine {die table essai} {
         file copy -force $RES/jpeg2dvb_top.pdc $pdc
     }
     if {$retenu >= 0} {
-        etape "TIMING $die" {run_tool -name {VERIFYTIMING}}
+        set timing [etape "TIMING $die" {run_tool -name {VERIFYTIMING}}]
         catch {file copy -force $pdc $RES/jpeg2dvb_top_${nom}.pdc}
+        if {$timing} { exporter_dat $die } else { journal "pas de DAT pour $die : timing en échec" }
     }
     catch {save_project}
     collecte $projet $die
@@ -465,7 +505,7 @@ proc chaine {die table essai} {
 #===============================================================================
 # 1. cœurs du projet de référence exportés en Tcl (paramètres exacts)
 #===============================================================================
-journal "===== jpeg2dvb_libero.tcl 1.2 ====="
+journal "===== jpeg2dvb_libero.tcl 1.3 ====="
 set manque 0
 foreach c $COEURS { if {![file exists $LOT/coeurs/$c.tcl]} { set manque 1 } }
 if {$manque} {
@@ -508,6 +548,11 @@ set essai_100 [chaine MPF100T $table [expr {$essai_050 >= 0 ? $essai_050 : 0}]]
 journal "MPF100T : [expr {$essai_100 >= 0 ? "placé-routé (brochage essai $essai_100)" : "ECHEC, voir le journal et resultats/MPF100T"}]"
 if {$essai_050 >= 0 && $essai_100 >= 0} {
     journal "même brochage sur les deux composants : [expr {$essai_050 == $essai_100 ? {OUI} : {NON}}]"
+}
+
+foreach die {MPF050T MPF100T} {
+    set f $LOT/jpeg2dvb_${die}.dat
+    if {[file exists $f]} { journal "[file tail $f] : [file size $f] octets" } else { journal "[file tail $f] : absent" }
 }
 
 #===============================================================================
