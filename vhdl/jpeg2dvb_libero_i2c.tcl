@@ -59,7 +59,7 @@ file mkdir $RES $TRAVAIL $LOT/coeurs
 # journal : E : texte → T : horodatage → S : écran et resultats-i2c-journal.txt
 #-------------------------------------------------------------------------------
 proc journal {texte} {
-    global RES
+    global LOT RES
     set ligne "[clock format [clock seconds] -format {%Y-%m-%d %H:%M:%S}]  $texte"
     puts $ligne
     set f [open $LOT/resultats-i2c-journal.txt a]
@@ -308,7 +308,7 @@ proc sans_balises {fichier} {
 #   ajouté à resultats-i2c-bilan.txt
 #-------------------------------------------------------------------------------
 proc bilan {die dossier} {
-    global RES RACINE
+    global LOT RES RACINE
     set f [open $LOT/resultats-i2c-bilan.txt a]
     puts $f "================ $die ================"
     set r $dossier/${RACINE}_compile_netlist_resources.rpt
