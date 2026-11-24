@@ -61,7 +61,7 @@ Pour éprouver l'algorithme avant le portage sur FPGA, toute la chaîne traite a
 
 ## Émetteur matériel (FPGA)
 
-La chaîne des étapes 01 à 14 est portée en VHDL au bit près pour un émetteur réel : FPGA Microchip PolarFire MPF050T ou MPF100T, entrée caméra PAL (TVP5150AM1), DVB-S ou DVB-S2, deux programmes (caméra et mire, MCPC), embrouillage BISS-1, sortie I/Q en sigma-delta vers un modulateur ADL5375, de 950 à 2 150 MHz.
+La chaîne des étapes 01 à 14 est portée en VHDL au bit près pour un émetteur réel : FPGA Microchip PolarFire MPF050T ou MPF100T, entrée caméra PAL (TVP5150AM1), DVB-S ou DVB-S2 (variantes DVB-T, DVB-C et GMSK, mode choisi par registre I²C), deux programmes (caméra et mire, MCPC), embrouillage BISS-1, sortie I/Q en sigma-delta vers un modulateur ADL5375, de 950 à 2 150 MHz.
 
 | Dossier | Contenu |
 |---|---|
@@ -89,6 +89,7 @@ La chaîne des étapes 01 à 14 est portée en VHDL au bit près pour un émette
 | 2026-10-19 | Étape 03 (3.1) : suivi pas à pas de la régulation — sélecteurs image et rangée, graphe de chaque image (codes, tampon virtuel d, bits cumulés face au budget cumulé), rangée surlignée, matrice des diviseurs au code de cette rangée, note « image simple » ; calculs et exports inchangés |
 | 2026-11-07 | Pages 12 (2.41) et 13 (2.31) : affichage des schémas en texte corrigé (largeur, défilement) |
 | 2026-11-24 | Émetteur matériel : VHDL 2.27 (DVB-S, DVB-S2, MCPC, caméra PAL, BISS-1), fichiers `.dat` du MPF050T et du MPF100T, carte et programmation par l'ESP32 ; README / LISEZMOI de la racine rétablis (une copie de la documentation de `vhdl/` les avait remplacés le 2026-11-11) |
+| 2026-11-24 | Émetteur matériel : modes DVB-T, DVB-C et GMSK (variantes `j2d_i2c_dvb-*` et intégration Full), registre de mode I²C, bancs associés dans `fpga_test/` ; voir [vhdl/](vhdl/LISEZMOI.md) |
 
 ## Licence
 

@@ -61,7 +61,7 @@ To harden the algorithm before the FPGA port, the whole chain also processes a s
 
 ## Hardware transmitter (FPGA)
 
-The chain of steps 01 to 14 is ported to VHDL, bit for bit, for a real transmitter: Microchip PolarFire MPF050T or MPF100T FPGA, PAL camera input (TVP5150AM1), DVB-S or DVB-S2, two programmes (camera and test pattern, MCPC), BISS-1 scrambling, sigma-delta I/Q output to an ADL5375 modulator, from 950 to 2,150 MHz.
+The chain of steps 01 to 14 is ported to VHDL, bit for bit, for a real transmitter: Microchip PolarFire MPF050T or MPF100T FPGA, PAL camera input (TVP5150AM1), DVB-S or DVB-S2 (DVB-T, DVB-C and GMSK variants, mode selected by an I²C register), two programmes (camera and test pattern, MCPC), BISS-1 scrambling, sigma-delta I/Q output to an ADL5375 modulator, from 950 to 2,150 MHz.
 
 | Folder | Content |
 |---|---|
@@ -89,6 +89,7 @@ The chain of steps 01 to 14 is ported to VHDL, bit for bit, for a real transmitt
 | 2026-10-19 | Step 03 (3.1): step-by-step view of the rate control — picture and row selectors, graph for every picture (scale codes, virtual buffer d, cumulated bits against cumulated budget), selected row highlighted, divisor matrix at the code of that row, « simple picture » note; computation and exports unchanged |
 | 2026-11-07 | Pages 12 (2.41) and 13 (2.31): text diagrams display fixed (width, scrolling) |
 | 2026-11-24 | Hardware transmitter: VHDL 2.27 (DVB-S, DVB-S2, MCPC, PAL camera, BISS-1), `.dat` files of the MPF050T and the MPF100T, board and programming by the ESP32; root README / LISEZMOI restored (a copy of the `vhdl/` documentation had replaced them on 2026-11-11) |
+| 2026-11-24 | Hardware transmitter: DVB-T, DVB-C and GMSK modes (`j2d_i2c_dvb-*` variants and Full integration), I²C mode register, matching testbenches in `fpga_test/`; see [vhdl/](vhdl/README.md) |
 
 ## License
 
