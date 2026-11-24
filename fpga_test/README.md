@@ -3,8 +3,8 @@
   Projet     : JPEG2DVB, portage FPGA (émetteur DVB-S 23 cm)
   Objet      : rôle de chaque fichier du dossier fpga_test/ (bancs de test du VHDL)
   Auteur     : Eric PERRET
-  Date       : 2026-11-16
-  Version    : 1.9
+  Date       : 2026-11-24
+  Version    : 2.0
   Licence    : CC BY-NC 4.0
   Historique : 1.0  2026-10-19  création
                1.1  2026-10-19  banc rc ; état mis à jour (régulation TM5 vérifiée au bit près)
@@ -16,6 +16,7 @@
                1.7  2026-11-12  chaîne MCPC et caméra : mcpc.js, es2.bin, ts_mcpc.bin, cam_mb.bin (bt656.js 1.1), bancs mcpc et cam ; état mis à jour
                1.8  2026-11-12  DVB-S2 : dvbs2.js, s2_ts.bin, s2_sym.bin (banc s2) ; bancs choix, biss, csa_biss ; run_tests.sh 2.0 ; état mis à jour
                1.9  2026-11-16  jpeg2dvb_fpga.vhd 2.25 à 2.27 et jpeg2dvb_ip_sim.vhd 2.2 (quatre cœurs Libero) : banc top ; état mis à jour
+               2.0  2026-11-24  modes DVB-T, DVB-C et GMSK : jeux run_tests_dvbt.sh, run_tests_dvbc.sh, run_tests_gmsk.sh, run_tests_full.sh, modèles Node et bancs associés
 -->
 
 # fpga_test — références et outils des bancs de test VHDL
@@ -111,6 +112,24 @@ Les bancs `tvp`, `tvp_abs` et `tvp_bloc` n'ont pas de fichier : le modèle I²C 
 | `ts_csa_biss.bin` | `csa_in.bin` embrouillé avec le mot de contrôle du numéro BISS 1234 (`node csa.js csa_in.bin ts_csa_biss.bin 123412583412347a 0101`) | `csa_biss` |
 
 Les bancs `choix` (choix automatique), `biss` (tirage du numéro) et `numero` (mire avec numéro, image écrite dans un fichier) n'ont pas de fichier de référence : `choix` et `biss` contrôlent leurs sorties par assertions.
+
+## Références et bancs — modes DVB-T, DVB-C et GMSK
+
+Les bancs de ces modes lisent `../vhdl/j2d_i2c_dvb-t.vhd`, `j2d_i2c_dvb-t-c.vhd`, `j2d_i2c_dvb-t-g.vhd` ou `j2d_i2c_dvb-full.vhd` ; leurs références sont des modèles Node (pas de page didactique refaite). Chaque jeu se lance d'ici : `sh run_tests_dvbt.sh`, `sh run_tests_dvbc.sh`, `sh run_tests_gmsk.sh` ; `sh run_tests_full.sh` rejoue le socle (`run_tests.sh`) et ces trois jeux sur `j2d_i2c_dvb-full.vhd` (`sh run_tests_full.sh gmsk` pour un seul jeu). Le jeu GMSK simule 100 000 cycles de la chaîne complète : environ 7 minutes.
+
+| Fichier | Rôle |
+|---|---|
+| `run_tests_dvbt.sh`, `run_tests_dvbc.sh`, `run_tests_gmsk.sh` | jeux de bancs de chaque mode : module seul comparé à la référence, liaison au sigma-delta, flux TS, contrôle de synthèse |
+| `run_tests_full.sh` | rejoue `run_tests.sh` et les trois jeux ci-dessus sur `../vhdl/j2d_i2c_dvb-full.vhd` (scripts d'origine lus, fichier VHDL et dossier de travail remplacés à la volée) |
+| `dvbt_ref.js`, `dvbc_ref.js`, `gmsk_ref.js` | modèles de référence du DVB-T, du DVB-C (16-QAM, SRRC 0,15) et du GMSK (BT 0,5) ; `vect N DOSSIER` écrit les vecteurs lus par les bancs |
+| `dvbt_mesure.js`, `dvbc_mesure.js`, `gmsk_mesure.js` | mesures par calcul : forme d'onde, largeur occupée, sigma-delta, EVM, erreurs de bit |
+| `gen_pkg.js`, `gen_pkgc.js`, `gen_pkgg.js` | écrivent les paquetages `dvbt_pkg`, `dvbc_pkg`, `gmsk_pkg` dans le fichier VHDL |
+| `dvbt_tb.vhd`, `dvbt_sd_tb.vhd` | bancs `tb_dvbt` (`dvbt_mod` seul) et `tb_dvbt_sd` (TS → `dvbt_mod` → sigma-delta) |
+| `dvbc_tb.vhd`, `dvbc_sd_tb.vhd` | bancs `tb_dvbc` et `tb_dvbc_sd` |
+| `gmsk_tb.vhd`, `gmsk_sd_tb.vhd` | bancs `tb_gmsk` (3 000 échantillons, voie Q normale puis inversée, attentes aléatoires) et `tb_gmsk_sd` (100 000 octets sigma-delta, flux TS à un programme) |
+| `dvbt_verif.js`, `dvbc_verif.js`, `gmsk_verif.js` | recalcul des bits sigma-delta depuis les mots ou octets de la simulation et comparaison ; pour le GMSK, contrôle du TS (PAT à un programme, PCR, cadence) |
+
+Résultats sur `j2d_i2c_dvb-full.vhd` (2026-11-24) : DVB-T 49 280 octets, DVB-C 40 000 octets, GMSK 100 000 octets, sans écart ; `gmsk_mod` 3 000 échantillons identiques ; socle identique sauf le banc `top`, qui échoue de la même façon sur `j2d_i2c_dvb-t.vhd` (référence LVDS d'un seul programme).
 
 ## État au 2026-11-16
 
