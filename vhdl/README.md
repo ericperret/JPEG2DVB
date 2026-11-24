@@ -162,6 +162,74 @@ Pitfalls met:
 
 `jpeg2dvb_ip_sim.vhd` 2.2 (GHDL models of the four cores) is for simulation only.
 
+## DVB-T, DVB-C and GMSK modes (`j2d_i2c_dvb-*` variants, VHDL 2.29 and 2.30)
+
+Three modes are added to DVB-S and DVB-S2 for the 430 to 2 150 MHz band and commercial receivers. The video chain (camera, test pattern, TM5 rate control, TS multiplex) is reused unchanged; only the end of the chain and the bit rate change. Each variant is a single VHDL file with its Libero files, delivered as a zip at the root of `vhdl/`; the common base is `jpeg2dvb_i2c.zip` (I²C slave 2Ah, mode register).
+
+### Mode register (I²C 2Ah, register 00h)
+
+| Value | Mode |
+|---|---|
+| 00h | automatic (`choix_auto`, as in 2.27) |
+| 01h | DVB-S |
+| 02h | DVB-S2 QPSK 1/4 |
+| 04h | DVB-T |
+| 08h | DVB-C |
+| 10h | GMSK |
+
+Bits 6 to 0: mode. Bit 7: Q channel inverted (spectrum inversion), applied live, without resetting the chain, for 04h, 08h and 10h (84h, 88h, 90h). A mode change resets the chain.
+
+### Mode parameters
+
+| | DVB-T | DVB-C | GMSK |
+|---|---|---|---|
+| Modulation | 2K OFDM, 6 MHz channel, QPSK, rate 1/2, guard 1/32 | 16-QAM, J.83 annex A, SRRC α = 0.15 | GMSK BT 0.5, h 0.5 |
+| Symbol rate | — | 1 227 273 symbols/s (13.5 MHz / 11) | 54/11 MBd (80 MHz · 27 / 440) |
+| FEC | convolutional 1/2 + Reed-Solomon, DVB-T interleavers | Reed-Solomon + Forney interleaver | DVB-S chain, FEC 1/2 |
+| Programmes | two (camera, test pattern) | two (camera, test pattern) | one (camera), no MCPC |
+| TS rate | 4 524 064 bit/s | 4 524 064 bit/s (same budgets as DVB-T) | 2 262 032 bit/s |
+| Output | 2 048-point inverse FFT, guard, 35/3 polyphase filter to 80 MS/s | mapper → SRRC filter (16 coefficients, 64 phases) of `dvbt_fir` | phase computed directly at 80 MS/s, no filter |
+
+GMSK reuses the encoder, the multiplexer, the DVB-S chain (`prbs_disp`, `rs_enc`, `interleaver`, `conv_enc`) and the DVB-T quarter-wave memory `T_COS`; it needs no extra memory. DVB-C reuses the filter of `dvbt_fir`. GMSK simulation measurements: 90 % of the power in 3.39 MHz and 99 % in 5.07 MHz; quantisation EVM −44.2 dB, end to end (sigma-delta and 6 MHz low-pass) −36.3 dB, 0 bit errors in 3 980 decisions.
+
+### Units added to the single file
+
+| Module | Function | Testbench |
+|---|---|---|
+| `dvbt_pkg` | DVB-T 2K constants: TPS tables, pilots, twiddles (`fpga_test/gen_pkg.js`) | `tb_dvbt` |
+| `dvbt_binter`, `dvbt_hgen`, `dvbt_sinter` | bit interleaver (126-word blocks), H permutation, symbol interleaver (1 512 words) | `tb_dvbt` |
+| `dvbt_cells`, `dvbt_ifft` | OFDM cells (data, continual and scattered pilots, TPS); 2 048-point inverse FFT, 11 stages, ping-pong memories | `tb_dvbt` |
+| `dvbt_fir`, `dvbt_mod` | 1/32 guard and 35/3 polyphase filter to 80 MS/s; complete DVB-T modulator, (X, Y) words → sigma-delta groups; in DVB-C, bytes → mapper → same filter | `tb_dvbt`, `tb_dvbc` |
+| `dvbc_pkg`, `dvbc_map` | amplitude and SRRC 0.15 coefficients (`gen_pkgc.js`); bytes → 16-QAM symbols, differential coding | `tb_dvbc` |
+| `gmsk_pkg`, `gmsk_mod` | symbol phase and BT 0.5 Gaussian table (`gen_pkgg.js`); GMSK modulator, (X, Y) words → sigma-delta groups | `tb_gmsk` |
+| `esclave_i2c` | I²C slave 2Ah, mode register 00h | `tb_top` |
+
+### Variants, resources and timing (MPF050T-FCVG484, Libero SoC 2026.1)
+
+| Variant | Zip | Modes | 4LUT | LSRAM | Math | Margin at 80 MHz |
+|---|---|---|---|---|---|---|
+| `j2d_i2c_dvb-t` | `j2d_i2c_dvb-t.zip` | 04h | 42 328 (87.92 %) | 154 / 160 | 98 / 150 | +0.500 ns |
+| `j2d_i2c_dvb-t-c` | `j2d_i2c_dvb-t-c.zip` | 04h, 08h | 43 065 (89.45 %) | 154 / 160 | 100 / 150 | −0.068 ns (two sigma-delta paths, `slow_lv_ht` corner) |
+| `j2d_i2c_dvb-t-g` | `j2d_i2c_dvb-t-g.zip` | 04h, 10h | 44 648 (92.74 %) | 154 / 160 | 105 / 150 | +0.480 ns |
+| `j2d_i2c_dvb-full` | `j2d_i2c_dvb-full.zip` | 00h, 01h, 02h, 04h, 08h, 10h | placement running | | | |
+
+Hold: no violation on `dvb-t` and `dvb-t-g`. The programming files are at the root of `vhdl/`: `jpeg2dvb_dvb-t_MPF050T.dat`, `jpeg2dvb_dvb-t-c_MPF050T.dat`, `jpeg2dvb_dvb-t-g_MPF050T.dat`, each with its `.digest`.
+
+`j2d_i2c_dvb-full.tcl` 1.7 places with seed 1 at high effort; if timing fails, it repeats place-and-route and timing with seeds 2 then 3 and exports the `.dat` at the first one that passes. Same pin assignment (`.pdc`) and constraints (`.sdc`) as the other variants.
+
+### Tests
+
+The references of the new modes are Node models written for them (`dvbt_ref.js`, `dvbc_ref.js`, `gmsk_ref.js`) with their measurements (`dvbt_mesure.js`, `dvbc_mesure.js`, `gmsk_mesure.js`). On `j2d_i2c_dvb-full.vhd`: `dvbt_mod` identical to the reference, DVB-T 49 280 bytes with no difference, DVB-C 40 000 bytes with no difference, `gmsk_mod` 3 000 identical samples (Q channel normal and inverted), GMSK chain 100 000 bytes with no difference, single-programme TS conformant; base testbenches identical, except `top` (see below); every module passes `ghdl --synth` without latch. `sh run_tests_full.sh` (in `fpga_test/`) replays these sets on the Full file; each set also has its own script (`run_tests_dvbt.sh`, `run_tests_dvbc.sh`, `run_tests_gmsk.sh`).
+
+The `top` testbench fails identically on `j2d_i2c_dvb-t.vhd` and on the Full (1 I²C error, 358 332 LVDS differences): its LVDS reference is that of the single-programme top-level entity (see "To do").
+
+### Open points
+
+- Libero result of the Full: to be added to the table above.
+- DVB-C: the position of the overbar of the differential coding (J.83 annex A, § 4.6) is confirmed neither by eye nor on the air; if it is the other way round, the 10 / 01 mapping is to be swapped in `dvbc_map` and `dvbc_ref.js`.
+- DVB-T QPSK: acceptance by commercial receivers to be established on the board.
+- Setting of register 00h by the PIC (I²C, E18 and E19) and by the ESP32 web page: not written yet.
+
 ## The board
 
 Printed circuit drawn with [azs-cad](https://github.com/ericperret/pcb-cad), on order (November 2026); no test on a board so far. Layout: video on the left, FPGA in the centre, I/Q and RF on the right, supplies at the top, LEDs and programming at the bottom.
@@ -253,7 +321,7 @@ The first synthesis (2026-11-12, version 2.17, before the cores and without cloc
 5. Bit order inside each LVDS lane (bit 0 sent first): assumption to be checked on the board.
 6. Simulation of the complete chain (camera, MCPC, DVB-S2) is too slow in GHDL: verified block by block; to be checked on the board. LVDS reference of the `top` bench to be regenerated for the MCPC top level.
 7. ✔ Board: supplies, RF stage, PIC, programming by the ESP32, printed circuit (on order). ✔ `.dat` files of both devices (2026-11-23). Remaining: the board test, reading the Transport Stream with a standard decoder (DVB-S, DVB-S2, BISS).
-8. GMSK, DVB-C and DVB-T modes on the MPF100T (the MPF050T is 89 % full in LSRAM and keeps the current version), chosen by the PIC over the I²C link (E18, E19) and set from the ESP32 web page; ÷8 band of the ADF4351 for 430 to 550 MHz.
+8. ✔ DVB-T, DVB-C and GMSK modes written and tested in simulation, each placed alone on the MPF050T (see "DVB-T, DVB-C and GMSK modes"); Full integration (`j2d_i2c_dvb-full`) placement running. Remaining: setting of register 00h by the PIC (I²C link, E18 and E19) and by the ESP32 web page; ÷8 band of the ADF4351 for 430 to 550 MHz; on-board tests with commercial receivers.
 
 Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundaries of the 16-colour pattern must fall on even coordinates; the chroma of each 2 × 2 block is then the palette value. The moving square and the counter already follow this rule.
 
@@ -279,6 +347,7 @@ Note on the test pattern: for the FPGA 4:2:0 chroma to be exact, colour boundari
 | 2026-11-23 | Programming by the ESP32: 11-pin J7 (PIC and JTAG), `esp32/` firmware (`jpeg2dvb_prog.ino` 1.1.1, web page, PIC model detection, frequency writing); `jpeg2dvb_libero.tcl` 1.3: DAT export; `jpeg2dvb_MPF050T.dat` and `jpeg2dvb_MPF100T.dat` at the root of `vhdl/`; flat repository files (`resultats-bilan.txt`, `resultats-journal.txt`) |
 | 2026-11-23 | Board, before ordering the printed circuit: PIC-to-FPGA I²C link (RC4 → E18, RC5 → E19, 4.7 kΩ R64 and R65), single FL1 filter swapped with a soldering iron according to the band |
 | 2026-11-24 | Documentation brought up to date (board, two oscillators, `.dat` files, programming) |
+| 2026-11-24 | DVB-T (`j2d_i2c_dvb-t`, VHDL 2.29), DVB-C (`j2d_i2c_dvb-t-c`) and GMSK (`j2d_i2c_dvb-t-g`) (2.30) modes, each placed alone on the MPF050T; extended mode register 00h (04h DVB-T, 08h DVB-C, 10h GMSK, bit 7: Q channel inverted live); Full integration `j2d_i2c_dvb-full` (2.30) and `j2d_i2c_dvb-full.tcl` 1.7 (place-and-route retried with other seeds); testbenches `run_tests_dvbt.sh`, `run_tests_dvbc.sh`, `run_tests_gmsk.sh`, `run_tests_full.sh` |
 
 ## License
 

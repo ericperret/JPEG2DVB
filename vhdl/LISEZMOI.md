@@ -162,6 +162,74 @@ Pièges rencontrés :
 
 `jpeg2dvb_ip_sim.vhd` 2.2 (modèles GHDL des quatre cœurs) ne sert qu'en simulation.
 
+## Modes DVB-T, DVB-C et GMSK (variantes `j2d_i2c_dvb-*`, VHDL 2.29 et 2.30)
+
+Trois modes s'ajoutent au DVB-S et au DVB-S2 pour la bande 430 à 2 150 MHz et des récepteurs du commerce. La chaîne vidéo (caméra, mire, régulation TM5, multiplex TS) est reprise telle quelle ; seuls la fin de chaîne et le débit changent. Chaque variante est un fichier VHDL unique avec ses fichiers Libero, livré dans un zip à la racine de `vhdl/` ; la base commune est `jpeg2dvb_i2c.zip` (esclave I²C 2Ah, registre de mode).
+
+### Registre de mode (I²C 2Ah, registre 00h)
+
+| Valeur | Mode |
+|---|---|
+| 00h | automatique (`choix_auto`, comme la 2.27) |
+| 01h | DVB-S |
+| 02h | DVB-S2 QPSK 1/4 |
+| 04h | DVB-T |
+| 08h | DVB-C |
+| 10h | GMSK |
+
+Bits 6 à 0 : mode. Bit 7 : voie Q inversée (inversion de spectre), prise en compte à chaud, sans remise à zéro de la chaîne, pour 04h, 08h et 10h (84h, 88h, 90h). Un changement de mode remet la chaîne à zéro.
+
+### Paramètres des modes
+
+| | DVB-T | DVB-C | GMSK |
+|---|---|---|---|
+| Modulation | OFDM 2K, canal 6 MHz, QPSK, taux 1/2, garde 1/32 | 16-QAM, J.83 annexe A, SRRC α = 0,15 | GMSK BT 0,5, h 0,5 |
+| Débit symbole | — | 1 227 273 symboles/s (13,5 MHz / 11) | 54/11 MBd (80 MHz · 27 / 440) |
+| FEC | convolutif 1/2 + Reed-Solomon, entrelaceurs DVB-T | Reed-Solomon + entrelaceur de Forney | chaîne DVB-S, FEC 1/2 |
+| Programmes | deux (caméra, mire) | deux (caméra, mire) | un seul (caméra), pas de MCPC |
+| Débit TS | 4 524 064 bit/s | 4 524 064 bit/s (mêmes budgets que le DVB-T) | 2 262 032 bit/s |
+| Sortie | FFT inverse 2 048 points, garde, filtre polyphasé 35/3 vers 80 MS/s | mapper → filtre SRRC (16 coefficients, 64 phases) de `dvbt_fir` | phase calculée directement à 80 MS/s, sans filtre |
+
+Le GMSK réutilise le codeur, le multiplexeur et la chaîne DVB-S (`prbs_disp`, `rs_enc`, `interleaver`, `conv_enc`) et la mémoire quart d'onde `T_COS` du DVB-T ; il ne demande aucune mémoire de plus. Le DVB-C réutilise le filtre de `dvbt_fir`. Mesures en simulation du GMSK : 90 % de la puissance dans 3,39 MHz et 99 % dans 5,07 MHz ; EVM de quantification −44,2 dB, de bout en bout (sigma-delta et passe-bas 6 MHz) −36,3 dB, 0 erreur de bit sur 3 980 décisions.
+
+### Unités ajoutées au fichier unique
+
+| Module | Fonction | Banc |
+|---|---|---|
+| `dvbt_pkg` | constantes DVB-T 2K : tables TPS, pilotes, twiddles (`fpga_test/gen_pkg.js`) | `tb_dvbt` |
+| `dvbt_binter`, `dvbt_hgen`, `dvbt_sinter` | entrelaceur de bits (blocs de 126 mots), permutation H, entrelaceur de symboles (1 512 mots) | `tb_dvbt` |
+| `dvbt_cells`, `dvbt_ifft` | cellules OFDM (données, pilotes continus et dispersés, TPS) ; FFT inverse 2 048 points, 11 étages, mémoires ping-pong | `tb_dvbt` |
+| `dvbt_fir`, `dvbt_mod` | garde 1/32 et filtre polyphasé 35/3 vers 80 MS/s ; modulateur DVB-T complet, mots (X, Y) → groupes sigma-delta ; en DVB-C, octets → mapper → même filtre | `tb_dvbt`, `tb_dvbc` |
+| `dvbc_pkg`, `dvbc_map` | amplitude et coefficients SRRC 0,15 (`gen_pkgc.js`) ; octets → symboles 16-QAM, codage différentiel | `tb_dvbc` |
+| `gmsk_pkg`, `gmsk_mod` | phase de symbole et table gaussienne BT 0,5 (`gen_pkgg.js`) ; modulateur GMSK, mots (X, Y) → groupes sigma-delta | `tb_gmsk` |
+| `esclave_i2c` | esclave I²C 2Ah, registre de mode 00h | `tb_top` |
+
+### Variantes, ressources et timing (MPF050T-FCVG484, Libero SoC 2026.1)
+
+| Variante | Zip | Modes | 4LUT | LSRAM | Math | Marge à 80 MHz |
+|---|---|---|---|---|---|---|
+| `j2d_i2c_dvb-t` | `j2d_i2c_dvb-t.zip` | 04h | 42 328 (87,92 %) | 154 / 160 | 98 / 150 | +0,500 ns |
+| `j2d_i2c_dvb-t-c` | `j2d_i2c_dvb-t-c.zip` | 04h, 08h | 43 065 (89,45 %) | 154 / 160 | 100 / 150 | −0,068 ns (deux chemins du sigma-delta, coin `slow_lv_ht`) |
+| `j2d_i2c_dvb-t-g` | `j2d_i2c_dvb-t-g.zip` | 04h, 10h | 44 648 (92,74 %) | 154 / 160 | 105 / 150 | +0,480 ns |
+| `j2d_i2c_dvb-full` | `j2d_i2c_dvb-full.zip` | 00h, 01h, 02h, 04h, 08h, 10h | placement en cours | | | |
+
+Maintien : aucune violation sur `dvb-t` et `dvb-t-g`. Les fichiers de programmation sont à la racine de `vhdl/` : `jpeg2dvb_dvb-t_MPF050T.dat`, `jpeg2dvb_dvb-t-c_MPF050T.dat`, `jpeg2dvb_dvb-t-g_MPF050T.dat`, chacun avec son `.digest`.
+
+`j2d_i2c_dvb-full.tcl` 1.7 place avec la graine 1 en effort élevé ; si le timing échoue, il reprend le placement-routage et le timing avec les graines 2 puis 3 et exporte le `.dat` à la première qui passe. Même brochage (`.pdc`) et mêmes contraintes (`.sdc`) que les autres variantes.
+
+### Tests
+
+Les références des nouveaux modes sont des modèles Node écrits pour eux (`dvbt_ref.js`, `dvbc_ref.js`, `gmsk_ref.js`) avec leurs mesures (`dvbt_mesure.js`, `dvbc_mesure.js`, `gmsk_mesure.js`). Sur `j2d_i2c_dvb-full.vhd` : `dvbt_mod` identique à la référence, DVB-T 49 280 octets sans écart, DVB-C 40 000 octets sans écart, `gmsk_mod` 3 000 échantillons identiques (voie Q normale et inversée), chaîne GMSK 100 000 octets sans écart, flux TS à un programme conforme ; bancs du socle identiques, sauf `top` (voir ci-dessous) ; tous les modules passent `ghdl --synth` sans verrou. `sh run_tests_full.sh` (dans `fpga_test/`) rejoue ces jeux sur le fichier Full ; chaque jeu a aussi son script (`run_tests_dvbt.sh`, `run_tests_dvbc.sh`, `run_tests_gmsk.sh`).
+
+Le banc `top` échoue à l'identique sur `j2d_i2c_dvb-t.vhd` et sur le Full (1 erreur I²C, 358 332 écarts LVDS) : sa référence LVDS est celle de l'entité de tête à un seul programme (voir « Reste à faire »).
+
+### Points ouverts
+
+- Résultat Libero du Full : à ajouter au tableau ci-dessus.
+- DVB-C : la position de la barre de surlignage du codage différentiel (J.83 annexe A, § 4.6) n'est confirmée ni à l'œil ni sur l'air ; si elle est inverse, la correspondance 10 / 01 est à échanger dans `dvbc_map` et `dvbc_ref.js`.
+- DVB-T QPSK : acceptation par les récepteurs du commerce à établir sur carte.
+- Réglage du registre 00h par le PIC (I²C, E18 et E19) et par la page web de l'ESP32 : pas encore écrit.
+
 ## La carte
 
 Circuit imprimé dessiné sous [azs-cad](https://github.com/ericperret/pcb-cad), en commande (novembre 2026) ; aucun essai sur carte à ce jour. Disposition : vidéo à gauche, FPGA au centre, I/Q et HF à droite, alimentations en haut, LED et programmation en bas.
@@ -253,7 +321,7 @@ La première synthèse (2026-11-12, version 2.17, avant les cœurs et sans contr
 5. Ordre des bits dans chaque voie LVDS (bit 0 émis en premier) : hypothèse à vérifier sur carte.
 6. Simulation de la chaîne complète (caméra, MCPC, DVB-S2) trop lente en GHDL : vérifiée par blocs ; à contrôler sur carte. Référence LVDS du banc `top` à régénérer pour l'entité de tête MCPC.
 7. ✔ Carte : alimentations, étage HF, PIC, programmation par l'ESP32, circuit imprimé (en commande). ✔ Fichiers `.dat` des deux composants (2026-11-23). Reste l'essai sur carte : lire le Transport Stream avec un décodeur standard (DVB-S, DVB-S2, BISS).
-8. Modes GMSK, DVB-C et DVB-T sur le MPF100T (le MPF050T est plein à 89 % en LSRAM et garde la version actuelle), choisis par le PIC sur la liaison I²C (E18, E19) et réglés depuis la page web de l'ESP32 ; bande ÷8 de l'ADF4351 pour 430 à 550 MHz.
+8. ✔ Modes DVB-T, DVB-C et GMSK écrits et testés en simulation, chacun placé seul sur le MPF050T (voir « Modes DVB-T, DVB-C et GMSK ») ; intégration Full (`j2d_i2c_dvb-full`) en cours de placement. Restent : réglage du registre 00h par le PIC (liaison I²C, E18 et E19) et par la page web de l'ESP32 ; bande ÷8 de l'ADF4351 pour 430 à 550 MHz ; essais sur carte avec des récepteurs du commerce.
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -279,6 +347,7 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-11-23 | Programmation par l'ESP32 : J7 à 11 points (PIC et JTAG), firmware `esp32/` (`jpeg2dvb_prog.ino` 1.1.1, page web, détection du modèle de PIC, écriture de la fréquence) ; `jpeg2dvb_libero.tcl` 1.3 : export DAT ; `jpeg2dvb_MPF050T.dat` et `jpeg2dvb_MPF100T.dat` à la racine de `vhdl/` ; fichiers du dépôt à plat (`resultats-bilan.txt`, `resultats-journal.txt`) |
 | 2026-11-23 | Carte, avant commande du circuit imprimé : liaison I²C du PIC vers le FPGA (RC4 → E18, RC5 → E19, R64 et R65 de 4,7 kΩ), filtre FL1 unique changé au fer selon la bande |
 | 2026-11-24 | Documentation mise à jour (carte, deux oscillateurs, fichiers `.dat`, programmation) |
+| 2026-11-24 | Modes DVB-T (`j2d_i2c_dvb-t`, VHDL 2.29), DVB-C (`j2d_i2c_dvb-t-c`) et GMSK (`j2d_i2c_dvb-t-g`) (2.30), chacun placé seul sur le MPF050T ; registre de mode 00h étendu (04h DVB-T, 08h DVB-C, 10h GMSK, bit 7 : voie Q inversée à chaud) ; intégration Full `j2d_i2c_dvb-full` (2.30) et `j2d_i2c_dvb-full.tcl` 1.7 (reprise du placement sur d'autres graines) ; bancs `run_tests_dvbt.sh`, `run_tests_dvbc.sh`, `run_tests_gmsk.sh`, `run_tests_full.sh` |
 
 ## Licence
 
