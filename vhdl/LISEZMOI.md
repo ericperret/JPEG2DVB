@@ -2,7 +2,7 @@
   Nom      : LISEZMOI.md
   Objet    : portage FPGA de JPEG2DVB (émetteur DVB-S 23 cm), VHDL-2008
   Auteur   : Eric PERRET
-  Date     : 2026-11-16
+  Date     : 2026-11-24
   Licence  : CC BY-NC 4.0
 -->
 
@@ -13,6 +13,8 @@
 Modules VHDL de l'émetteur DVB-S / DVB-S2 23 cm (FPGA Microchip PolarFire MPF050T ou MPF100T, boîtier FCVG484, même carte ; cahier des charges v0.4). Tous les modules sont dans un seul fichier, `jpeg2dvb_fpga.vhd` (synthèse), et tous les bancs dans `jpeg2dvb_fpga_tb.vhd` (simulation). Chaque module reproduit **au bit près** une étape de JPEG2DVB 2.x ; chaque banc de test GHDL lit les fichiers produits par JPEG2DVB (dossier [`fpga_test/`](../fpga_test/)) et compare la sortie du module octet par octet, ou échantillon par échantillon.
 
 VHDL-2008 synthétisable, bibliothèque `ieee` seule, interfaces en flux `valid` / `ready` (contrôle de flux éprouvé par des trous aléatoires dans tous les bancs).
+
+Fichiers de programmation prêts : [`jpeg2dvb_MPF050T.dat`](jpeg2dvb_MPF050T.dat) et [`jpeg2dvb_MPF100T.dat`](jpeg2dvb_MPF100T.dat) (VHDL 2.27), chargés dans le FPGA par l'ESP32 de programmation ([`esp32/`](esp32/LISEZMOI.md)) ou par un FlashPro sur J4. La carte est décrite plus bas (« La carte »).
 
 ## Modules
 
@@ -77,9 +79,9 @@ Vérification : `ts_mux` en mode MCPC est identique au bit près à `mcpc.js` (b
 
 ## Entité de tête de la carte (`jpeg2dvb_top`)
 
-Horloges : oscillateur MEMS 50 MHz (DSC1001) → PLL `PF_CCC_SYS` (80 MHz) → `PF_IOD_TX_CCC_IOD` (× 4 : 320 MHz pour les sérialiseurs, et 80 MHz `TX_CLK_G` sur lequel tourne toute la logique). Second PLL `PF_CCC_TVP` : 50 MHz → 14,318 MHz vers XTAL1 du décodeur (14,318182 MHz demandés ; le configurateur n'accepte que trois décimales, écart de 12,7 ppm). Remise à zéro tenue tant que les trois PLL ne sont pas verrouillés. Sorties LVDS I et Q à 640 Mbit/s (sérialiseurs 8:1) : les bits des deux voies sont entrelacés sur le bus `TXD_DATA` du cœur (bit k de la voie n sur `TXD_DATA(2k + n)`, voie I = 0, voie Q = 1).
+Horloges : oscillateur MEMS 50 MHz IC2 (DSC1001) → PLL `PF_CCC_SYS` (80 MHz) → `PF_IOD_TX_CCC_IOD` (× 4 : 320 MHz pour les sérialiseurs, et 80 MHz `TX_CLK_G` sur lequel tourne toute la logique). Second PLL `PF_CCC_TVP` : 50 MHz → 14,318 MHz vers XTAL1 du décodeur (14,318182 MHz demandés ; le configurateur n'accepte que trois décimales, écart de 12,7 ppm). Remise à zéro tenue tant que les trois PLL ne sont pas verrouillés. Sorties LVDS I et Q à 640 Mbit/s (sérialiseurs 8:1) : les bits des deux voies sont entrelacés sur le bus `TXD_DATA` du cœur (bit k de la voie n sur `TXD_DATA(2k + n)`, voie I = 0, voie Q = 1).
 
-Aucun microcontrôleur ni registre : réglages fixes, 5 MS/s, FEC 1/2. `choix_auto` sonde les deux entrées vidéo (AIP1A puis AIP1B, 600 ms chacune) dès que le décodeur est identifié, puis toutes les minutes ; le mode précédent est tenu pendant le sondage :
+Aucun registre dans la version 2.27 : réglages fixes, 5 MS/s, FEC 1/2 (la liaison I²C du PIC vers le FPGA existe sur la carte, billes E18 et E19, mais le VHDL ne l'utilise pas encore). `choix_auto` sonde les deux entrées vidéo (AIP1A puis AIP1B, 600 ms chacune) dès que le décodeur est identifié, puis toutes les minutes ; le mode précédent est tenu pendant le sondage :
 
 | Entrées verrouillées | Mode | Programme 1 | Programme 2 |
 |---|---|---|---|
@@ -110,20 +112,28 @@ Rangé par quadrant, boîtier vu de dessus, bille A1 en haut à gauche. Disposit
 | `led_pll`, `led_tvp`, `led_video` | R3, R4, T1 | 4 | LVCMOS33 |
 | `sd_i_p` / `sd_i_n` | B19 / B20 | 2 | LVDS33 |
 | `sd_q_p` / `sd_q_n` | A20 / A21 | 2 | LVDS33 |
+| I²C du PIC : SCL / SDA (câblé, absent du `.pdc` 1.0) | E18 / E19 | 2 | LVCMOS33 |
 
 Écarts imposés par le boîtier : seules les billes du haut et du côté gauche acceptent le 3,3 V ; les sorties I/Q sont donc en haut à droite, les LED en bas du côté gauche, et le JTAG reste sur ses billes fixes (F6 à H10). Libero accepte ce brochage sans erreur ni avertissement sur les deux composants.
 
-Le schéma de ce qui arrive au FPGA et de ce qui en sort (format azs-cad) est dans [`carte/`](../carte/), avec la table des 484 billes.
+Le schéma de ce qui arrive au FPGA et de ce qui en sort (format azs-cad, 2026-11-16) est dans [`captures/`](../captures/LISEZMOI.md), avec la table des 484 billes ; le projet azs-cad de la carte complète n'est pas dans le dépôt.
 
-### Chaîne Libero sans intervention (`jpeg2dvb_libero.tcl` 1.2)
+### Chaîne Libero sans intervention (`jpeg2dvb_libero.tcl` 1.3)
 
-Le dossier `vhdl/` est le lot : `jpeg2dvb_libero.tcl`, `jpeg2dvb_fpga.vhd` (fichier source unique, `horloges` et `sortie_lvds` compris), `jpeg2dvb_top.sdc`, `jpeg2dvb_top.pdc`, `sonde.vhd` et `coeurs/` (les quatre cœurs exportés en Tcl). Le script (Libero SoC 2026.1, mode script, fenêtre Libero fermée) écrit tous les réglages, sans réglage par défaut :
+Le lot est un dossier du PC Libero (`~/dvb_lot`) qui reçoit `jpeg2dvb_libero.tcl`, `jpeg2dvb_fpga.vhd` (fichier source unique, `horloges` et `sortie_lvds` compris), `jpeg2dvb_top.sdc`, `jpeg2dvb_top.pdc` et `sonde.vhd`, tous pris dans `vhdl/`. Le projet Libero de référence (`~/dvb`, variable `REF` du script) n'est que lu. Le script (Libero SoC 2026.1, mode script, fenêtre Libero fermée) écrit tous les réglages, sans réglage par défaut :
 
-1. cœurs : `coeurs/*.tcl` ; s'ils manquent, ils sont exportés d'un projet de référence (variable `REF` du script) ;
+1. cœurs : `coeurs/*.tcl` du lot ; s'ils manquent, ils sont exportés du projet de référence ;
 2. table des broches du boîtier, obtenue de Libero par le design `sonde.vhd` ;
 3. brochage : `jpeg2dvb_top.pdc` du lot, sinon brochage calculé ;
-4. pour le MPF050T puis le MPF100T : projet neuf, VHDL-2008, mode bloc désactivé, cœurs, contraintes (`jpeg2dvb_top.sdc` et horloges des PLL par `derive_constraints_sdc`), synthèse, placement-routage, timing ;
+4. pour le MPF050T puis le MPF100T : projet neuf, VHDL-2008, mode bloc désactivé, cœurs, contraintes (`jpeg2dvb_top.sdc` et horloges des PLL par `derive_constraints_sdc`), synthèse, placement-routage, timing ; si le timing passe : données de programmation, initialisation des mémoires et fichier DAT (fabric et sNVM, sinon fabric seule) `jpeg2dvb_MPF050T.dat` ou `jpeg2dvb_MPF100T.dat` à la racine du lot ;
 5. `resultats/bilan.txt`, `resultats/journal.txt` et l'archive `jpeg2dvb_resultats.tgz`.
+
+Dans le dépôt, tout est à plat dans `vhdl/` : les deux `.dat` et leurs `.digest`, `resultats-bilan.txt`, `resultats-journal.txt`, `jpeg2dvb_resultats.tgz` et `jpeg2dvb_libero.log`.
+
+| Fichier | Octets | Composant |
+|---|---|---|
+| `jpeg2dvb_MPF050T.dat` | 1 631 762 | MPF050T-FCVG484 |
+| `jpeg2dvb_MPF100T.dat` | 3 528 818 | MPF100T-FCVG484 |
 
 Lancement, dans le dossier du lot, une seule fois et au premier plan (deux lancements simultanés dans le même dossier se détruisent) :
 
@@ -151,6 +161,28 @@ Pièges rencontrés :
 - sans contraintes d'horloge, le rapport de timing affiche « N/A » et « aucune violation » ne prouve rien.
 
 `jpeg2dvb_ip_sim.vhd` 2.2 (modèles GHDL des quatre cœurs) ne sert qu'en simulation.
+
+## La carte
+
+Circuit imprimé dessiné sous [azs-cad](https://github.com/ericperret/pcb-cad), en commande (novembre 2026) ; aucun essai sur carte à ce jour. Disposition : vidéo à gauche, FPGA au centre, I/Q et HF à droite, alimentations en haut, LED et programmation en bas.
+
+| Bloc | Composants |
+|---|---|
+| Alimentation | J5 : 5 V ; quatre convertisseurs TLV62569 (U11 à U14) : +3V3, puis +2V5, +1V8 et +1V0 tirés du +3V3 ; U5 (ADM7150) : empreinte gardée, **non monté**, avec C62, C63 et C64 |
+| Vidéo | J2, J3 (RCA) → U1 TVP5150AM1 → FPGA (BT.656, I²C du décodeur) |
+| FPGA | IC1 MPF050T ou MPF100T (FCVG484), IC2 oscillateur DSC1001 50 MHz |
+| I/Q | sorties sigma-delta LVDS → filtre de Butterworth d'ordre 5, 400 Ω différentiel, plat jusqu'à 5 MHz |
+| HF | U2 ADL5375 (modulateur I/Q, OL 400 MHz à 6 GHz) → U4 ADL5611 → FL1 → J6 (SMA) |
+| Oscillateur local | U3 ADF4351, référence IC3 DSC1001 50 MHz (par R45), R = 2, PFD 25 MHz, MOD 25, sorties ÷2 et ÷4 |
+| PIC | U6 PIC16F18323 (ou modèle broche à broche compatible, F ou LF) : programme l'ADF4351 à chaque démarrage avec la fréquence gardée dans son EEPROM ; liaison I²C vers le FPGA (RC4 → E18 SCL, RC5 → E19 SDA, rappels R64 et R65 de 4,7 kΩ au +3V3) |
+| Programmation | J7 (11 points) : ESP32 M5Stack CoreS3 qui programme le PIC (ICSP) et le FPGA (JTAG-DirectC) par une page web en Wi-Fi, voir [`esp32/`](esp32/LISEZMOI.md) ; J4 : FlashPro, en secours |
+
+Filtre de sortie FL1 : un seul filtre Mini-Circuits LFCN (boîtier FV1206), changé au fer à souder selon la bande, place libre autour et sérigraphie sur la carte :
+
+| Bande | FL1 |
+|---|---|
+| 950 à 2 150 MHz (23 cm, bande satellite) | LFCN-2250 (monté d'origine) |
+| 70 cm | LFCN-490 |
 
 ## Lancer les tests
 
@@ -208,7 +240,7 @@ Libero SoC 2026.1, `jpeg2dvb_fpga.vhd` 2.26, brochage `jpeg2dvb_top.pdc` 1.0, bo
 | Marge de maintien, pire cas | +0,072 ns | +0,067 ns |
 | Violations | aucune | aucune |
 
-**Le MPF050T est possible**, avec le même brochage que le MPF100T (fichiers de brochage identiques). Deux réserves : le MPF050T est presque plein en mémoire (17 blocs LSRAM libres), et la marge de timing est mince sur les deux composants : elle se revérifie à chaque version du VHDL. Chiffres complets : `resultats/bilan.txt` et `resultats/journal.txt`.
+**Le MPF050T est possible**, avec le même brochage que le MPF100T (fichiers de brochage identiques). Deux réserves : le MPF050T est presque plein en mémoire (17 blocs LSRAM libres), et la marge de timing est mince sur les deux composants : elle se revérifie à chaque version du VHDL. Chiffres complets : `resultats-bilan.txt` et `resultats-journal.txt`.
 
 La première synthèse (2026-11-12, version 2.17, avant les cœurs et sans contrainte d'horloge) donnait 30 217 LUT, 131 LSRAM, 55 multiplieurs et 75 MHz estimés ; `mire_gen` et `vlc_enc` ont été découpés en étages depuis (2.19).
 
@@ -216,11 +248,12 @@ La première synthèse (2026-11-12, version 2.17, avant les cœurs et sans contr
 
 1. ✔ Chaîne complète du .vhd (versions 2.19 à 2.27) : DVB-S, DVB-S2, BISS, choix automatique, MCPC, caméra ; suite de tests complète et synthèse GHDL OK sur la 2.24 ; les versions 2.25 à 2.27 ne touchent que `horloges`, `sortie_lvds`, `jpeg2dvb_top` et des commentaires.
 2. ✔ Libero (2026-11-16) : quatre cœurs, chaîne en mode script, placement-routage et timing à 80 MHz sur MPF050T et MPF100T, sans violation.
-3. ✔ Brochage par quadrant (`jpeg2dvb_top.pdc` 1.0) et schéma des entrées-sorties du FPGA ([`carte/`](../carte/)).
+3. ✔ Brochage par quadrant (`jpeg2dvb_top.pdc` 1.0) et schéma des entrées-sorties du FPGA ([`captures/`](../captures/LISEZMOI.md)).
 4. Délais d'entrée de la vidéo : le temps d'arrivée de `tvp_d[7:0]` par rapport à `tvp_sclk` (27 MHz) n'est pas déclaré dans `jpeg2dvb_top.sdc` ; à ajouter d'après la fiche du TVP5150AM1, puis relancer la chaîne Libero.
 5. Ordre des bits dans chaque voie LVDS (bit 0 émis en premier) : hypothèse à vérifier sur carte.
 6. Simulation de la chaîne complète (caméra, MCPC, DVB-S2) trop lente en GHDL : vérifiée par blocs ; à contrôler sur carte. Référence LVDS du banc `top` à régénérer pour l'entité de tête MCPC.
-7. Carte : alimentations, étage HF, circuit imprimé ; aucun essai sur carte à ce jour. Test final : lire le Transport Stream avec un décodeur standard (DVB-S, DVB-S2, BISS).
+7. ✔ Carte : alimentations, étage HF, PIC, programmation par l'ESP32, circuit imprimé (en commande). ✔ Fichiers `.dat` des deux composants (2026-11-23). Reste l'essai sur carte : lire le Transport Stream avec un décodeur standard (DVB-S, DVB-S2, BISS).
+8. Modes GMSK, DVB-C et DVB-T sur le MPF100T (le MPF050T est plein à 89 % en LSRAM et garde la version actuelle), choisis par le PIC sur la liaison I²C (E18, E19) et réglés depuis la page web de l'ESP32 ; bande ÷8 de l'ADF4351 pour 430 à 550 MHz.
 
 Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les frontières de couleur de la mire 16 couleurs doivent tomber sur des coordonnées paires ; la chrominance de chaque bloc 2 × 2 est alors celle de la palette. Le carré mobile et le compteur respectent déjà cette règle.
 
@@ -241,7 +274,11 @@ Remarque sur la mire : pour que la chrominance 4:2:0 du FPGA soit exacte, les fr
 | 2026-11-12 | Première synthèse Libero de `jpeg2dvb_top` sur le MPF050T (131 LSRAM sur 160, 55 DSP sur 150, 75 MHz estimés pour 80 MHz exigés). `jpeg2dvb_fpga.vhd` 2.18 : `horloges` et `sortie_lvds` dans le fichier unique, `jpeg2dvb_ip_libero.vhd` supprimé, `jpeg2dvb_ip_sim.vhd` 2.0 (modèles des trois cœurs Libero) ; documentation mise à jour |
 | 2026-11-12 | Réglages fixes (5 MS/s, FEC 1/2) et choix automatique (`choix_auto`), `regs_i2c` supprimé (2.20) ; DVB-S2 QPSK 1/4 (`dvbs2_tx`, 2.21) ; BISS-1 dans la chaîne, `tirage_biss`, numéro sur la mire (2.22) ; trois corrections de `dvbs2_tx` (banc `tb_s2` identique à `dvbs2.js`, 2.23) ; `codeur` 720 × 576 : `vlc_enc` recevait 22 colonnes au lieu de 45, image caméra corrigée (2.24) ; timing : `mire_gen` et `vlc_enc` en étages (2.19) ; cible MPF100T ; `run_tests.sh` 2.0 |
 | 2026-11-13 | Cœurs Libero tels que générés (2.25) : `PF_CCC_SYS` (80 MHz) alimente `PF_IOD_TX_CCC_IOD` (320 MHz, 80 MHz, alignement des horloges), bus `TXD_DATA` de 16 bits ; bits des voies I et Q entrelacés sur `TXD_DATA` (2.26) ; `jpeg2dvb_ip_sim.vhd` 2.2 (quatre cœurs) |
-| 2026-11-16 | Chaîne Libero en mode script (`jpeg2dvb_libero.tcl` 1.2, `sonde.vhd`, `coeurs/`), `jpeg2dvb_top.sdc` 1.1, brochage par quadrant `jpeg2dvb_top.pdc` 1.0 ; boîtier FCVG484, tout en 3,3 V (LVCMOS33, LVDS33) ; placement-routage et timing sans violation sur MPF050T et MPF100T avec le même brochage ; schéma des entrées-sorties du FPGA dans `carte/` ; `jpeg2dvb_fpga.vhd` 2.27 (commentaires seuls) ; `jpeg2dvb_ip_libero.vhd` retiré ; documentation mise à jour |
+| 2026-11-16 | Chaîne Libero en mode script (`jpeg2dvb_libero.tcl` 1.2, `sonde.vhd`, `coeurs/`), `jpeg2dvb_top.sdc` 1.1, brochage par quadrant `jpeg2dvb_top.pdc` 1.0 ; boîtier FCVG484, tout en 3,3 V (LVCMOS33, LVDS33) ; placement-routage et timing sans violation sur MPF050T et MPF100T avec le même brochage ; schéma des entrées-sorties du FPGA dans `carte/` (aujourd'hui `captures/`) ; `jpeg2dvb_fpga.vhd` 2.27 (commentaires seuls) ; `jpeg2dvb_ip_libero.vhd` retiré ; documentation mise à jour |
+| 2026-11-20 | Carte : alimentations par quatre TLV62569 (+3V3, +2V5, +1V8, +1V0), U5 (ADM7150) laissé en empreinte, non monté |
+| 2026-11-23 | Programmation par l'ESP32 : J7 à 11 points (PIC et JTAG), firmware `esp32/` (`jpeg2dvb_prog.ino` 1.1.1, page web, détection du modèle de PIC, écriture de la fréquence) ; `jpeg2dvb_libero.tcl` 1.3 : export DAT ; `jpeg2dvb_MPF050T.dat` et `jpeg2dvb_MPF100T.dat` à la racine de `vhdl/` ; fichiers du dépôt à plat (`resultats-bilan.txt`, `resultats-journal.txt`) |
+| 2026-11-23 | Carte, avant commande du circuit imprimé : liaison I²C du PIC vers le FPGA (RC4 → E18, RC5 → E19, R64 et R65 de 4,7 kΩ), filtre FL1 unique changé au fer selon la bande |
+| 2026-11-24 | Documentation mise à jour (carte, deux oscillateurs, fichiers `.dat`, programmation) |
 
 ## Licence
 
