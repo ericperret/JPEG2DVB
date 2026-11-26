@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page16-reception-gmsk.html
+  Projet     : JPEG2DVB, récepteur du mode GMSK (chantier R1)
+  Objet      : Page 16 - Réception GMSK : de la FI 10,7 MHz au Transport Stream
+  Auteur     : Eric PERRET
+  Date       : 2026-11-26
+  Version    : 1.1
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Principe   : émetteur simulé identique au mode 10h de j2d_i2c_dvb-full.vhd 2.30
+               (PRBS, RS(204,188), entrelaceur I = 12 / M = 17, convolutif K = 7
+               171 / 133 taux 1/2, GMSK BT 0,5 h 0,5 à 54/11 MBd, impulsion de
+               gmsk_ref.js), canal (Eb/N0, écart de fréquence, écart d'horloge,
+               filtre FI de Butterworth ±2 MHz, inversion de spectre), FI réelle
+               10,7 MHz, CAN 12 bits à 42,8 MS/s ; récepteur : descente fe/4,
+               décimation 2, filtre adapté C0 de Laurent, estimation de fréquence
+               par la raie de (−1)^k·y_k², boucle de phase, rythme de Gardner,
+               égaliseur fractionné T/2, Viterbi conjoint (convolutif + codage
+               différentiel du GMSK, 128 états), synchronisation et polarité,
+               désentrelacement, Reed-Solomon, dérandomisation ; en comparaison
+               (simulation) : décodage par bloc, BCJR max-log conjoint, RS avec
+               effacements (GMD), itérations BCJR ↔ RS
+  Historique : 1.0  2026-11-26  création
+               1.1  2026-11-26  R1b : décodage par bloc (effacements, itératif) et
+                     comparaison des trois décodages sur la courbe de seuil, avec la
+                     limite de Shannon ; RS erreurs et effacements ; polarité et
+                     super-trame par vote sur 16 synchronisations ; suivi de
+                     synchronisation par le RS ; tableaux extensibles (5 000 paquets)
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 16 - Réception GMSK</title>
+    <style>
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        :root { color-scheme: dark; }
+        h1 { color: #dfe7ec; text-align: center; letter-spacing: -.3px; }
+        h3 { color: #dfe7ec; margin-top: 0; }
+        .description { max-width: 1100px; margin: 0 auto 20px; background: #18222a; padding: 15px; border-radius: 8px; border-left: 4px solid #5cc8d6; line-height: 1.55; }
+        .description code { color: #5cc8d6; }
+        .pipeline { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; font-size: 13px; flex-wrap: wrap; }
+        .pipeline-step { background: #26343e; padding: 7px 12px; border-radius: 5px; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-step.active { background: #f0a63a; color: #111; }
+        .pipeline-arrow { color: #f0a63a; font-size: 18px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        canvas { border: 2px solid #26343e; }
+        .controls { margin-top: 10px; }
+        button { background: #18222a; color: #dfe7ec; border: 1px solid #33434e; border-radius: 6px; padding: 9px 16px; margin: 4px; cursor: pointer; font-family: inherit; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { border-color: #f0a63a; color: #f0a63a; }
+        button:disabled { color: #5a6b75; border-color: #26343e; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        input, select { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; padding: 4px 6px; font-size: 13px; }
+        input[type="number"] { width: 78px; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px 14px; border-radius: 5px; margin-top: 15px; font-size: 13px; text-align: left; line-height: 1.7; }
+        .stats code { color: #5cc8d6; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .param-ligne { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; margin: 0 auto 12px; font-size: 13px; color: #a9b7bf; max-width: 1100px; }
+        .param-ligne label { white-space: nowrap; }
+        .param-titre { color: #f0a63a; font-weight: 600; }
+        .barre { max-width: 1100px; height: 6px; background: #26343e; border-radius: 3px; margin: 6px auto 4px; overflow: hidden; }
+        .barre div { height: 100%; width: 0; background: #f0a63a; }
+        #etat { max-width: 1100px; margin: 0 auto 14px; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #8fa1ad; min-height: 15px; }
+        .seuil-box { max-width: 1100px; margin: 20px auto; background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        table.info-table { border-collapse: collapse; font-size: 12px; margin: 10px auto; }
+        table.info-table th, table.info-table td { border: 1px solid #33434e; padding: 4px 9px; text-align: center; }
+        table.info-table th { background: #26343e; }
+        /* barre de navigation de la chaîne JPEG2DVB */
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #141c22; border: 1px solid #26343e; border-radius: 8px; font: 14px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #dfe7ec; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { color: #f0a63a; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; letter-spacing: -1px; color: #f0a63a; padding: 0 12px 0 0; border-right: 1px solid #26343e; border-radius: 0; }
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; white-space: nowrap; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page15-reception.html">◀ 15 · Réception DVB-S</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 16 / 16</span><span class="j2d-ver">v1.1</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception DVB-S"></a><a href="page16-reception-gmsk.html" title="16 · Réception GMSK" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+    <h1>📡 Page 16 - Réception GMSK depuis la FI 10,7 MHz</h1>
+
+    <div class="description">
+        <strong>Fonction :</strong> récepteur du mode GMSK de l'émetteur (registre 00h = 10h), à partir d'une FI de 10,7 MHz large de ±2 MHz.<br>
+        <strong>Émetteur simulé :</strong> chaîne DVB-S du mode 10h (PRBS, RS(204,188), entrelaceur I = 12 / M = 17, convolutif K = 7 171 / 133 taux 1/2),
+        GMSK BT 0,5, h 0,5, 54/11 MBd (impulsion de <code>gmsk_ref.js</code>, phase continue), canal réglable, FI réelle 10,7 MHz, CAN 12 bits à 42,8 MS/s.<br>
+        <strong>Récepteur :</strong> descente fe/4 et décimation 2 (21,4 MS/s), filtre adapté C0 de Laurent, estimation de fréquence en rythme libre
+        (raie de (−1)<sup>k</sup>·y<sub>k</sub>², portée ±982 kHz), boucle de phase, rythme de Gardner, égaliseur fractionné T/2, Viterbi conjoint
+        du codeur convolutif et du codage différentiel propre au GMSK (128 états, sans perte de décodage différentiel), synchronisation avec détection
+        automatique de l'inversion de spectre, désentrelacement, Reed-Solomon, dérandomisation.<br>
+        <strong>Décodage par bloc (R1b, comparaison en simulation) :</strong> BCJR max-log sur le même treillis conjoint ; <b>effacements</b> : RS en erreurs seules,
+        puis effacement des 2 à 10 octets les moins fiables (GMD, accepté si 2e + ρ ≤ 12) ; <b>itératif</b> : les mots RS décodés et les octets de synchronisation
+        deviennent des bits connus pour une nouvelle passe du BCJR, qui redécode leur voisinage, puis RS de nouveau.<br>
+        <strong>Entrée :</strong> FI simulée, ou FI enregistrée (<code>.s16</code> : entiers 16 bits signés, réels, 42,8 MS/s) —
+        <strong>Sortie :</strong> Transport Stream (<code>.ts</code>), comparé paquet par paquet au TS émis ; taux d'erreur en fonction de Eb/N0
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step done">FI 10,7 MHz</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">CAN 42,8 MS/s</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">fe/4, ÷2</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Fréquence</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Filtre C0</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Phase, rythme</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Égaliseur</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Viterbi conjoint</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Désentrelacement</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">RS</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PRBS</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">TS</span>
+    </div>
+
+    <div class="param-ligne">
+        <span class="param-titre">Canal simulé</span>
+        <label>Eb/N0 <input type="number" id="ebn0" value="6" step="0.5" min="-2" max="40"> dB</label>
+        <label>Écart de fréquence <input type="number" id="df" value="30" step="1" min="-900" max="900"> kHz</label>
+        <label>Écart d'horloge <input type="number" id="ppm" value="50" step="1" min="-200" max="200"> ppm</label>
+        <label>Filtre FI ± <input type="number" id="bfi" value="2" step="0.1" min="0.5" max="10"> MHz</label>
+        <label>ordre <select id="ordre"><option>2</option><option selected>4</option><option>6</option><option>8</option></select></label>
+        <label><input type="checkbox" id="inv"> inversion de spectre</label>
+    </div>
+    <div class="param-ligne">
+        <span class="param-titre">Essai</span>
+        <label>Paquets émis <input type="number" id="nPk" value="400" step="50" min="60" max="5000"></label>
+        <label>Décodage <select id="mode"><option value="0" selected>classique</option><option value="1">effacements</option><option value="2">itératif</option></select></label>
+        <label>passes <input type="number" id="nPasses" value="4" step="1" min="2" max="8"></label>
+        <label>Graine <input type="number" id="graine" value="1" step="1" min="1" max="999999"></label>
+        <span id="srcInfo">Source : flux d'essai</span>
+        <button onclick="document.getElementById('tsInput').click()">📁 TS source</button>
+        <input type="file" id="tsInput" accept=".ts,.j2d,.json" onchange="chargerSource(this.files)">
+        <button id="btnSrcEssai" onclick="sourceEssai()" disabled>↺ flux d'essai</button>
+    </div>
+    <div class="barre"><div id="barre"></div></div>
+    <div id="etat"></div>
+
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Spectre de la FI</h3>
+            <canvas id="canvasInput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnRecevoir" onclick="recevoir()">⚙️ Recevoir</button>
+                <button id="btnExportFI" onclick="exporterFI()">💾 FI .s16</button>
+                <button onclick="document.getElementById('fiInput').click()">📁 FI .s16</button>
+                <input type="file" id="fiInput" accept=".s16" onchange="chargerFI(this.files)">
+            </div>
+            <div class="info">CAN 12 bits, 42,8 MS/s : 0 à 21,4 MHz ; bande ±2 MHz autour de 10,7 MHz</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Sortie de l'égaliseur</h3>
+            <canvas id="canvasProcess" width="352" height="288"></canvas>
+            <div class="info">Observation d<sub>k</sub> ≈ c<sub>k</sub> = ±1 (axe réel) aux instants symbole, après dérotation (−j)<sup>k</sup></div>
+        </div>
+        <div class="canvas-box">
+            <h3>3. SORTIE - Transport Stream</h3>
+            <canvas id="canvasOutput" width="352" height="288"></canvas>
+            <div class="controls">
+                <button id="btnExportTS" onclick="exportTS()" disabled>💾 .ts reçu</button>
+            </div>
+            <div class="info">Vert : identique au TS émis, rouge : différent ou non corrigible</div>
+        </div>
+    </div>
+
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none;"></div>
+    </div>
+
+    <div class="seuil-box">
+        <h3>Taux d'erreur en fonction de Eb/N0</h3>
+        <div class="param-ligne">
+            <label>De <input type="number" id="sDe" value="1.5" step="0.25"> dB</label>
+            <label>à <input type="number" id="sA" value="3.5" step="0.25"> dB</label>
+            <label>pas <input type="number" id="sPas" value="0.25" step="0.25" min="0.25"> dB</label>
+            <label>paquets par point <input type="number" id="sNp" value="300" step="50" min="100"></label>
+            <button id="btnSeuil" onclick="courbeSeuil()">📈 Mesurer</button>
+        </div>
+        <canvas id="canvasSeuil" width="760" height="380"></canvas>
+        <div class="info">Écarts de fréquence, d'horloge, filtre FI et inversion : réglages du canal simulé ci-dessus ; passes de l'itératif : réglage « passes ».
+            Pour chaque point, les trois décodages traitent les mêmes observations. Eb/N0 rapporté au bit utile du TS (Es/N0 = Eb/N0 − 3,36 dB).
+            Limite de Shannon pour ce rendement (0,46) en modulation binaire : 0,0 dB.</div>
+        <div id="seuilTable"></div>
+    </div>
+
+<script>
+// ============================================================
+// NOYAU R1 : émetteur GMSK simulé (FI 10,7 MHz) et récepteur
+// ============================================================
+'use strict';
+const R1 = (function () {
+    const FS = 42.8e6, FI = 10.7e6, RS = 54e6 / 11, FS2 = FS / 2;
+    const BT = 0.5, L = 4;
+    const G1 = 0b1111001, G2 = 0b1011011;
+    const PAR = (function () { const p = new Uint8Array(128); for (let v = 1; v < 128; v++) { p[v] = (v & 1) ^ p[v >> 1]; } return p; })();
+
+    // ---------- générateur pseudo-aléatoire reproductible ----------
+    function Alea(graine) { this.s = (graine >>> 0) || 1; this.g = null; }
+    Alea.prototype.u = function () { let x = this.s; x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; this.s = x; return (x + 0.5) / 4294967296; };
+    Alea.prototype.gauss = function () {
+        if (this.g !== null) { const v = this.g; this.g = null; return v; }
+        const r = Math.sqrt(-2 * Math.log(this.u())), a = 2 * Math.PI * this.u();
+        this.g = r * Math.sin(a); return r * Math.cos(a);
+    };
+
+    // ---------- impulsion GMSK : Q(τ), intégrale normalisée de l'impulsion de fréquence (gmsk_ref.js) ----------
+    const QT = (function () {
+        const sg = Math.sqrt(Math.log(2)) / (2 * Math.PI * BT), M = 4096, dt = 1 / M, n = L * M;
+        const c = new Float64Array(n + 1);
+        for (let i = 0; i < n; i++) {
+            const t = -2 + (i + 0.5) * dt; let s = 0; const K = 64;
+            for (let k = 0; k < K; k++) { const x = t - 0.5 + (k + 0.5) / K; s += Math.exp(-x * x / (2 * sg * sg)); }
+            c[i + 1] = c[i] + s * dt;
+        }
+        const tot = c[n];
+        for (let i = 0; i <= n; i++) { c[i] /= tot; }
+        return { c: c, M: M, n: n };
+    })();
+    function Q(tau) {
+        if (tau <= 0) { return 0; } if (tau >= L) { return 1; }
+        const x = tau * QT.M, i = Math.floor(x), f = x - i;
+        return QT.c[i] + (QT.c[i + 1] - QT.c[i]) * f;
+    }
+
+    // ---------- impulsion C0 de Laurent (h = 1/2) : filtre adapté ----------
+    function S(t) {                          // t en symboles
+        if (t < 0 || t >= 2 * L) { return 0; }
+        if (t < L) { return Math.sin(Math.PI / 2 * Q(t)); }
+        return Math.cos(Math.PI / 2 * Q(t - L));
+    }
+    function C0(t) { let p = 1; for (let i = 0; i < L; i++) { p *= S(t + i); } return p; }
+
+    // ---------- Reed-Solomon (204,188) : GF(2⁸) 0x11D, racines λ⁰ à λ¹⁵ ----------
+    const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
+    (function () { let x = 1; for (let i = 0; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) { x ^= 0x11D; } } for (let i = 255; i < 512; i++) { EXP[i] = EXP[i - 255]; } })();
+    function mul(a, b) { return (a && b) ? EXP[LOG[a] + LOG[b]] : 0; }
+    function div(a, b) { return a ? EXP[(LOG[a] + 255 - LOG[b]) % 255] : 0; }
+    function evalp(p, x) { let s = 0; for (let i = p.length - 1; i >= 0; i--) { s = mul(s, x) ^ p[i]; } return s; }
+    const GEN = (function () {                // g(x) = Π (x − λ^i), coefficients du plus haut degré au plus bas
+        let g = [1];
+        for (let i = 0; i < 16; i++) {
+            const r = EXP[i], n = new Array(g.length + 1).fill(0);
+            for (let j = 0; j < g.length; j++) { n[j] ^= g[j]; n[j + 1] ^= mul(g[j], r); }
+            g = n;
+        }
+        return g;
+    })();
+    /* rsCoder — E : paquet de 188 octets → S : mot de 204 octets (parité en fin) */
+    function rsCoder(p) {
+        const c = new Uint8Array(204), r = new Uint8Array(16);
+        c.set(p, 0);
+        for (let i = 0; i < 188; i++) {
+            const f = p[i] ^ r[0];
+            for (let j = 0; j < 15; j++) { r[j] = r[j + 1] ^ mul(f, GEN[j + 1]); }
+            r[15] = mul(f, GEN[16]);
+        }
+        c.set(r, 188);
+        return c;
+    }
+    /* rsDecoder — E : tampon, décalage d'un mot de 204 octets, positions effacées (facultatif,
+       indices 0 à 203) → T : correction sur place, vérifiée par des syndromes nuls → S : {n :
+       octets corrigés (−1 : non corrigible), bits : bits corrigés, deg : erreurs + effacements} ; erreurs e et effacements ρ
+       tant que 2e + ρ ≤ 16 (Berlekamp-Massey initialisé par le polynôme des effacements, Forney) */
+    function rsDecoder(c, o, eff) {
+        const Sy = new Uint8Array(16); let nul = true;
+        for (let i = 0; i < 16; i++) { let s = 0; const a = EXP[i]; for (let j = 0; j < 204; j++) { s = mul(s, a) ^ c[o + j]; } Sy[i] = s; if (s) { nul = false; } }
+        if (nul) { return { n: 0, bits: 0 }; }
+        const rho = eff ? eff.length : 0;
+        if (rho > 16) { return { n: -1, bits: 0 }; }
+        // Γ(x) = Π (1 − X_i·x), X_i = λ^(203 − p_i)
+        let Lam = [1];
+        for (let k = 0; k < rho; k++) {
+            const X = EXP[203 - eff[k]], N = new Array(Lam.length + 1).fill(0);
+            for (let i = 0; i < Lam.length; i++) { N[i] ^= Lam[i]; N[i + 1] ^= mul(Lam[i], X); }
+            Lam = N;
+        }
+        let B = Lam.slice(), Lg = rho, m = 1, b = 1;
+        for (let n = rho; n < 16; n++) {
+            let d = 0;
+            for (let i = 0; i <= Lg && i < Lam.length; i++) { if (n - i >= 0) { d ^= mul(Lam[i], Sy[n - i]); } }
+            if (d === 0) { m++; continue; }
+            const coef = div(d, b), T = Lam.slice(), nl = Math.max(Lam.length, B.length + m), N = new Array(nl).fill(0);
+            for (let i = 0; i < Lam.length; i++) { N[i] = Lam[i]; }
+            for (let i = 0; i < B.length; i++) { N[i + m] ^= mul(coef, B[i]); }
+            Lam = N;
+            if (2 * Lg <= n + rho) { Lg = n + 1 + rho - Lg; B = T; b = d; m = 1; } else { m++; }
+        }
+        while (Lam.length > 1 && Lam[Lam.length - 1] === 0) { Lam.pop(); }
+        const deg = Lam.length - 1;
+        if (deg !== Lg || 2 * (deg - rho) + rho > 16) { return { n: -1, bits: 0 }; }
+        const Om = new Array(16).fill(0);
+        for (let i = 0; i < 16; i++) { for (let j = 0; j < Lam.length && i + j < 16; j++) { Om[i + j] ^= mul(Sy[i], Lam[j]); } }
+        const dLam = Lam.map(function (v, i) { return (i & 1) ? v : 0; }).slice(1);
+        const pos = [], val = [];
+        for (let p = 0; p < 204; p++) {
+            const e = 203 - p, Xi = EXP[(255 - e) % 255];
+            if (evalp(Lam, Xi) === 0) {
+                const den = evalp(dLam, Xi);
+                if (!den) { return { n: -1, bits: 0 }; }
+                pos.push(p); val.push(mul(EXP[e], div(evalp(Om, Xi), den)));
+            }
+        }
+        if (pos.length !== deg) { return { n: -1, bits: 0 }; }
+        for (let k = 0; k < pos.length; k++) { c[o + pos[k]] ^= val[k]; }
+        for (let i = 0; i < 16; i++) {                         // contrôle : syndromes nuls après correction
+            let s = 0; const a = EXP[i]; for (let j = 0; j < 204; j++) { s = mul(s, a) ^ c[o + j]; }
+            if (s) { for (let k = 0; k < pos.length; k++) { c[o + pos[k]] ^= val[k]; } return { n: -1, bits: 0 }; }
+        }
+        let nb = 0, nc = 0;
+        for (let k = 0; k < pos.length; k++) { let v = val[k]; if (v) { nc++; } while (v) { nb += v & 1; v >>= 1; } }
+        return { n: nc, bits: nb, deg: deg };
+    }
+
+    // ---------- PRBS de dispersion d'énergie (super-trame de 8 paquets) ----------
+    const MASQUE = (function () {
+        const m = new Uint8Array(8 * 188); let r = 0x00A9;
+        function pas() { const f = ((r >> 13) ^ (r >> 14)) & 1; r = ((r << 1) | f) & 0x7FFF; return f; }
+        for (let p = 0; p < 8; p++) {
+            if (p > 0) { for (let k = 0; k < 8; k++) { pas(); } }
+            for (let j = 1; j < 188; j++) { let by = 0; for (let k = 7; k >= 0; k--) { by |= pas() << k; } m[p * 188 + j] = by; }
+        }
+        return m;
+    })();
+
+    // ---------- filtre de Butterworth (cellules biquadratiques, transformation bilinéaire) ----------
+    function butterworth(fc, fe, ordre) {
+        const cel = [];
+        for (let k = 0; k < ordre / 2; k++) {
+            const th = Math.PI * (2 * k + 1) / (2 * ordre), q = 1 / (2 * Math.cos(th));
+            const w0 = 2 * Math.PI * fc / fe, al = Math.sin(w0) / (2 * q), cw = Math.cos(w0), a0 = 1 + al;
+            cel.push({ b0: (1 - cw) / 2 / a0, b1: (1 - cw) / a0, b2: (1 - cw) / 2 / a0, a1: -2 * cw / a0, a2: (1 - al) / a0,
+                       x1: [0, 0], x2: [0, 0], y1: [0, 0], y2: [0, 0] });
+        }
+        return cel;
+    }
+    function filtrerBW(cel, v, voie) {
+        for (let i = 0; i < cel.length; i++) {
+            const c = cel[i];
+            const y = c.b0 * v + c.b1 * c.x1[voie] + c.b2 * c.x2[voie] - c.a1 * c.y1[voie] - c.a2 * c.y2[voie];
+            c.x2[voie] = c.x1[voie]; c.x1[voie] = v; c.y2[voie] = c.y1[voie]; c.y1[voie] = y; v = y;
+        }
+        return v;
+    }
+
+    /* fft — transformée de Fourier rapide sur place, radix 2 (re, im : Float64Array de taille 2^n) */
+    function fft(re, im) {
+        const n = re.length;
+        for (let i = 1, j = 0; i < n; i++) {
+            let b = n >> 1; for (; j & b; b >>= 1) { j ^= b; } j ^= b;
+            if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+        }
+        for (let L2 = 2; L2 <= n; L2 <<= 1) {
+            const a = -2 * Math.PI / L2, wr = Math.cos(a), wi = Math.sin(a), h = L2 >> 1;
+            for (let i = 0; i < n; i += L2) {
+                let cr = 1, ci = 0;
+                for (let k = 0; k < h; k++) {
+                    const p = i + k, q = p + h, tr = re[q] * cr - im[q] * ci, ti = re[q] * ci + im[q] * cr;
+                    re[q] = re[p] - tr; im[q] = im[p] - ti; re[p] += tr; im[p] += ti;
+                    const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // ÉMETTEUR SIMULÉ : TS → PRBS → RS → entrelaceur → convolutif 1/2 → GMSK
+    //   → canal (décalage, bruit, filtre FI) → FI réelle 10,7 MHz → CAN 12 bits
+    // ============================================================
+    /* Emetteur — P : {paquet(i) → Uint8Array(188), ebn0 (dB), df (Hz), ppm, bfi (Hz),
+       ordre, inv (bool), graine} */
+    function Emetteur(P) {
+        this.P = P; this.alea = new Alea(P.graine || 12345);
+        this.iPk = 0;                                  // paquets TS lus
+        this.fifo = []; for (let b = 0; b < 12; b++) { this.fifo.push({ t: new Uint8Array(b * 17), p: 0 }); }
+        this.nOct = 0; this.reg = 0;
+        this.bits = new Int8Array(0); this.b0 = 0;    // bits ±1 disponibles, indice du premier
+        this.k = -1; this.A = 0;                        // symbole courant, cumul des bits sortis de la fenêtre
+        this.Ts = FS / (RS * (1 + (P.ppm || 0) * 1e-6)); // échantillons par symbole
+        this.t = 0;                                     // temps de l'échantillon suivant, en symboles
+        this.n = 0;
+        this.ph0 = 2 * Math.PI * this.alea.u();
+        this.w = 2 * Math.PI * (P.df || 0) / FS;
+        this.sig2 = (FS / RS) / (Math.pow(10, P.ebn0 / 10) * 0.5 * 188 / 204);
+        this.bw = butterworth(P.bfi || 2e6, FS, P.ordre || 4);
+        this.gain = 0;
+    }
+    /* bitsSuivants — produit les bits ±1 du canal d'au moins un paquet de plus */
+    Emetteur.prototype.bitsSuivants = function () {
+        const p = this.P.paquet(this.iPk), sf = this.iPk % 8, x = new Uint8Array(188);
+        x.set(p); x[0] = sf === 0 ? 0xB8 : 0x47;
+        for (let j = 1; j < 188; j++) { x[j] = p[j] ^ MASQUE[sf * 188 + j]; }
+        this.iPk++;
+        const c = rsCoder(x), out = new Int8Array(204 * 16);
+        let q = 0;
+        for (let j = 0; j < 204; j++) {
+            const f = this.fifo[this.nOct % 12]; let o = c[j];
+            if (f.t.length) { const v = f.t[f.p]; f.t[f.p] = o; f.p = (f.p + 1) % f.t.length; o = v; }
+            this.nOct++;
+            for (let k = 7; k >= 0; k--) {
+                const b = (o >> k) & 1, sv = (b << 6) | this.reg;
+                out[q++] = PAR[sv & G1] ? 1 : -1;      // X : bit 1 → fréquence positive
+                out[q++] = PAR[sv & G2] ? 1 : -1;      // Y
+                this.reg = ((this.reg >> 1) | (b << 5)) & 0x3F;
+            }
+        }
+        const garde = Math.max(this.b0, this.k - 4), reste = this.bits.subarray(garde - this.b0);
+        const nv = new Int8Array(reste.length + out.length); nv.set(reste); nv.set(out, reste.length);
+        this.bits = nv; this.b0 = garde;
+    };
+    Emetteur.prototype.bit = function (i) { return i < 0 ? 1 : this.bits[i - this.b0]; };
+    /* echantillons — E : nombre → S : Int16Array, FI réelle quantifiée sur 12 bits */
+    Emetteur.prototype.echantillons = function (N) {
+        const out = new Int16Array(N), P = this.P, s = Math.sqrt(this.sig2 / 2), av = this.alea;
+        const brut = new Float64Array(N);
+        for (let i = 0; i < N; i++) {
+            const k = Math.floor(this.t), u = this.t - k;
+            while (k > this.k) {
+                this.k++;
+                if (this.k - 4 >= 0) { this.A += this.bit(this.k - 4); }
+                while (this.b0 + this.bits.length <= this.k + 1) { this.bitsSuivants(); }
+            }
+            let ph = this.A;
+            for (let j = 0; j < L; j++) { ph += this.bit(k - j) * Q(j + u); }
+            ph = Math.PI / 2 * ph + this.ph0 + this.w * this.n;
+            let zi = Math.cos(ph), zq = Math.sin(ph);
+            if (P.inv) { zq = -zq; }
+            zi = filtrerBW(this.bw, zi + s * av.gauss(), 0);
+            zq = filtrerBW(this.bw, zq + s * av.gauss(), 1);
+            // FI réelle : Re{z · e^{jπn/2}}
+            const m = this.n & 3;
+            brut[i] = m === 0 ? zi : m === 1 ? -zq : m === 2 ? -zi : zq;
+            this.n++; this.t += 1 / this.Ts;
+        }
+        if (!this.gain) {                               // CAG du CAN : valeur efficace à −12 dB pleine échelle
+            let e = 0; for (let i = 0; i < N; i++) { e += brut[i] * brut[i]; }
+            this.gain = 512 / Math.sqrt(e / N);
+        }
+        for (let i = 0; i < N; i++) { let v = Math.round(brut[i] * this.gain); if (v > 2047) { v = 2047; } else if (v < -2048) { v = -2048; } out[i] = v; }
+        return out;
+    };
+
+    // ============================================================
+    // RÉCEPTEUR : FI 10,7 MHz échantillonnée à 42,8 MS/s (4 × 10,7 MHz)
+    //   1. descente fe/4 (× (−j)^n), demi-bande, décimation 2 → 21,4 MS/s
+    //   2. oscillateur de correction de fréquence
+    //   3. filtre adapté C0 (première impulsion de Laurent, h = 1/2)
+    //   4. interpolation cubique (Farrow), deux échantillons par symbole
+    //   5. estimation de fréquence en rythme libre (raie de (−1)^k·y_k², FFT), puis boucle
+    //      de phase dirigée par la décision et rythme de Gardner sur la voie réelle dérotée
+    //   6. égaliseur fractionné T/2 (LMS normalisé) ; observation d_k ≈ c_k = ±1
+    //   le décodage différentiel (b_k = c_k · c_{k−1}) est fait dans le Viterbi conjoint
+    // ============================================================
+    const HB = (function () {                            // demi-bande 15 coefficients, fenêtre de Kaiser
+        const n = 15, h = new Float64Array(n), beta = 6;
+        function i0(x) { let s = 1, t = 1; const q = x * x / 4; for (let k = 1; k < 25; k++) { t *= q / (k * k); s += t; } return s; }
+        let sm = 0;
+        for (let i = 0; i < n; i++) { const m = i - 7, x = 2 * i / (n - 1) - 1; h[i] = (m === 0 ? 0.5 : Math.sin(Math.PI * m / 2) / (Math.PI * m)) * i0(beta * Math.sqrt(1 - x * x)) / i0(beta); sm += h[i]; }
+        for (let i = 0; i < n; i++) { h[i] /= sm; }
+        return h;
+    })();
+    const MF = (function () {                            // C0 échantillonné à 21,4 MS/s, centré, normalisé
+        const sps = FS2 / RS, D = (L + 1) * sps, n = Math.ceil(D) | 1, h = new Float64Array(n), c = (n - 1) / 2;
+        let sm = 0;
+        for (let i = 0; i < n; i++) { h[i] = C0((i - c) / sps + (L + 1) / 2); sm += h[i]; }
+        for (let i = 0; i < n; i++) { h[i] /= sm; }
+        return h;
+    })();
+
+    /* Recepteur — P : {bnRythme (BnT, 0,004), bnPhase (BnT, 0,003), eqSymboles (6 ; 0 : sans
+       égaliseur)} ; souple(d) est appelé à chaque symbole avec l'observation d_k ≈ c_k */
+    function Recepteur(P, souple) {
+        this.P = P || {}; this.souple = souple;
+        this.n = 0;                                           // échantillons FI reçus
+        this.hbI = new Float64Array(15); this.hbQ = new Float64Array(15); this.hp = 0;
+        this.w = 0; this.ph = 0;                              // oscillateur (rad / échantillon à 21,4 MS/s)
+        this.mfI = new Float64Array(MF.length); this.mfQ = new Float64Array(MF.length); this.mp = 0;
+        // sortie du filtre adapté : tampon circulaire pour l'interpolateur
+        this.NB = 64; this.yI = new Float64Array(64); this.yQ = new Float64Array(64); this.ny = 0;
+        // boucle de rythme
+        this.sps = FS2 / RS; this.tk = 40; this.kSym = 0;
+        const z = 1, bn = this.P.bnRythme || 0.004, th = bn / (z + 1 / (4 * z)), dd = 1 + 2 * z * th + th * th;
+        this.kp = 4 * z * th / dd; this.ki = 4 * th * th / dd; this.rint = 0;
+        // amplitude, fréquence, phase
+        this.A = 0;
+        this.fq = { re: new Float64Array(4096), im: new Float64Array(4096), mr: new Float64Array(4096), mi: new Float64Array(4096), n: 0 };
+        this.etat = 0;                                        // 0 : estimation de fréquence, 2 : boucles de phase et de rythme
+        this.theta = 0; this.wp = 0;
+        function boucle(bn) { const z = 0.707, t = bn / (z + 1 / (4 * z)), dd = 1 + 2 * z * t + t * t; return [4 * z * t / dd, 4 * t * t / dd]; }
+        [this.pkp, this.pki] = boucle(this.P.bnPhase || 0.003);
+        [this.pkpA, this.pkiA] = boucle(0.02);
+        this.kd = 0.5;                                        // gain du détecteur de Gardner (voie réelle normalisée)
+        this.zPrec = 0; this.nPh = 0; this.k0 = 0; this.t0 = 0;
+        // égaliseur : 2·EQS + 1 symboles, deux coefficients par symbole ; coefficient central = 1
+        const EQS = this.P.eqSymboles === undefined ? 6 : this.P.eqSymboles, NT = 2 * (2 * EQS + 1);
+        this.eq = EQS === 0 ? null : { n: NT, xr: new Float64Array(NT), xi: new Float64Array(NT), fr: new Float64Array(NT), fi: new Float64Array(NT), mu0: 0.02, mu1: 0.004 };
+        if (this.eq) { this.eq.fr[NT - 1 - 2 * EQS] = 1; }
+        this.M = { dfEstime: 0, nMer: 0, eMer: 0 };
+        this.constel = new Float32Array(2 * 512); this.nc = 0;
+    }
+    function interp(r, buf, t) {                              // cubique de Lagrange, t en échantillons absolus
+        const i = Math.floor(t), mu = t - i, N = r.NB, m = N - 1;
+        const a = buf[(i - 1) & m], b = buf[i & m], c = buf[(i + 1) & m], d = buf[(i + 2) & m];
+        const c3 = (d - a) / 6 + (b - c) / 2, c2 = (a + c) / 2 - b;      // Farrow : y = b + μ·(c − b − c2 − c3) + μ²·c2 + μ³·c3
+        return b + mu * (c - b - c2 - c3) + mu * mu * c2 + mu * mu * mu * c3;
+    }
+    /* entrer — E : Int16Array d'échantillons FI → T : chaîne complète, appels souple() */
+    Recepteur.prototype.entrer = function (x) {
+        const hb = HB, mf = MF, nMF = mf.length;
+        for (let i = 0; i < x.length; i++) {
+            const v = x[i], m = this.n & 3;
+            // descente fe/4 : × (−j)^n
+            const bi = m === 0 ? v : m === 2 ? -v : 0, bq = m === 1 ? -v : m === 3 ? v : 0;
+            this.hbI[this.hp] = bi; this.hbQ[this.hp] = bq; this.hp = (this.hp + 1) % 15;
+            this.n++;
+            if (this.n & 1) { continue; }                     // décimation par 2
+            let si = 0, sq = 0;
+            for (let j = 0; j < 15; j++) { const q = (this.hp + j) % 15; si += hb[j] * this.hbI[q]; sq += hb[j] * this.hbQ[q]; }
+            // oscillateur de correction
+            const c = Math.cos(this.ph), s = Math.sin(this.ph);
+            const ui = si * c + sq * s, uq = sq * c - si * s;
+            this.ph += this.w; if (this.ph > Math.PI) { this.ph -= 2 * Math.PI; } else if (this.ph < -Math.PI) { this.ph += 2 * Math.PI; }
+            // filtre adapté
+            this.mfI[this.mp] = ui; this.mfQ[this.mp] = uq; this.mp = (this.mp + 1) % nMF;
+            let yi = 0, yq = 0;
+            for (let j = 0; j < nMF; j++) { const q = (this.mp + j) % nMF; yi += mf[j] * this.mfI[q]; yq += mf[j] * this.mfQ[q]; }
+            this.yI[this.ny & (this.NB - 1)] = yi; this.yQ[this.ny & (this.NB - 1)] = yq; this.ny++;
+            // instants symbole disponibles (interpolation sur 4 points : il faut t + 2 < ny)
+            while (this.tk + 2 < this.ny) { this.symbole(); }
+        }
+    };
+    /* symbole — un instant symbole : 1) estimation de fréquence (rythme libre), puis
+       2) boucle de phase et rythme de Gardner sur la voie réelle dérotée, 3) égaliseur,
+       4) décodage différentiel souple */
+    Recepteur.prototype.symbole = function () {
+        const k = this.kSym, tk = this.tk, tm = tk - this.sps / 2;
+        const oi = interp(this, this.yI, tk), oq = interp(this, this.yQ, tk);
+        const mi = interp(this, this.yI, tm), mq = interp(this, this.yQ, tm);
+        this.kSym++;
+        // amplitude
+        const mag = Math.hypot(oi, oq);
+        this.A = this.A ? this.A + 0.002 * (mag - this.A) : mag;
+        const A = this.A || 1;
+        // dérotation : (−j)^k à l'instant symbole, e^{−jπ(k−½)/2} au milieu
+        const r = k & 3;
+        let wi, wq;
+        if (r === 0) { wi = oi; wq = oq; } else if (r === 1) { wi = oq; wq = -oi; } else if (r === 2) { wi = -oi; wq = -oq; } else { wi = -oq; wq = oi; }
+        const am = -Math.PI * (k - 0.5) / 2, ca = Math.cos(am), sa = Math.sin(am);
+        const vmi = mi * ca - mq * sa, vmq = mi * sa + mq * ca;
+        // 1. estimation de fréquence, rythme libre : signal de type MSK, a_k² = (−1)^k, donc
+        //    (−1)^k·y_k² porte une raie pure à 2·Δf. La raie de l'instant k s'annule quand
+        //    l'échantillonnage tombe entre deux symboles, celle du milieu est alors maximale :
+        //    deux FFT de 4 096 points (instant, milieu), puissances additionnées, recherche
+        //    dans |2Δf| < 0,4·Rs, soit une portée de ±0,2·Rs (±982 kHz)
+        if (this.etat < 2) {
+            this.tk = tk + this.sps;
+            const F = this.fq, N = F.re.length;
+            if (k >= 200 && F.n < N) {
+                const sg = (k & 1) ? -1 : 1, n = F.n;
+                F.re[n] = sg * (oi * oi - oq * oq); F.im[n] = sg * 2 * oi * oq;
+                F.mr[n] = sg * (mi * mi - mq * mq); F.mi[n] = sg * 2 * mi * mq;
+                F.n++;
+                if (F.n >= N) {
+                    fft(F.re, F.im); fft(F.mr, F.mi);
+                    const P = function (i) { const q = (i + N) % N; return F.re[q] * F.re[q] + F.im[q] * F.im[q] + F.mr[q] * F.mr[q] + F.mi[q] * F.mi[q]; };
+                    let best = 0, bv = -1; const lim = Math.floor(0.2 * N);
+                    for (let i = -lim; i <= lim; i++) { const v = P(i); if (v > bv) { bv = v; best = i; } }
+                    const y0 = Math.sqrt(P(best - 1)), y1 = Math.sqrt(bv), y2 = Math.sqrt(P(best + 1)), dd = y0 - 2 * y1 + y2;
+                    const fr = best + (dd ? 0.5 * (y0 - y2) / dd : 0);
+                    const df = fr * RS / N / 2;                                    // Hz
+                    this.w += 2 * Math.PI * df / FS2; this.M.dfEstime = df;
+                    this.etat = 2; this.nPh = 0;
+                }
+            }
+            return;
+        }
+        // 2. boucle de phase (axe réel, ambiguïté π levée par le décodage différentiel)
+        const c = Math.cos(this.theta), s = Math.sin(this.theta);
+        const zi = (wi * c + wq * s) / A, zq = (wq * c - wi * s) / A;
+        const zm = (vmi * c + vmq * s) / A, zmq = (vmq * c - vmi * s) / A;
+        const ep = zq * (zi >= 0 ? 1 : -1);
+        const acq = this.nPh < 3000, kpp = acq ? this.pkpA : this.pkp, kpi = acq ? this.pkiA : this.pki;
+        this.wp += kpi * ep;
+        this.theta += this.wp + kpp * ep;
+        if (this.theta > Math.PI) { this.theta -= 2 * Math.PI; } else if (this.theta < -Math.PI) { this.theta += 2 * Math.PI; }
+        //    rythme de Gardner sur la voie réelle : e = x(k−½)·(x(k−1) − x(k))
+        let e = zm * (this.zPrec - zi) / this.kd;
+        e = e > 1 ? 1 : e < -1 ? -1 : e;
+        this.rint += this.ki * e;
+        const lim = 2e-4 * this.sps;                                // ±200 ppm d'écart d'horloge
+        if (this.rint > lim) { this.rint = lim; } else if (this.rint < -lim) { this.rint = -lim; }
+        this.tk = tk + this.sps + this.rint + this.kp * e;
+        this.zPrec = zi;
+        this.nPh++;
+        if (this.nPh === 4000) { this.k0 = this.kSym; this.t0 = this.tk; }
+        // 3. égaliseur fractionné T/2 (LMS normalisé dirigé par la décision sur la partie réelle)
+        let d = zi, dq = zq;
+        const E = this.eq;
+        if (E) {
+            const NT = E.n;
+            E.xr.copyWithin(0, 2); E.xi.copyWithin(0, 2);
+            E.xr[NT - 2] = zm; E.xi[NT - 2] = zmq; E.xr[NT - 1] = zi; E.xi[NT - 1] = zq;
+            if (this.nPh < NT) { return; }
+            let yr = 0, yi = 0, pw = 0;
+            for (let i = 0; i < NT; i++) { yr += E.fr[i] * E.xr[i] + E.fi[i] * E.xi[i]; yi += E.fr[i] * E.xi[i] - E.fi[i] * E.xr[i]; pw += E.xr[i] * E.xr[i] + E.xi[i] * E.xi[i]; }
+            const er = (yr >= 0 ? 1 : -1) - yr;
+            if (this.nPh > 3000) {
+                const mu = (this.nPh < 12000 ? E.mu0 : E.mu1) * er / (pw || 1);
+                for (let i = 0; i < NT; i++) { E.fr[i] += mu * E.xr[i]; E.fi[i] += mu * E.xi[i]; }
+            }
+            d = yr; dq = yi;
+        }
+        if (this.nPh > 6000) {
+            const er = d - (d >= 0 ? 1 : -1);
+            this.M.eMer += er * er; this.M.nMer++;
+            this.constel[this.nc] = d; this.constel[this.nc + 1] = dq; this.nc = (this.nc + 2) % this.constel.length;
+        }
+        // 4. observation d_k ≈ c_k vers le décodeur (le décodage différentiel est dans le Viterbi)
+        if (this.nPh > 4000) { this.souple(d); }
+    };
+    Recepteur.prototype.freqPLL = function () { return this.wp * RS / (2 * Math.PI); };            // Hz
+    /* ppm — écart d'horloge moyen mesuré depuis l'accrochage : pente de l'instant symbole */
+    Recepteur.prototype.ppm = function () { const n = this.kSym - this.k0; return n > 0 ? -((this.tk - this.t0) / n - this.sps) / this.sps * 1e6 : 0; };
+    Recepteur.prototype.mer = function () { return this.M.nMer ? 10 * Math.log10(this.M.nMer / this.M.eMer) : 0; };
+    Recepteur.prototype.verrouille = function () { return this.nPh > 4000; };
+
+    // ============================================================
+    // DÉCODAGE : Viterbi → synchronisation octet → désentrelacement → RS → PRBS → TS
+    // ============================================================
+    /* Viterbi conjoint : codeur convolutif (K = 7, 171 / 133) suivi du codage différentiel
+       qu'opère le GMSK (c_k = b_k · c_{k−1}, b = ±1, bit 1 → +1). État = 6 bits du codeur et
+       c_{k−1} (128 états) ; observation : partie réelle d_k (≈ c_k) à la sortie de
+       l'égaliseur ; métrique de branche d_X·c_X + d_Y·c_Y. Décodage ML de la concaténation,
+       sans la perte du décodage différentiel séparé ; l'ambiguïté de phase π (signe de c)
+       est portée par l'état. État de départ inconnu (métriques égales). */
+    function Viterbi() {
+        this.D = 128; this.B = 64; this.W = this.D + this.B;
+        // pour chaque nouvel état ns = (ns6 << 1) | c2 et chaque prédécesseur (bit le plus ancien cb) :
+        //   état précédent, c1 attendu, c2 attendu
+        this.PR = new Int32Array(256); this.C1 = new Float64Array(256); this.C2 = new Float64Array(256);
+        for (let ns6 = 0; ns6 < 64; ns6++) {
+            for (let c2b = 0; c2b < 2; c2b++) {
+                const ns = (ns6 << 1) | c2b, c2 = c2b ? 1 : -1;
+                for (let cb = 0; cb < 2; cb++) {
+                    const p6 = ((ns6 & 31) << 1) | cb, u = ns6 >> 5, sv = (u << 6) | p6;
+                    const bX = PAR[sv & G1] ? 1 : -1, bY = PAR[sv & G2] ? 1 : -1;
+                    const cp = c2 * bX * bY, c1 = bX * cp;
+                    this.PR[ns * 2 + cb] = (p6 << 1) | (cp > 0 ? 1 : 0);
+                    this.C1[ns * 2 + cb] = c1; this.C2[ns * 2 + cb] = c2;
+                }
+            }
+        }
+        this.dec = new Uint8Array(this.W * 128); this.m = new Float64Array(128); this.nm = new Float64Array(128);
+        this.pas = 0; this.sortis = 0; this.cumul = 0;
+    }
+    /* etape — E : d_X, d_Y → S : null, ou les B bits décodés les plus anciens (fenêtre glissante) */
+    Viterbi.prototype.etape = function (dx, dy) {
+        const m = this.m, n = this.nm, PR = this.PR, C1 = this.C1, C2 = this.C2, base = (this.pas % this.W) * 128, dec = this.dec;
+        let max = -Infinity, best = 0;
+        for (let ns = 0; ns < 128; ns++) {
+            const k = ns * 2;
+            const a = m[PR[k]] + C1[k] * dx + C2[k] * dy, b = m[PR[k + 1]] + C1[k + 1] * dx + C2[k + 1] * dy;
+            if (b > a) { n[ns] = b; dec[base + ns] = 1; } else { n[ns] = a; dec[base + ns] = 0; }
+            if (n[ns] > max) { max = n[ns]; best = ns; }
+        }
+        for (let ns = 0; ns < 128; ns++) { m[ns] = n[ns] - max; }
+        this.cumul += max;
+        this.pas++;
+        if (this.pas - this.sortis >= this.W) {
+            let st = best; const bits = new Uint8Array(this.B);
+            for (let s = this.pas - 1; s >= this.sortis; s--) {
+                if (s < this.sortis + this.B) { bits[s - this.sortis] = st >> 6; }
+                st = PR[st * 2 + dec[(s % this.W) * 128 + st]];
+            }
+            this.sortis += this.B;
+            return bits;
+        }
+        return null;
+    };
+    /* viterbiBloc — métrique cumulée sur n paires, alignement a : la plus grande désigne l'alignement X / Y */
+    function viterbiBloc(d, a, n) {
+        const v = new Viterbi();
+        for (let i = 0; i < n; i++) { v.etape(d[a + 2 * i], d[a + 2 * i + 1]); }
+        return v.cumul;
+    }
+
+    /* Decodeur — reçoit les observations d_k, rend les paquets TS ; rappel paquet(ts188, info) :
+       alignement X / Y (deux essais du Viterbi, métrique cumulée), Viterbi conjoint, recherche
+       de la synchronisation (0x47 / 0xB8 tous les 204 octets, polarité), désentrelacement
+       (I = 12, M = 17), RS (204,188), dérandomisation ; paquet non corrigible : bit
+       transport_error_indicator mis à 1 */
+    function Decodeur(rappel) {
+        this.rappel = rappel;
+        this.sv = new Float32Array(1 << 18); this.nsv = 0;  // observations d_k (tableau extensible)
+        this.etat = 0; this.align = 0;                    // 0 : choix de l'alignement X/Y
+        this.vit = null;
+        this.reg = 0; this.nCanal = 0; this.eCanal = 0;   // BER canal par recodage
+        this.ptrSv = 0;
+        this.oct = []; this.bitPos = 0;                    // octets du Viterbi, alignés sur la synchronisation
+        this.sync = -1; this.cpl = 0; this.bitOff = 0;
+        this.bits = new Uint8Array(1 << 18); this.nbits = 0;   // bits décodés (tableau extensible)
+        this.p = 0; this.pAbs = 0; this.sf = 0; this.perdus = 0;
+        this.M = { alignXY: -1, inversion: 0, pertesSync: 0, rsOctets: 0, rsBits: 0, rsMots: 0, rsEchecs: 0, paquets: 0, acquisitions: 0 };
+    }
+    Decodeur.prototype.entrer = function (v) {
+        if (this.nsv === this.sv.length) { const t = new Float32Array(2 * this.sv.length); t.set(this.sv); this.sv = t; }
+        this.sv[this.nsv++] = v;
+        if (this.etat === 0) {
+            if (this.nsv >= 2 * 2400) {
+                const e0 = viterbiBloc(this.sv, 0, 2300), e1 = viterbiBloc(this.sv, 1, 2300);
+                this.align = e0 >= e1 ? 0 : 1; this.M.alignXY = this.align;
+                this.etat = 1; this.vit = new Viterbi(); this.ptrSv = this.align; this.vit0 = this.align; this.nb6 = 0;
+                this.M.acquisitions++;
+            }
+            return;
+        }
+        while (this.ptrSv + 1 < this.nsv) {
+            const sx = this.sv[this.ptrSv], sy = this.sv[this.ptrSv + 1];
+            const r = this.vit.etape(sx, sy);
+            this.ptrSv += 2;
+            if (r) { this.bitsDecodes(r); }
+        }
+    };
+    /* bitsDecodes — recodage (BER canal), recherche et suivi de la synchronisation */
+    Decodeur.prototype.bitsDecodes = function (r) {
+        const base = this.vit0 + 2 * (this.vit.sortis - r.length);
+        for (let i = 0; i < r.length; i++) {
+            const sv7 = (r[i] << 6) | this.reg, q = base + 2 * i;
+            if (this.nb6 >= 6 && q >= 1) {                     // décision différentielle ferme : b = signe(d_k · d_{k−1})
+                const hx = this.sv[q] * this.sv[q - 1] > 0 ? 1 : 0, hy = this.sv[q + 1] * this.sv[q] > 0 ? 1 : 0;
+                this.eCanal += (PAR[sv7 & G1] ? 1 : 0) ^ hx;
+                this.eCanal += (PAR[sv7 & G2] ? 1 : 0) ^ hy; this.nCanal += 2;
+            }
+            this.nb6++;
+            this.reg = ((this.reg >> 1) | (r[i] << 5)) & 0x3F;
+            if (this.nbits === this.bits.length) { const t = new Uint8Array(2 * this.bits.length); t.set(this.bits); this.bits = t; }
+            this.bits[this.nbits++] = r[i];
+        }
+        this.chercher();
+    };
+    function octetA(bits, i) { let o = 0; for (let k = 0; k < 8; k++) { o = (o << 1) | bits[i + k]; } return o; }
+    function ham(a, b) { let x = a ^ b, n = 0; while (x) { n += x & 1; x >>= 1; } return n; }
+    /* superTrame — E : octets de synchronisation successifs (au moins 8) → S : {cpl, s0, d} :
+       hypothèse (polarité, rang du 0xB8) de plus petite distance de Hamming au motif
+       « un 0xB8 puis sept 0x47 » ; un octet de synchronisation erroné ne la fausse pas */
+    function superTrame(o) {
+        let best = { cpl: 0, s0: 0, d: Infinity };
+        for (let c = 0; c < 2; c++) {
+            for (let s0 = 0; s0 < 8; s0++) {
+                let d = 0;
+                for (let k = 0; k < o.length; k++) { d += ham(o[k] ^ (c ? 0xFF : 0), (k % 8) === s0 ? 0xB8 : 0x47); }
+                if (d < best.d) { best = { cpl: c, s0: s0, d: d }; }
+            }
+        }
+        return best;
+    }
+    /* chercher — synchronisation : 16 octets 0x47 / 0xB8 (à un bit près) espacés de 204 octets
+       (deux super-trames), puis polarité (inversion de spectre) et rang du 0xB8 par superTrame ;
+       suivi : un mot RS décodé dont l'octet de synchronisation n'est pas celui attendu, ou
+       quatre mots non corrigibles de suite à octet de synchronisation faux, relancent la recherche */
+    Decodeur.prototype.chercher = function () {
+        const P8 = 204 * 8, NS = 16;
+        if (this.sync < 0) {
+            const need = NS * P8 + 8, o = new Array(NS);
+            while (this.nbits - this.bitOff >= need) {
+                let ok = 0;
+                for (let s = 0; s < NS; s++) { o[s] = octetA(this.bits, this.bitOff + s * P8); if (Math.min(ham(o[s], 0x47), ham(o[s], 0xB8)) <= 1) { ok++; } }
+                if (ok >= NS - 2) {
+                    const h = superTrame(o);
+                    this.sync = this.bitOff; this.cpl = h.cpl; this.M.inversion = this.cpl;
+                    this.sf = (8 - h.s0) % 8;                     // le paquet de rang s0 ouvre une super-trame
+                    this.oct = []; this.bitPos = this.bitOff;
+                    this.p = 0; this.pAbs = 0; this.perdus = 0;
+                    if (!this.premiere) { this.premiere = { pas: this.bitOff, cpl: this.cpl, sf: this.sf }; }   // pour le décodage par bloc
+                    break;
+                }
+                this.bitOff++;
+            }
+            if (this.sync < 0) { return; }
+        }
+        // octets alignés
+        while (this.nbits - this.bitPos >= 8) { this.oct.push(octetA(this.bits, this.bitPos) ^ (this.cpl ? 0xFF : 0)); this.bitPos += 8; }
+        // paquets complets : x[m] = y[m + (m mod 12)·204]
+        const y = this.oct, mot = new Uint8Array(204);
+        while ((this.p + 1) * 204 + 11 * 204 <= y.length) {
+            const d = this.p * 204;
+            for (let j = 0; j < 204; j++) { const m = d + j; mot[j] = y[m + (m % 12) * 204]; }
+            const sfp = (this.sf + this.pAbs) % 8, attendu = sfp === 0 ? 0xB8 : 0x47;
+            const r = rsDecoder(mot, 0);
+            // mot non corrigible : octet de synchronisation brut à 2 bits près ; mot décodé : exact
+            if (r.n < 0) { this.perdus = ham(mot[0], attendu) <= 2 ? 0 : this.perdus + 1; } else if (mot[0] !== attendu) { this.perdus = 4; } else { this.perdus = 0; }
+            if (r.n < 0) { this.M.rsEchecs++; } else if (r.n > 0) { this.M.rsOctets += r.n; this.M.rsBits += r.bits; this.M.rsMots++; }
+            const ts = new Uint8Array(188); ts[0] = 0x47;
+            for (let j = 1; j < 188; j++) { ts[j] = mot[j] ^ MASQUE[sfp * 188 + j]; }
+            if (r.n < 0) { ts[1] |= 0x80; }                   // transport_error_indicator
+            this.M.paquets++; this.p++; this.pAbs++;
+            this.rappel(ts, { rs: r.n });
+            if (this.perdus >= 4) {                           // synchronisation perdue : nouvelle recherche
+                this.M.pertesSync++; this.sync = -1; this.bitOff = this.bitPos; this.perdus = 0;
+                return;
+            }
+        }
+        // mémoire : on garde la fenêtre utile
+        if (this.p > 64) {
+            const k = (this.p - 32) * 204;
+            this.oct = this.oct.slice(k); this.p -= this.p - 32;
+        }
+    };
+    Decodeur.prototype.berCanal = function () { return this.eCanal / Math.max(1, this.nCanal); };
+
+    // ============================================================
+    // DÉCODAGE PAR BLOC (R1b, simulation) : BCJR conjoint max-log, Reed-Solomon avec
+    //   effacements (GMD), itérations BCJR ↔ RS
+    //   Passe 1 : BCJR sans information a priori → fiabilités des bits → RS : erreurs seules,
+    //     puis, en cas d'échec, effacement des 2, 4 … 16 octets les moins fiables (GMD).
+    //   Passes suivantes (mode itératif) : les mots RS décodés et les octets de
+    //     synchronisation deviennent des bits connus (a priori ±LC) pour le BCJR, qui
+    //     redécode leur voisinage dans le treillis ; puis RS de nouveau sur les mots restants.
+    // ============================================================
+    /* bcjrFenetre — max-log-MAP sur les pas [a0, a1) du treillis conjoint ; alpha (état au pas
+       a0) mis à jour, LLR des bits d'entrée du codeur écrits dans llr (> 0 : bit 1) */
+    function bcjrFenetre(T, d, al, N, a0, a1, sc, La, alpha, llr) {
+        const PR = T.PR, C1 = T.C1, C2 = T.C2, W = a1 - a0, WB = 160, b1 = Math.min(N, a1 + WB);
+        const A = new Float64Array((W + 1) * 128);
+        A.set(alpha, 0);
+        const g = new Float64Array(256);
+        function gammas(s) {
+            const dx = d[al + 2 * s] * sc, dy = d[al + 2 * s + 1] * sc, la = La ? La[s] / 2 : 0;
+            for (let k = 0; k < 256; k++) { g[k] = C1[k] * dx + C2[k] * dy + ((k >> 7) ? la : -la); }   // u = ns >> 6 = k >> 7
+        }
+        for (let s = a0; s < a1; s++) {                         // avant
+            gammas(s);
+            const o = (s - a0) * 128, n = o + 128;
+            let mx = -Infinity;
+            for (let ns = 0; ns < 128; ns++) {
+                const k = ns * 2, x = A[o + PR[k]] + g[k], y = A[o + PR[k + 1]] + g[k + 1], v = x > y ? x : y;
+                A[n + ns] = v; if (v > mx) { mx = v; }
+            }
+            for (let ns = 0; ns < 128; ns++) { A[n + ns] -= mx; }
+        }
+        for (let ns = 0; ns < 128; ns++) { alpha[ns] = A[W * 128 + ns]; }
+        let B = new Float64Array(128), Bp = new Float64Array(128);
+        for (let s = b1 - 1; s >= a0; s--) {                    // arrière (préchauffage au-delà de a1)
+            gammas(s);
+            Bp.fill(-Infinity);
+            let l1 = -Infinity, l0 = -Infinity;
+            const o = (s - a0) * 128;
+            for (let ns = 0; ns < 128; ns++) {
+                for (let cb = 0; cb < 2; cb++) {
+                    const k = ns * 2 + cb, p = PR[k], v = B[ns] + g[k];
+                    if (v > Bp[p]) { Bp[p] = v; }
+                    if (s < a1) { const t = A[o + p] + v; if (ns >> 6) { if (t > l1) { l1 = t; } } else if (t > l0) { l0 = t; } }
+                }
+            }
+            if (s < a1) { llr[s] = l1 - l0; }
+            let mx = -Infinity; for (let p = 0; p < 128; p++) { if (Bp[p] > mx) { mx = Bp[p]; } }
+            for (let p = 0; p < 128; p++) { Bp[p] -= mx; }
+            const t = B; B = Bp; Bp = t;
+        }
+    }
+    /* Bloc — E : décodeur au fil de l'eau (observations, alignement, première synchronisation),
+       σ² du bruit sur la partie réelle, nombre de passes (1 : effacements, > 1 : itératif)
+       Méthode avancer() : une fenêtre BCJR ou une passe RS par appel → {fini, texte, f} */
+    function Bloc(D, sig2, nPasses) {
+        this.D = D; this.d = D.sv; this.al = D.align; this.sc = 1 / sig2;
+        this.N = Math.floor((D.nsv - this.al) / 2);
+        this.T = new Viterbi();
+        this.nPasses = Math.max(1, nPasses);
+        this.ok = !!D.premiere;
+        if (!this.ok) { return; }
+        const P0 = D.premiere;
+        this.S = P0.pas; this.cpl = P0.cpl; this.sf = P0.sf;
+        this.nOct = Math.floor((this.N - this.S) / 8);
+        this.nMots = Math.max(0, Math.floor((this.nOct - 11 * 204) / 204));
+        this.llr = new Float32Array(this.N); this.La = null;
+        this.alpha = new Float64Array(128);
+        this.passe = 0; this.pas = 0; this.FEN = 4096;
+        this.mots = new Uint8Array(this.nMots * 204); this.resolu = new Uint8Array(this.nMots); this.methode = new Uint8Array(this.nMots);
+        this.bilan = [];                                       // par passe : mots décodés (cumul), dont par effacements
+        this.LC = 20;
+    }
+    Bloc.prototype.avancer = function () {
+        if (!this.ok) { return { fini: true, texte: 'pas de synchronisation', f: 1 }; }
+        if (this.pas < this.N) {
+            const a1 = Math.min(this.N, this.pas + this.FEN);
+            bcjrFenetre(this.T, this.d, this.al, this.N, this.pas, a1, this.sc, this.La, this.alpha, this.llr);
+            this.pas = a1;
+            return { fini: false, texte: 'passe ' + (this.passe + 1) + ' / ' + this.nPasses + ' : BCJR ' + a1.toLocaleString() + ' / ' + this.N.toLocaleString() + ' pas', f: (this.passe + a1 / this.N) / this.nPasses };
+        }
+        this.rs();
+        this.passe++;
+        const nv = this.bilan[this.bilan.length - 1], av = this.bilan.length > 1 ? this.bilan[this.bilan.length - 2].resolus : -1;
+        if (this.passe >= this.nPasses || nv.resolus === this.nMots || nv.resolus === av) { return { fini: true, texte: 'terminé', f: 1 }; }
+        // a priori pour la passe suivante : octets de synchronisation et mots décodés
+        if (!this.La) { this.La = new Float32Array(this.N); }
+        const La = this.La, msk = this.cpl ? 0xFF : 0, LC = this.LC, S = this.S;
+        const poser = function (q, v) { const o = v ^ msk; for (let t = 0; t < 8; t++) { const st = S + 8 * q + t; if (st < La.length) { La[st] = ((o >> (7 - t)) & 1) ? LC : -LC; } } };
+        for (let q = 0; q < this.nOct; q += 204) { poser(q, (this.sf + q / 204) % 8 === 0 ? 0xB8 : 0x47); }
+        for (let p = 0; p < this.nMots; p++) {
+            if (!this.resolu[p]) { continue; }
+            for (let j = 0; j < 204; j++) { const m = p * 204 + j; poser(m + (m % 12) * 204, this.mots[p * 204 + j]); }
+        }
+        this.pas = 0; this.alpha.fill(0);
+        return { fini: false, texte: 'passe ' + (this.passe + 1) + ' / ' + this.nPasses, f: this.passe / this.nPasses };
+    };
+    /* rs — désentrelacement des décisions et des fiabilités, RS (erreurs, puis GMD) des mots non résolus */
+    Bloc.prototype.rs = function () {
+        const S = this.S, llr = this.llr;
+        const y = new Uint8Array(this.nOct), r = new Float32Array(this.nOct);
+        for (let q = 0; q < this.nOct; q++) {
+            let o = 0, mn = Infinity;
+            for (let t = 0; t < 8; t++) { const v = llr[S + 8 * q + t]; o = (o << 1) | (v > 0 ? 1 : 0); const a = Math.abs(v); if (a < mn) { mn = a; } }
+            y[q] = o; r[q] = mn;
+        }
+        if (this.passe === 0) {                                  // polarité et super-trame : vote sur toutes les synchronisations
+            const o = []; for (let q = 0; q < this.nOct; q += 204) { o.push(y[q]); }
+            const h = superTrame(o); this.cpl = h.cpl; this.sf = (8 - h.s0) % 8;
+        }
+        const msk = this.cpl ? 0xFF : 0;
+        for (let q = 0; q < this.nOct; q++) { y[q] ^= msk; }
+        const mot = new Uint8Array(204), fi = new Float32Array(204), essai = new Uint8Array(204), ordre = new Array(204);
+        let nEff = 0;
+        for (let p = 0; p < this.nMots; p++) {
+            if (this.resolu[p]) { continue; }
+            for (let j = 0; j < 204; j++) { const m = p * 204 + j, q = m + (m % 12) * 204; mot[j] = y[q]; fi[j] = r[q]; }
+            let ok = rsDecoder(mot, 0).n >= 0;
+            if (!ok) {
+                for (let j = 0; j < 204; j++) { ordre[j] = j; }
+                ordre.sort(function (a, b) { return fi[a] - fi[b]; });
+                // garde contre les fausses corrections : 2e + ρ ≤ 12, il reste 4 symboles de contrôle
+                for (let rho = 2; rho <= 10 && !ok; rho += 2) {
+                    essai.set(mot);
+                    const rr = rsDecoder(essai, 0, ordre.slice(0, rho));
+                    if (rr.n >= 0 && 2 * (rr.deg - rho) + rho <= 12) { mot.set(essai); ok = true; nEff++; this.methode[p] = 1; }
+                }
+            }
+            this.mots.set(mot, p * 204);
+            if (ok) { this.resolu[p] = 1; }
+        }
+        let n = 0; for (let p = 0; p < this.nMots; p++) { n += this.resolu[p]; }
+        this.bilan.push({ resolus: n, effacements: nEff });
+    };
+    /* paquets — S : TS (188 octets par mot, dérandomisé, transport_error_indicator si non résolu) */
+    Bloc.prototype.paquets = function () {
+        const ts = new Uint8Array(this.nMots * 188);
+        for (let p = 0; p < this.nMots; p++) {
+            const sfp = (this.sf + p) % 8, o = p * 188, w = p * 204;
+            ts[o] = 0x47;
+            for (let j = 1; j < 188; j++) { ts[o + j] = this.mots[w + j] ^ MASQUE[sfp * 188 + j]; }
+            if (!this.resolu[p]) { ts[o + 1] |= 0x80; }
+        }
+        return ts;
+    };
+
+    return { FS: FS, FI: FI, RS: RS, FS2: FS2, Emetteur: Emetteur, Recepteur: Recepteur, Decodeur: Decodeur, Bloc: Bloc, fft: fft, rsCoder: rsCoder, rsDecoder: rsDecoder };
+})();
+</script>
+<script>
+    // ============================================================
+    // PAGE 16 : interface
+    // ============================================================
+    const WIDTH = 352, HEIGHT = 288;
+    let srcTS = null, srcNom = '', fichierFI = null, recu = null, bilan = null, enCours = false;
+
+    window.onload = function () {
+        ['canvasInput', 'canvasProcess', 'canvasOutput'].forEach(effacer);
+        dessinerSeuil([]);
+    };
+    function effacer(id) {
+        const c = document.getElementById(id), ctx = c.getContext('2d');
+        ctx.fillStyle = '#0e1418'; ctx.fillRect(0, 0, c.width, c.height);
+    }
+    function etat(texte, f) {
+        document.getElementById('barre').style.width = (100 * Math.max(0, Math.min(1, f))).toFixed(1) + '%';
+        document.getElementById('etat').textContent = texte;
+    }
+    function nombre(id) { return parseFloat(document.getElementById(id).value); }
+    function attente() { return new Promise(function (r) { setTimeout(r, 0); }); }
+    function boutons(actif) {
+        ['btnRecevoir', 'btnExportFI', 'btnSeuil'].forEach(function (id) { document.getElementById(id).disabled = !actif; });
+        enCours = !actif;
+    }
+
+    // ---------- source TS ----------
+    /* paquetEssai — E : numéro → S : paquet PID 0x100, compteur de continuité, numéro sur
+       32 bits (octets 4 à 7), charge pseudo-aléatoire déduite du numéro */
+    function paquetEssai(i) {
+        const p = new Uint8Array(188);
+        p[0] = 0x47; p[1] = 0x01; p[2] = 0x00; p[3] = 0x10 | (i & 15);
+        p[4] = (i >>> 24) & 255; p[5] = (i >>> 16) & 255; p[6] = (i >>> 8) & 255; p[7] = i & 255;
+        let s = Math.imul(i + 1, 2654435761) >>> 0 || 1;
+        for (let j = 8; j < 188; j++) { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; p[j] = s & 255; }
+        return p;
+    }
+    function paquetSource(i) {
+        if (!srcTS) { return paquetEssai(i); }
+        const n = srcTS.length / 188, k = i % n;
+        return srcTS.subarray(k * 188, k * 188 + 188);
+    }
+    /* lireTS — fichier .ts, .j2d (J2D_TS_V2, étape 08) ou .json (MPEG2_TS_V1) → Uint8Array */
+    async function lireTS(f) {
+        const buf = await f.arrayBuffer();
+        if (/\.j2d$/i.test(f.name)) {
+            const dv = new DataView(buf);
+            if (buf.byteLength < 8 || dv.getUint32(0, false) !== 0x4A324431) { throw new Error('fichier .j2d invalide'); }
+            const L = dv.getUint32(4, true), meta = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, L)));
+            if (meta.format !== 'J2D_TS_V2') { throw new Error('format ' + meta.format); }
+            const TY = { u8: 1, i8: 1, u16: 2, i16: 2, u32: 4, i32: 4, f32: 4, f64: 8 };
+            let off = Math.ceil((8 + L) / 8) * 8;
+            for (const d of meta.tampons || []) {
+                if (d.nom === 'ts') { return new Uint8Array(buf.slice(off, off + d.n)); }
+                off += Math.ceil(d.n * TY[d.type] / 8) * 8;
+            }
+            throw new Error('tampon ts absent');
+        }
+        if (/\.json$/i.test(f.name)) {
+            const o = JSON.parse(new TextDecoder().decode(buf));
+            if (o.format !== 'MPEG2_TS_V1') { throw new Error('format ' + o.format); }
+            const s = atob(o.binary), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) { u[i] = s.charCodeAt(i); } return u;
+        }
+        return new Uint8Array(buf);
+    }
+    async function chargerSource(files) {
+        if (!files || !files.length) { return; }
+        try {
+            let ts = await lireTS(files[0]);
+            const n = Math.floor(ts.length / 188);
+            if (!n) { throw new Error('moins d\'un paquet'); }
+            ts = ts.slice(0, n * 188);
+            for (let p = 0; p < n; p++) { if (ts[p * 188] !== 0x47) { throw new Error('octet de synchronisation absent au paquet ' + p); } }
+            srcTS = ts; srcNom = files[0].name;
+            document.getElementById('srcInfo').innerHTML = 'Source : <b>' + srcNom + '</b> (' + n.toLocaleString() + ' paquets, émis en boucle)';
+            document.getElementById('btnSrcEssai').disabled = false;
+        } catch (e) { alert('TS non reconnu : ' + e.message); }
+        document.getElementById('tsInput').value = '';
+    }
+    function sourceEssai() {
+        srcTS = null; srcNom = '';
+        document.getElementById('srcInfo').textContent = 'Source : flux d\'essai';
+        document.getElementById('btnSrcEssai').disabled = true;
+    }
+
+    /* Comparateur — retrouve la position du premier paquet reçu sans erreur dans le TS
+       émis, puis compare chaque paquet au paquet attendu */
+    function Comparateur() { this.idx = -1; this.ok = 0; this.ko = 0; this.premierEcart = -1; this.n = 0; this.etat = []; this.errBits = 0; }
+    Comparateur.prototype.chercher = function (ts) {
+        if (!srcTS) {
+            if (ts[1] !== 0x01 || ts[2] !== 0x00) { return -1; }
+            const i = ((ts[4] << 24) | (ts[5] << 16) | (ts[6] << 8) | ts[7]) >>> 0, r = paquetEssai(i);
+            for (let j = 0; j < 188; j++) { if (r[j] !== ts[j]) { return -1; } }
+            return i;
+        }
+        const n = srcTS.length / 188;
+        for (let p = 0; p < n; p++) {
+            let eg = true;
+            for (let j = 0; j < 188 && eg; j++) { if (srcTS[p * 188 + j] !== ts[j]) { eg = false; } }
+            if (eg) { return p; }
+        }
+        return -1;
+    };
+    Comparateur.prototype.paquet = function (ts) {
+        let bon = false;
+        if (this.idx < 0) {
+            if (!(ts[1] & 0x80)) { const i = this.chercher(ts); if (i >= 0) { this.idx = i; bon = true; } }
+        } else {
+            this.idx++;
+            const r = paquetSource(this.idx);
+            bon = true;
+            for (let j = 0; j < 188; j++) { let x = r[j] ^ ts[j]; if (x) { bon = false; while (x) { this.errBits += x & 1; x >>= 1; } } }
+        }
+        if (bon) { this.ok++; } else { this.ko++; if (this.premierEcart < 0) { this.premierEcart = this.n; } }
+        this.etat.push(bon ? 1 : 0); this.n++;
+        return bon;
+    };
+
+    // ---------- canal et réglages ----------
+    function reglages(ebn0) {
+        return { paquet: paquetSource, ebn0: ebn0 === undefined ? nombre('ebn0') : ebn0, df: nombre('df') * 1e3, ppm: nombre('ppm'),
+                 bfi: nombre('bfi') * 1e6, ordre: +document.getElementById('ordre').value, inv: document.getElementById('inv').checked,
+                 graine: Math.max(1, Math.round(nombre('graine'))) };
+    }
+    function nEchantillons(nPk) { return Math.round(nPk * 204 * 16 * R1.FS / R1.RS); }
+
+    // ---------- affichages ----------
+    /* dessinerSpectre — densité spectrale (Welch, Hann, 8 × 4 096 points) des échantillons du CAN */
+    function dessinerSpectre(x) {
+        const N = 4096, nb = Math.min(8, Math.floor(x.length / N)), P = new Float64Array(N / 2);
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let b = 0; b < nb; b++) {
+            for (let i = 0; i < N; i++) { re[i] = x[b * N + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N)); im[i] = 0; }
+            R1.fft(re, im);
+            for (let i = 0; i < N / 2; i++) { P[i] += re[i] * re[i] + im[i] * im[i]; }
+        }
+        let mx = 1e-30; for (let i = 0; i < N / 2; i++) { mx = Math.max(mx, P[i]); }
+        const ctx = document.getElementById('canvasInput').getContext('2d');
+        effacer('canvasInput');
+        const x0 = 34, x1 = WIDTH - 8, y0 = 14, y1 = HEIGHT - 36, dB = 70;
+        ctx.strokeStyle = '#26343e'; ctx.fillStyle = '#8fa1ad'; ctx.font = '10px Arial'; ctx.textAlign = 'right';
+        for (let d = 0; d <= dB; d += 10) { const y = y0 + (y1 - y0) * d / dB; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.fillText('−' + d, x0 - 3, y + 3); }
+        ctx.textAlign = 'center';
+        for (let f = 0; f <= 21.4; f += 5) { const xx = x0 + (x1 - x0) * f / 21.4; ctx.fillText(f + '', xx, y1 + 12); }
+        ctx.fillText('MHz', x1 - 10, y1 + 24);
+        // bande FI
+        ctx.strokeStyle = '#f0a63a'; ctx.setLineDash([4, 3]);
+        [8.7, 10.7, 12.7].forEach(function (f) { const xx = x0 + (x1 - x0) * f / 21.4; ctx.beginPath(); ctx.moveTo(xx, y0); ctx.lineTo(xx, y1); ctx.stroke(); });
+        ctx.setLineDash([]);
+        ctx.strokeStyle = '#5cc8d6'; ctx.beginPath();
+        for (let i = 0; i < N / 2; i++) {
+            const v = Math.max(-dB, 10 * Math.log10(P[i] / mx)), xx = x0 + (x1 - x0) * i / (N / 2), yy = y0 + (y1 - y0) * (-v) / dB;
+            if (i) { ctx.lineTo(xx, yy); } else { ctx.moveTo(xx, yy); }
+        }
+        ctx.stroke();
+        ctx.fillStyle = '#8fa1ad'; ctx.textAlign = 'left';
+        ctx.fillText('dB (référence : maximum)', 4, HEIGHT - 6);
+    }
+    function dessinerConstellation(R) {
+        const ctx = document.getElementById('canvasProcess').getContext('2d'), cx = WIDTH / 2, cy = HEIGHT / 2 - 10, k = 70;
+        ctx.fillStyle = 'rgba(14,20,24,0.35)'; ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        ctx.strokeStyle = '#26343e'; ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(WIDTH, cy); ctx.moveTo(cx, 0); ctx.lineTo(cx, HEIGHT - 30); ctx.stroke();
+        ctx.strokeStyle = '#33434e'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(cx - k, 0); ctx.lineTo(cx - k, HEIGHT - 30); ctx.moveTo(cx + k, 0); ctx.lineTo(cx + k, HEIGHT - 30); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(92,200,214,0.8)';
+        const c = R.constel;
+        for (let i = 0; i < c.length; i += 2) { if (c[i] || c[i + 1]) { ctx.fillRect(cx + k * c[i] - 1, cy - k * c[i + 1] - 1, 2, 2); } }
+        ctx.fillStyle = '#0e1418'; ctx.fillRect(0, HEIGHT - 30, WIDTH, 30);
+        ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+        if (R.verrouille()) {
+            ctx.fillText('Δf mesuré ' + ((R.M.dfEstime + R.freqPLL()) / 1e3).toFixed(2) + ' kHz, horloge ' + R.ppm().toFixed(1) + ' ppm', 8, HEIGHT - 17);
+            ctx.fillText('MER ' + R.mer().toFixed(1) + ' dB', 8, HEIGHT - 5);
+        } else { ctx.fillText('acquisition (fréquence, phase, rythme)', 8, HEIGHT - 10); }
+    }
+    const grille = {
+        n: 0, cols: 64, ch: 1, cw: 1,
+        debut: function (nP) {
+            this.n = nP; this.ch = Math.max(1, Math.floor((HEIGHT - 40) / Math.ceil(nP / this.cols))); this.cw = (WIDTH - 20) / this.cols;
+            effacer('canvasOutput');
+            const ctx = document.getElementById('canvasOutput').getContext('2d');
+            ctx.fillStyle = '#1d2a33';
+            for (let p = 0; p < nP; p++) { this.cas(ctx, p); }
+            this.legende(0);
+        },
+        cas: function (ctx, p) {
+            if (p >= this.n) { return; }
+            ctx.fillRect(10 + (p % this.cols) * this.cw, 10 + Math.floor(p / this.cols) * this.ch, Math.max(1, this.cw - 0.5), Math.max(1, this.ch - (this.ch > 2 ? 1 : 0)));
+        },
+        paquet: function (p, bon) {
+            const ctx = document.getElementById('canvasOutput').getContext('2d');
+            ctx.fillStyle = bon ? '#3fbf6f' : '#c0392b'; this.cas(ctx, p);
+        },
+        legende: function (n) {
+            const ctx = document.getElementById('canvasOutput').getContext('2d');
+            ctx.fillStyle = '#0e1418'; ctx.fillRect(0, HEIGHT - 24, WIDTH, 24);
+            ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+            ctx.fillText(n.toLocaleString() + ' paquets TS reçus', 10, HEIGHT - 10);
+        }
+    };
+
+    // ---------- chaîne complète ----------
+    /* executer — E : lire(N) → Int16Array (null en fin), nombre d'échantillons, vue (bool)
+       → S : {R, D, C, ts, duree} */
+    async function executer(lire, nTot, vue, prefixe) {
+        const C = new Comparateur(), sortie = [];
+        let nRec = 0;
+        const D = new R1.Decodeur(function (ts) {
+            sortie.push(ts); const bon = C.paquet(ts);
+            if (vue) { grille.paquet(nRec, bon); }
+            nRec++;
+        });
+        const R = new R1.Recepteur({}, function (d) { D.entrer(d); });
+        const t0 = performance.now();
+        let fait = 0, tr = 0, spectre = false;
+        for (;;) {
+            const x = await lire(65536);
+            if (!x || !x.length) { break; }
+            // spectre pris à 12 ms : au départ, l'entrelaceur vide (7,3 ms) donne des bits constants (raie)
+            if (vue && !spectre && (fait >= 524288 || fait + x.length >= nTot)) { dessinerSpectre(x); spectre = true; }
+            R.entrer(x); fait += x.length;
+            if (vue && (++tr % 4 === 0)) { dessinerConstellation(R); grille.legende(nRec); }
+            etat((prefixe || '') + 'échantillons ' + fait.toLocaleString() + ' / ' + nTot.toLocaleString() + '  |  paquets TS ' + nRec.toLocaleString(), fait / nTot);
+            await attente();
+        }
+        if (vue) { dessinerConstellation(R); grille.legende(nRec); }
+        const ts = new Uint8Array(sortie.length * 188);
+        sortie.forEach(function (p, i) { ts.set(p, i * 188); });
+        return { R: R, D: D, C: C, ts: ts, duree: (performance.now() - t0) / 1000, n: fait };
+    }
+
+    /* decoderBloc — décodage par bloc des observations gardées par le décodeur au fil de l'eau */
+    async function decoderBloc(r, nPasses, prefixe) {
+        const s2 = r.R.M.nMer ? r.R.M.eMer / r.R.M.nMer : 0.5, B = new R1.Bloc(r.D, s2, nPasses);
+        for (;;) {
+            const a = B.avancer();
+            etat((prefixe || '') + 'décodage par bloc : ' + a.texte, a.f);
+            if (a.fini) { break; }
+            await attente();
+        }
+        return B;
+    }
+
+    async function recevoir() {
+        if (enCours) { return; }
+        boutons(false);
+        try {
+            let lire, nTot, info;
+            if (fichierFI) {
+                const f = fichierFI, n = Math.floor(f.size / 2); let pos = 0;
+                nTot = n;
+                lire = async function (k) { if (pos >= n) { return null; } const b = Math.min(n, pos + k); const x = new Int16Array(await f.slice(2 * pos, 2 * b).arrayBuffer()); pos = b; return x; };
+                info = 'FI enregistrée : <b>' + f.name + '</b>, ' + n.toLocaleString() + ' échantillons (' + (n / R1.FS * 1e3).toFixed(2) + ' ms)';
+            } else {
+                const P = reglages(), nPk = Math.min(5000, Math.max(60, Math.round(nombre('nPk')))), T = new R1.Emetteur(P);
+                nTot = nEchantillons(nPk); let pos = 0;
+                lire = async function (k) { if (pos >= nTot) { return null; } const m = Math.min(k, nTot - pos); pos += m; return T.echantillons(m); };
+                info = 'FI simulée : ' + nPk.toLocaleString() + ' paquets émis, ' + nTot.toLocaleString() + ' échantillons (' + (nTot / R1.FS * 1e3).toFixed(2) + ' ms)<br>' +
+                       '• Canal : Eb/N0 ' + P.ebn0 + ' dB, Δf ' + (P.df / 1e3) + ' kHz, horloge ' + P.ppm + ' ppm, filtre FI ±' + (P.bfi / 1e6) + ' MHz (Butterworth ordre ' + P.ordre + ')' + (P.inv ? ', spectre inversé' : '');
+            }
+            const nPkEst = Math.max(1, Math.floor(nTot / (204 * 16 * R1.FS / R1.RS)));
+            grille.debut(nPkEst);
+            effacer('canvasProcess');
+            const st = document.getElementById('statsInput');
+            st.style.display = 'block'; st.innerHTML = '• ' + info;
+            const r = await executer(lire, nTot, true);
+            r.P = fichierFI ? null : reglages();
+            r.mode = +document.getElementById('mode').value;
+            if (r.mode) {
+                r.B = await decoderBloc(r, r.mode === 1 ? 1 : Math.max(2, Math.min(8, Math.round(nombre('nPasses')))), '');
+                if (r.B && r.B.ok) {
+                    r.tsB = r.B.paquets(); r.CB = new Comparateur();
+                    grille.debut(r.tsB.length / 188);
+                    for (let p = 0; p < r.tsB.length / 188; p++) { grille.paquet(p, r.CB.paquet(r.tsB.subarray(p * 188, p * 188 + 188))); }
+                    grille.legende(r.tsB.length / 188);
+                    r.ts = r.tsB;
+                }
+            }
+            recu = r.ts; bilan = r;
+            afficherBilan(r, info);
+            document.getElementById('btnExportTS').disabled = !recu.length;
+        } catch (e) { alert('Erreur de réception : ' + e.message); console.error(e); }
+        boutons(true);
+    }
+
+    function afficherBilan(r, info) {
+        const R = r.R, D = r.D, C = r.C, M = D.M, ok = function (c) { return c ? '<span style="color:#5cd65c">✔</span>' : '<span style="color:#ff5c5c">✘</span>'; };
+        const P = r.P, sim = !!P;
+        const esn0 = sim ? P.ebn0 + 10 * Math.log10(0.5 * 188 / 204) : null;
+        const motsBons = M.paquets - M.rsEchecs;
+        const berV = motsBons ? M.rsBits / (motsBons * 204 * 8) : 0;
+        let t = '<strong>Réception :</strong><br>• ' + info + '<br>';
+        if (!R.verrouille()) { t += ok(false) + ' Pas d\'accrochage : signal trop court ou absent<br>'; }
+        else {
+            t += '• Fréquence : estimée ' + (R.M.dfEstime / 1e3).toFixed(2) + ' kHz, résidu de la boucle de phase ' + (R.freqPLL() / 1e3).toFixed(2) + ' kHz, total ' + ((R.M.dfEstime + R.freqPLL()) / 1e3).toFixed(2) + ' kHz' +
+                 (sim ? ' (simulé : ' + (P.df / 1e3) + ' kHz' + (P.inv ? ', vu −' + (P.df / 1e3) + ' kHz après inversion du spectre' : '') + ')' : '') + '<br>';
+            t += '• Rythme : écart d\'horloge mesuré ' + R.ppm().toFixed(1) + ' ppm' + (sim ? ' (simulé : ' + P.ppm + ' ppm)' : '') + ' ; MER après égaliseur ' + R.mer().toFixed(1) + ' dB<br>';
+            t += '• Alignement X / Y : ' + (M.alignXY < 0 ? '—' : 'paire ' + M.alignXY) + ' ; inversion de spectre détectée : <b>' + (M.inversion ? 'oui' : 'non') + '</b>' + (sim ? ' ' + ok(!!M.inversion === P.inv) : '') + '<br>';
+            const th = sim ? 2 * qf(Math.sqrt(2 * Math.pow(10, esn0 / 10))) : null;
+            t += '• BER canal (décision différentielle ferme) : ' + D.berCanal().toExponential(2) + (sim ? ' ; théorique (MSK cohérent, Es/N0 ' + esn0.toFixed(2) + ' dB) : ' + th.toExponential(2) : '') + '<br>';
+            t += ok(M.rsEchecs === 0) + ' Viterbi conjoint puis Reed-Solomon : ' + M.paquets.toLocaleString() + ' mots, ' + M.rsMots.toLocaleString() + ' corrigés (' + M.rsOctets.toLocaleString() + ' octets, ' + M.rsBits.toLocaleString() + ' bits), ' +
+                 M.rsEchecs.toLocaleString() + ' non corrigible ; BER après Viterbi ' + berV.toExponential(2) + '<br>';
+            t += ok(M.pertesSync === 0) + ' Synchronisation : ' + M.pertesSync + ' perte<br>';
+            t += ok(C.ko === 0 && C.ok > 0) + ' TS : ' + C.n.toLocaleString() + ' paquets reçus, ' + C.ok.toLocaleString() + ' identiques au TS émis' +
+                 (C.ko ? ', ' + C.ko.toLocaleString() + ' différents (premier au paquet reçu ' + C.premierEcart + ')' : '') + (C.idx < 0 && C.n ? ' — position dans le TS émis non retrouvée' : '') + '<br>';
+        }
+        if (r.B) {
+            const B = r.B;
+            if (!B.ok) { t += ok(false) + ' Décodage par bloc : pas de synchronisation<br>'; }
+            else {
+                t += '<strong>Décodage par bloc (' + (r.mode === 1 ? 'effacements' : 'itératif') + ') :</strong> ' + B.nMots.toLocaleString() + ' mots ; ' +
+                     B.bilan.map(function (b, i) { return 'passe ' + (i + 1) + ' : ' + (B.nMots - b.resolus).toLocaleString() + ' non corrigibles' + (b.effacements ? ' (' + b.effacements + ' par effacements)' : ''); }).join(', ') + '<br>';
+                t += ok(r.CB.ko === 0 && r.CB.ok > 0) + ' TS du décodage par bloc : ' + r.CB.n.toLocaleString() + ' paquets, ' + r.CB.ok.toLocaleString() + ' identiques au TS émis' +
+                     (r.CB.ko ? ', ' + r.CB.ko.toLocaleString() + ' différents' : '') + ' (décodage classique : ' + M.rsEchecs.toLocaleString() + ' mots non corrigibles sur ' + M.paquets.toLocaleString() + ')<br>';
+            }
+        }
+        t += '• Durée de calcul : ' + r.duree.toFixed(1) + ' s';
+        const gs = document.getElementById('globalStats');
+        gs.style.display = 'block'; gs.innerHTML = t;
+    }
+    /* qf — fonction Q (queue de la loi normale), approximation de Karagiannidis et Lioumpas */
+    function qf(x) { return x < 0 ? 1 - qf(-x) : (1 - Math.exp(-1.4 * x)) * Math.exp(-x * x / 2) / (1.135 * Math.sqrt(2 * Math.PI) * x || 1); }
+
+    // ---------- fichiers FI ----------
+    async function exporterFI() {
+        if (enCours) { return; }
+        boutons(false);
+        try {
+            const P = reglages(), nPk = Math.round(nombre('nPk')), T = new R1.Emetteur(P), nTot = nEchantillons(nPk), parts = [];
+            for (let pos = 0; pos < nTot; pos += 65536) {
+                const m = Math.min(65536, nTot - pos); parts.push(T.echantillons(m));
+                etat('FI : échantillons ' + (pos + m).toLocaleString() + ' / ' + nTot.toLocaleString(), (pos + m) / nTot);
+                await attente();
+            }
+            const nom = 'fi_gmsk_10M7_42M8_' + P.ebn0 + 'dB_' + nombre('df') + 'kHz_' + P.ppm + 'ppm' + (P.inv ? '_inv' : '') + '.s16';
+            const u = URL.createObjectURL(new Blob(parts, { type: 'application/octet-stream' })), a = document.createElement('a');
+            a.href = u; a.download = nom; a.click(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+            etat('FI exportée : ' + nom + ' (' + (2 * nTot / 1048576).toFixed(1) + ' Mo)', 1);
+        } catch (e) { alert('Erreur : ' + e.message); }
+        boutons(true);
+    }
+    function chargerFI(files) {
+        if (!files || !files.length) { return; }
+        fichierFI = files[0];
+        document.getElementById('statsInput').style.display = 'block';
+        document.getElementById('statsInput').innerHTML = '• FI chargée : <b>' + fichierFI.name + '</b> — ⚙️ Recevoir la traite à la place de la FI simulée ' +
+            '<button onclick="oublierFI()">FI simulée</button>';
+        document.getElementById('fiInput').value = '';
+    }
+    function oublierFI() { fichierFI = null; document.getElementById('statsInput').innerHTML = '• FI simulée'; }
+    function exportTS() {
+        if (!recu || !recu.length) { return; }
+        const u = URL.createObjectURL(new Blob([recu], { type: 'video/mp2t' })), a = document.createElement('a');
+        a.href = u; a.download = 'recu_gmsk_' + (srcNom ? srcNom.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9-]+/g, '-').slice(0, 24) : 'essai') + '.ts'; a.click();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+
+    // ---------- courbe de seuil ----------
+    /* limite de Shannon, entrées binaires, rendement 0,5 × 188/204 : Eb/N0 ≈ 0,0 dB */
+    const SHANNON = 0.0;
+    async function courbeSeuil() {
+        if (enCours) { return; }
+        const de = nombre('sDe'), a = nombre('sA'), pas = Math.max(0.25, nombre('sPas')), np = Math.min(5000, Math.max(100, Math.round(nombre('sNp'))));
+        const nP = Math.max(2, Math.min(8, Math.round(nombre('nPasses'))));
+        if (!(a >= de)) { alert('Bornes de Eb/N0 incohérentes.'); return; }
+        boutons(false);
+        const pts = [], nTot = nEchantillons(np);
+        try {
+            for (let e = de; e <= a + 1e-9; e += pas) {
+                const T = new R1.Emetteur(reglages(e)); let pos = 0;
+                const lire = async function (k) { if (pos >= nTot) { return null; } const m = Math.min(k, nTot - pos); pos += m; return T.echantillons(m); };
+                const pre = 'Eb/N0 ' + e.toFixed(2) + ' dB  |  ';
+                const r = await executer(lire, nTot, false, pre);
+                const M = r.D.M, pt = { e: e, canal: r.R.verrouille() ? r.D.berCanal() : NaN, cl: M.paquets ? M.rsEchecs / M.paquets : NaN, mots: M.paquets, eff: NaN, it: NaN, passes: 0 };
+                const B = r.R.verrouille() ? await decoderBloc(r, nP, pre) : null;
+                if (B && B.ok && B.nMots) {
+                    pt.eff = (B.nMots - B.bilan[0].resolus) / B.nMots;
+                    pt.it = (B.nMots - B.bilan[B.bilan.length - 1].resolus) / B.nMots;
+                    pt.passes = B.bilan.length; pt.motsB = B.nMots;
+                }
+                pts.push(pt);
+                dessinerSeuil(pts);
+            }
+            etat('courbe terminée : ' + pts.length + ' points de ' + np + ' paquets', 1);
+        } catch (err) { alert('Erreur : ' + err.message); console.error(err); }
+        boutons(true);
+    }
+    /* seuil — Eb/N0 où le taux de mots faux passe 1e-2 (interpolation en log), ou NaN */
+    function seuil(pts, cle) {
+        for (let i = 1; i < pts.length; i++) {
+            const a = pts[i - 1], b = pts[i], va = a[cle], vb = b[cle];
+            if (va >= 1e-2 && vb < 1e-2) {
+                if (!(vb > 0)) { return b.e - (b.e - a.e) * 0; }
+                return a.e + (b.e - a.e) * (Math.log10(va) + 2) / (Math.log10(va) - Math.log10(vb));
+            }
+        }
+        return NaN;
+    }
+    function dessinerSeuil(pts) {
+        const cv = document.getElementById('canvasSeuil'), ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+        ctx.fillStyle = '#0e1418'; ctx.fillRect(0, 0, W, H);
+        const x0 = 60, x1 = W - 190, y0 = 16, y1 = H - 40;
+        const de = nombre('sDe'), a = Math.max(nombre('sA'), de + 0.5), lmin = -4, lmax = 0;
+        const X = function (e) { return x0 + (x1 - x0) * (e - de) / (a - de); }, Y = function (v) { return y0 + (y1 - y0) * (lmax - Math.log10(v)) / (lmax - lmin); };
+        ctx.strokeStyle = '#26343e'; ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial';
+        ctx.textAlign = 'right';
+        for (let l = lmin; l <= lmax; l++) { const y = Y(Math.pow(10, l)); ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.fillText('1e' + l, x0 - 5, y + 4); }
+        ctx.textAlign = 'center';
+        const pasX = (a - de) > 4 ? 1 : 0.5;
+        for (let e = Math.ceil(de / pasX) * pasX; e <= a + 1e-9; e += pasX) { const x = X(e); ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke(); ctx.fillText(e + '', x, y1 + 14); }
+        ctx.fillText('Eb/N0 (dB)', (x0 + x1) / 2, y1 + 30);
+        // repère 1e-2
+        ctx.strokeStyle = '#5a6b75'; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x0, Y(1e-2)); ctx.lineTo(x1, Y(1e-2)); ctx.stroke();
+        // théorie du canal
+        ctx.setLineDash([5, 4]); ctx.beginPath();
+        for (let i = 0; i <= 100; i++) { const e = de + (a - de) * i / 100, es = Math.pow(10, (e + 10 * Math.log10(0.5 * 188 / 204)) / 10), v = Math.max(1e-4, 2 * qf(Math.sqrt(2 * es))); if (i) { ctx.lineTo(X(e), Y(v)); } else { ctx.moveTo(X(e), Y(v)); } }
+        ctx.stroke(); ctx.setLineDash([]);
+        const series = [['canal', '#5cc8d6', 'BER canal (ferme)'], ['cl', '#f0a63a', 'mots faux : classique'], ['eff', '#c58af9', 'mots faux : effacements'], ['it', '#3fbf6f', 'mots faux : itératif']];
+        series.forEach(function (s) {
+            ctx.strokeStyle = s[1]; ctx.fillStyle = s[1]; ctx.lineWidth = s[0] === 'cl' ? 4 : 1.5; ctx.beginPath(); let started = false;   // classique en trait large : visible sous les effacements
+            pts.forEach(function (p) { const v = p[s[0]]; if (!(v > 0)) { return; } const x = X(p.e), y = Y(Math.max(1e-4, v)); if (started) { ctx.lineTo(x, y); } else { ctx.moveTo(x, y); started = true; } });
+            ctx.stroke(); ctx.lineWidth = 1;
+            pts.forEach(function (p) { const v = p[s[0]]; if (!(v > 0)) { return; } ctx.fillRect(X(p.e) - 2.5, Y(Math.max(1e-4, v)) - 2.5, 5, 5); });
+        });
+        ctx.textAlign = 'left'; ctx.font = '12px Arial';
+        series.forEach(function (s, i) { ctx.fillStyle = s[1]; ctx.fillRect(x1 + 14, y0 + 8 + 20 * i, 12, 3); ctx.fillStyle = '#dfe7ec'; ctx.fillText(s[2], x1 + 32, y0 + 13 + 20 * i); });
+        ctx.strokeStyle = '#5a6b75'; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(x1 + 14, y0 + 90); ctx.lineTo(x1 + 26, y0 + 90); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#dfe7ec'; ctx.fillText('théorie (canal)', x1 + 32, y0 + 94);
+        ctx.fillStyle = '#8fa1ad'; ctx.font = '11px Arial';
+        ctx.fillText('0 erreur : point absent', x1 + 14, y0 + 118);
+        ctx.fillText('Shannon : ' + SHANNON.toFixed(1) + ' dB', x1 + 14, y0 + 136);
+        if (!pts.length) { document.getElementById('seuilTable').innerHTML = ''; return; }
+        let h = '<table class="info-table"><tr><th>Eb/N0 (dB)</th><th>BER canal</th><th>mots faux : classique</th><th>effacements</th><th>itératif</th><th>passes</th></tr>';
+        const f = function (v) { return isNaN(v) ? '—' : v ? v.toExponential(2) : '0'; };
+        pts.forEach(function (p) {
+            h += '<tr><td>' + p.e.toFixed(2) + '</td><td>' + (isNaN(p.canal) ? 'pas d\'accrochage' : p.canal.toExponential(2)) + '</td><td>' + f(p.cl) + '</td><td>' + f(p.eff) + '</td><td>' + f(p.it) + '</td><td>' + (p.passes || '—') + '</td></tr>';
+        });
+        h += '</table>';
+        const sc = seuil(pts, 'cl'), se = seuil(pts, 'eff'), si = seuil(pts, 'it');
+        const g = function (s) { return isNaN(s) ? '—' : s.toFixed(2) + ' dB'; }, gain = function (s) { return isNaN(s) || isNaN(sc) ? '—' : (sc - s).toFixed(2) + ' dB'; };
+        h += '<table class="info-table"><tr><th>à 1e-2 mot faux</th><th>Eb/N0</th><th>gain sur le classique</th><th>écart à Shannon (' + SHANNON.toFixed(1) + ' dB)</th></tr>' +
+             '<tr><td>classique</td><td>' + g(sc) + '</td><td>—</td><td>' + (isNaN(sc) ? '—' : (sc - SHANNON).toFixed(2) + ' dB') + '</td></tr>' +
+             '<tr><td>effacements</td><td>' + g(se) + '</td><td>' + gain(se) + '</td><td>' + (isNaN(se) ? '—' : (se - SHANNON).toFixed(2) + ' dB') + '</td></tr>' +
+             '<tr><td>itératif</td><td>' + g(si) + '</td><td>' + gain(si) + '</td><td>' + (isNaN(si) ? '—' : (si - SHANNON).toFixed(2) + ' dB') + '</td></tr></table>';
+        document.getElementById('seuilTable').innerHTML = h;
+    }
+</script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page15-reception.html">◀ 15 · Réception DVB-S</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 16 / 16</span></span><a href="index2.html">Sommaire ▶</a></nav>
+</body>
+</html>
