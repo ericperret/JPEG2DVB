@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<!--
+================================================================================
+  Nom        : page17-decodage-video.html
+  Projet     : JPEG2DVB, récepteur du mode GMSK (chantier R2)
+  Objet      : Page 17 - Décodage vidéo : du Transport Stream au BT.656
+  Auteur     : Eric PERRET
+  Date       : 2026-11-27
+  Version    : 1.0
+  Plateforme : HTML / CSS / JavaScript, page autonome, aucune librairie
+  Licence    : CC BY-NC 4.0
+  Principe   : codeur de test identique au chemin caméra du mode GMSK de
+               j2d_i2c_dvb-full.vhd 2.30 (cam_mb, dct8x8_int, quant_intra,
+               zigzag, vlc_enc, es_mux en demi-trames, ts_mux en mode GMSK) ;
+               décodeur : PAT, PMT, PID vidéo, PES, flux élémentaire MPEG-2
+               images I (ISO 13818-2 : en-têtes, slices, B.1, B.2, B.12 à B.14,
+               quantification inverse § 7.4 avec contrôle d'écart, DCT inverse
+               entière), demi-trames en 4:2:0 ; sortie : tampon de deux rangées
+               de macroblocs par demi-trame, chrominance 4:2:0 → 4:2:2 dans la
+               demi-trame, lignes ITU-R BT.656 625 lignes (EAV / SAV)
+  Historique : 1.0  2026-11-27  création
+================================================================================
+-->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Page 17 - Décodage vidéo</title>
+    <style>
+        body { font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; margin: 20px; background: #0e1418; color: #dfe7ec; }
+        :root { color-scheme: dark; }
+        h1 { color: #dfe7ec; text-align: center; letter-spacing: -.3px; }
+        h3 { color: #dfe7ec; margin-top: 0; }
+        .description { max-width: 1100px; margin: 0 auto 20px; background: #18222a; padding: 15px; border-radius: 8px; border-left: 4px solid #5cc8d6; line-height: 1.55; }
+        .description code { color: #5cc8d6; }
+        .pipeline { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; font-size: 13px; flex-wrap: wrap; }
+        .pipeline-step { background: #26343e; padding: 7px 12px; border-radius: 5px; }
+        .pipeline-step.done { background: #006644; }
+        .pipeline-step.active { background: #f0a63a; color: #111; }
+        .pipeline-arrow { color: #f0a63a; font-size: 18px; }
+        .canvas-container { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+        .canvas-box { background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        canvas { border: 2px solid #26343e; }
+        .controls { margin-top: 10px; }
+        button { background: #18222a; color: #dfe7ec; border: 1px solid #33434e; border-radius: 6px; padding: 9px 16px; margin: 4px; cursor: pointer; font-family: inherit; transition: border-color .15s, color .15s; }
+        button:hover:not(:disabled) { border-color: #f0a63a; color: #f0a63a; }
+        button:disabled { color: #5a6b75; border-color: #26343e; cursor: not-allowed; }
+        input[type="file"] { display: none; }
+        input, select { background: #141c22; color: #dfe7ec; border: 1px solid #26343e; border-radius: 6px; padding: 4px 6px; font-size: 13px; }
+        input[type="number"] { width: 70px; }
+        .info { margin-top: 10px; font-size: 12px; color: #8fa1ad; }
+        .stats { background: #26343e; padding: 10px 14px; border-radius: 5px; margin-top: 15px; font-size: 13px; text-align: left; line-height: 1.7; }
+        .detail-section { max-width: 1100px; margin: 20px auto; }
+        .param-ligne { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; align-items: center; margin: 0 auto 12px; font-size: 13px; color: #a9b7bf; max-width: 1100px; }
+        .param-ligne label { white-space: nowrap; }
+        .param-titre { color: #f0a63a; font-weight: 600; }
+        .barre { max-width: 1100px; height: 6px; background: #26343e; border-radius: 3px; margin: 6px auto 4px; overflow: hidden; }
+        .barre div { height: 100%; width: 0; background: #f0a63a; }
+        #etat { max-width: 1100px; margin: 0 auto 14px; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace; color: #8fa1ad; min-height: 15px; }
+        .grand { max-width: 1100px; margin: 20px auto; background: #18222a; padding: 15px; border-radius: 8px; text-align: center; }
+        .j2d-nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; max-width: 1100px; margin: 0 auto 20px; padding: 10px 14px; background: #141c22; border: 1px solid #26343e; border-radius: 8px; font: 14px system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+        .j2d-nav.bas { margin: 24px auto 0; }
+        .j2d-nav a { color: #dfe7ec; text-decoration: none; padding: 6px 10px; border-radius: 5px; }
+        .j2d-nav a:hover { color: #f0a63a; }
+        .j2d-nav .j2d-centre { display: flex; align-items: center; gap: 12px; }
+        .j2d-nav .j2d-etape { color: #f0a63a; font-weight: bold; font-family: ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; }
+        .j2d-nav .j2d-points { display: flex; gap: 4px; }
+        .j2d-nav .j2d-points a { width: 10px; height: 10px; padding: 0; border-radius: 50%; background: #26343e; }
+        .j2d-nav .j2d-points a.ici { background: #f0a63a; }
+        .j2d-nav .j2d-points a:hover { background: #5cc8d6; }
+        .j2d-nav .azs { font: 800 20px/1 ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; letter-spacing: -1px; color: #f0a63a; padding: 0 12px 0 0; border-right: 1px solid #26343e; border-radius: 0; }
+        .j2d-ver { color: #8fa1ad; font: 12px ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; white-space: nowrap; }
+        @media (max-width: 640px) { .j2d-nav .j2d-points { display: none; } }
+    </style>
+</head>
+<body>
+<nav class="j2d-nav" aria-label="Chaîne JPEG2DVB"><a class="azs" href="https://www.azs.fr/" title="www.azs.fr">AZS</a><a href="page16-reception-gmsk.html">◀ 16 · Réception GMSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 17 / 17</span><span class="j2d-ver">v1.0</span><span class="j2d-points"><a href="page00-camera.html" title="00 · Caméra"></a><a href="page01-image-to-macroblocs.html" title="01 · Macroblocs"></a><a href="page02-dct.html" title="02 · DCT 8×8"></a><a href="page03-quantification.html" title="03 · Quantification"></a><a href="page04-zigzag.html" title="04 · Zigzag"></a><a href="page05-rle-huffman.html" title="05 · RLE + Huffman"></a><a href="page06-elementary-stream.html" title="06 · Elementary Stream"></a><a href="page07-pes.html" title="07 · PES"></a><a href="page08-ts.html" title="08 · Transport Stream"></a><a href="page09-prbs.html" title="09 · PRBS"></a><a href="page10-reed-solomon.html" title="10 · Reed-Solomon"></a><a href="page11-interleaving.html" title="11 · Entrelacement"></a><a href="page12-convolutional_1.html" title="12 · Codeur convolutif"></a><a href="page13-qpsk.html" title="13 · QPSK"></a><a href="page14-srrc-v2.html" title="14 · Filtre SRRC"></a><a href="page15-reception.html" title="15 · Réception DVB-S"></a><a href="page16-reception-gmsk.html" title="16 · Réception GMSK"></a><a href="page17-decodage-video.html" title="17 · Décodage vidéo" class="ici" aria-current="page"></a></span></span><a href="index2.html">Sommaire ▶</a></nav>
+    <h1>🎞️ Page 17 - Décodage vidéo : du TS au BT.656</h1>
+
+    <div class="description">
+        <strong>Fonction :</strong> décodeur vidéo du récepteur GMSK : du Transport Stream reçu (page 16) au flux ITU-R BT.656 de l'encodeur PAL (ADV7391).<br>
+        <strong>Codeur de test :</strong> chemin caméra du mode GMSK (<code>cam_mb</code>, <code>dct8x8_int</code>, <code>quant_intra</code>, <code>zigzag</code>, <code>vlc_enc</code>, <code>es_mux</code>
+        en demi-trames, <code>ts_mux</code> en mode GMSK) : image 720 × 576, chaque demi-trame 720 × 288 codée comme une image I (structure 01 puis 10), chrominance 4:2:0 de la demi-trame
+        (moyenne arrondie des deux lignes de chaque paire) ; code d'échelle par demi-trame, au plus petit qui tient dans le budget <code>T3_CAM</code> (42 526 bits) ou fixe.<br>
+        <strong>Décodeur :</strong> PAT, PMT, PID vidéo, PES ; en-têtes MPEG-2 (séquence, extensions, GOP, image) ; slices : B.1, B.2, B.12 à B.14, échappement 6 + 12 bits ;
+        quantification inverse § 7.4 (contrôle d'écart compris) ; DCT inverse entière (mêmes coefficients 13 bits que la DCT de l'émetteur). Tout paquet faux ou toute rupture de
+        compteur laisse un trou : la tranche qui le contient est abandonnée, ses lignes restent noires (pas de mémoire d'image), le décodage reprend au code de début suivant.<br>
+        <strong>Sortie :</strong> par rangées de macroblocs, tampon de deux rangées par demi-trame (comme le FPGA, sans image entière en mémoire) ; chrominance 4:2:0 → 4:2:2 dans la demi-trame
+        (¾ · ligne + ¼ · voisine) ; lignes BT.656 625 lignes, demi-trame haute en lignes 23 à 310, basse en 336 à 623, valeurs bornées à 1..254. L'image affichée est relue dans le flux BT.656.<br>
+        <strong>Entrée :</strong> TS du codeur de test, ou TS chargé (page 16, page 08) — <strong>Sortie :</strong> BT.656 (<code>.656</code>, 1 728 octets par ligne) ; contrôles : décodage identique
+        à la reconstruction du codeur, PSNR contre l'image source
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step done">TS</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">PAT / PMT / PES</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">En-têtes</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">VLC</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">Q⁻¹</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">DCT⁻¹</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">2 rangées</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step done">4:2:0 → 4:2:2</span><span class="pipeline-arrow">→</span>
+        <span class="pipeline-step active">BT.656</span>
+    </div>
+
+    <div class="param-ligne">
+        <span class="param-titre">Codeur de test</span>
+        <label>Source <select id="src"><option value="mire" selected>mire de synthèse (carré mobile)</option><option value="image">image chargée</option></select></label>
+        <button onclick="document.getElementById('imgInput').click()">📁 Image</button>
+        <input type="file" id="imgInput" accept="image/*" onchange="chargerImage(this.files)">
+        <label>Images <input type="number" id="nIm" value="4" step="1" min="1" max="25"></label>
+        <label>Code d'échelle <select id="code"><option value="0" selected>automatique (budget T3_CAM)</option></select></label>
+    </div>
+    <div class="barre"><div id="barre"></div></div>
+    <div id="etat"></div>
+
+    <div class="canvas-container">
+        <div class="canvas-box">
+            <h3>1. ENTRÉE - Source et TS</h3>
+            <canvas id="canvasInput" width="360" height="288"></canvas>
+            <div class="controls">
+                <button id="btnCoder" onclick="coder()">⚙️ Coder</button>
+                <button onclick="document.getElementById('tsInput').click()">📁 TS</button>
+                <input type="file" id="tsInput" accept=".ts" onchange="chargerTS(this.files)">
+            </div>
+            <div class="info">Image source (720 × 576 affichée à moitié)</div>
+            <div id="statsInput" class="stats" style="display:none;"></div>
+        </div>
+        <div class="canvas-box">
+            <h3>2. TRAITEMENT - Rangées décodées</h3>
+            <canvas id="canvasProcess" width="360" height="288"></canvas>
+            <div class="controls">
+                <button id="btnDecoder" onclick="decoder()" disabled>⚙️ Décoder</button>
+            </div>
+            <div class="info">Demi-trames reconstruites rangée par rangée (haute à gauche, basse à droite)</div>
+        </div>
+        <div class="canvas-box">
+            <h3>3. SORTIE - Relue dans le BT.656</h3>
+            <canvas id="canvasOutput" width="360" height="288"></canvas>
+            <div class="controls">
+                <button id="btnBT" onclick="exporter('bt')" disabled>💾 BT.656</button>
+                <button id="btnTS" onclick="exporter('ts')" disabled>💾 TS émis</button>
+                <button id="btnES" onclick="exporter('es')" disabled>💾 ES .m2v</button>
+            </div>
+            <div class="info">Image entrelacée reconstituée depuis les lignes 23 à 310 et 336 à 623</div>
+        </div>
+    </div>
+
+    <div class="detail-section">
+        <div id="globalStats" class="stats" style="display:none;"></div>
+    </div>
+
+    <div class="grand">
+        <h3>Image en taille réelle</h3>
+        <div class="param-ligne">
+            <label>Image <input type="number" id="vIm" value="1" step="1" min="1" max="25" onchange="vueGrande()"></label>
+            <label>Vue <select id="vMode" onchange="vueGrande()"><option value="sortie" selected>sortie BT.656</option><option value="source">source</option><option value="ecart">écart × 8 (luminance)</option></select></label>
+        </div>
+        <canvas id="canvasGrand" width="720" height="576"></canvas>
+    </div>
+
+<script>
+// ============================================================
+// NOYAU R2 : codeur de test (chemin caméra du mode GMSK) et décodeur MPEG-2 images I,
+//   du TS au BT.656
+// ============================================================
+'use strict';
+const V = (function () {
+    // ---------- tables MPEG-2 ----------
+    const W_INTRA = [
+        8, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37,
+        19, 22, 26, 27, 29, 34, 34, 38, 22, 22, 26, 27, 29, 34, 37, 40,
+        22, 26, 27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58,
+        26, 27, 29, 34, 38, 46, 56, 69, 27, 29, 35, 38, 46, 56, 69, 83];
+    const ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
+        35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+    const ALT = [0, 8, 16, 24, 1, 9, 2, 10, 17, 25, 32, 40, 48, 56, 57, 49, 41, 33, 26, 18, 3, 11, 4, 12, 19, 27, 34, 42, 50, 58, 35, 43,
+        51, 59, 20, 28, 5, 13, 6, 14, 21, 29, 36, 44, 52, 60, 37, 45, 53, 61, 22, 30, 7, 15, 23, 31, 38, 46, 54, 62, 39, 47, 55, 63];
+    const QNL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 44, 48, 52, 56, 64, 72, 80, 88, 96, 104, 112];
+    const DC_Y = ['100', '00', '01', '101', '110', '1110', '11110', '111110', '1111110', '11111110', '111111110', '111111111'];
+    const DC_C = ['00', '01', '10', '110', '1110', '11110', '111110', '1111110', '11111110', '111111110', '1111111110', '1111111111'];
+    // B.14 (intra_vlc_format = 0) sans le bit de signe ; même table que la page 05
+    const AC = {
+        '0,1': '11', '1,1': '011', '0,2': '0100', '2,1': '0101', '0,3': '00101', '3,1': '00111', '4,1': '00110', '1,2': '000110', '5,1': '000111',
+        '6,1': '000101', '7,1': '000100', '0,4': '0000110', '2,2': '0000100', '8,1': '0000111', '9,1': '0000101',
+        '0,5': '00100110', '0,6': '00100001', '1,3': '00100101', '3,2': '00100100', '10,1': '00100111', '11,1': '00100011', '12,1': '00100010', '13,1': '00100000',
+        '0,7': '0000001010', '1,4': '0000001100', '2,3': '0000001011', '4,2': '0000001111', '5,2': '0000001001', '14,1': '0000001110', '15,1': '0000001101', '16,1': '0000001000',
+        '0,8': '000000011101', '0,9': '000000011000', '0,10': '000000010011', '0,11': '000000010000', '1,5': '000000011011', '2,4': '000000010100', '3,3': '000000011100', '4,3': '000000010010',
+        '6,2': '000000011110', '7,2': '000000010101', '8,2': '000000010001', '17,1': '000000011111', '18,1': '000000011010', '19,1': '000000011001', '20,1': '000000010111', '21,1': '000000010110',
+        '0,12': '0000000011010', '0,13': '0000000011001', '0,14': '0000000011000', '0,15': '0000000010111', '1,6': '0000000010110', '1,7': '0000000010101', '2,5': '0000000010100', '3,4': '0000000010011',
+        '5,3': '0000000010010', '9,2': '0000000010001', '10,2': '0000000010000', '22,1': '0000000011111', '23,1': '0000000011110', '24,1': '0000000011101', '25,1': '0000000011100', '26,1': '0000000011011',
+        '0,16': '00000000011111', '0,17': '00000000011110', '0,18': '00000000011101', '0,19': '00000000011100', '0,20': '00000000011011', '0,21': '00000000011010', '0,22': '00000000011001', '0,23': '00000000011000',
+        '0,24': '00000000010111', '0,25': '00000000010110', '0,26': '00000000010101', '0,27': '00000000010100', '0,28': '00000000010011', '0,29': '00000000010010', '0,30': '00000000010001', '0,31': '00000000010000',
+        '0,32': '000000000011000', '0,33': '000000000010111', '0,34': '000000000010110', '0,35': '000000000010101', '0,36': '000000000010100', '0,37': '000000000010011', '0,38': '000000000010010', '0,39': '000000000010001',
+        '0,40': '000000000010000', '1,8': '000000000011111', '1,9': '000000000011110', '1,10': '000000000011101', '1,11': '000000000011100', '1,12': '000000000011011', '1,13': '000000000011010', '1,14': '000000000011001',
+        '1,15': '0000000000010011', '1,16': '0000000000010010', '1,17': '0000000000010001', '1,18': '0000000000010000', '6,3': '0000000000010100', '11,2': '0000000000011010', '12,2': '0000000000011001', '13,2': '0000000000011000',
+        '14,2': '0000000000010111', '15,2': '0000000000010110', '16,2': '0000000000010101', '27,1': '0000000000011111', '28,1': '0000000000011110', '29,1': '0000000000011101', '30,1': '0000000000011100', '31,1': '0000000000011011'
+    };
+    const MBA = ['1', '011', '010', '0011', '0010', '00011', '00010', '0000111', '0000110', '00001011', '00001010', '00001001', '00001000', '00000111', '00000110',
+        '0000010111', '0000010110', '0000010101', '0000010100', '0000010011', '0000010010', '00000100011', '00000100010', '00000100001', '00000100000',
+        '00000011111', '00000011110', '00000011101', '00000011100', '00000011011', '00000011010', '00000011001', '00000011000'];
+    /* tableLecture — E : liste [code, valeur], longueur de lecture L → S : table 2^L : valeur·32 + longueur
+       (−1 : code absent) */
+    function tableLecture(liste, L) {
+        const t = new Int32Array(1 << L).fill(-1);
+        for (const [c, v] of liste) {
+            const n = c.length, base = parseInt(c, 2) << (L - n);
+            for (let i = 0; i < (1 << (L - n)); i++) { t[base + i] = v * 32 + n; }
+        }
+        return t;
+    }
+    const T_DCY = tableLecture(DC_Y.map(function (c, i) { return [c, i]; }), 10);
+    const T_DCC = tableLecture(DC_C.map(function (c, i) { return [c, i]; }), 10);
+    const T_AC = tableLecture(Object.keys(AC).map(function (k) { const [r, l] = k.split(','); return [AC[k], (+r) * 64 + (+l)]; })
+        .concat([['10', 4095], ['000001', 4094]]), 16);
+    const T_MBA = tableLecture(MBA.map(function (c, i) { return [c, i + 1]; }).concat([['00000001000', 34]]), 11);
+
+    // ---------- DCT entière (dct8x8_int, page 02) et inverse ----------
+    const CI = (function () {
+        const c = new Int32Array(64);
+        for (let k = 0; k < 8; k++) { for (let n = 0; n < 8; n++) { c[k * 8 + n] = Math.round(4096 * (k ? 1 : Math.SQRT1_2) / 2 * Math.cos((2 * n + 1) * k * Math.PI / 16)); } }
+        return c;
+    })();
+    /* dct — E : 64 pixels (ligne par ligne) → S : 64 coefficients F[v][u] (passes (·+32)>>6, (·+2¹⁷)>>18) */
+    function dct(b) {
+        const R = new Int32Array(64), F = new Int32Array(64);
+        for (let y = 0; y < 8; y++) { for (let u = 0; u < 8; u++) { let s = 0; for (let x = 0; x < 8; x++) { s += CI[u * 8 + x] * b[y * 8 + x]; } R[y * 8 + u] = (s + 32) >> 6; } }
+        for (let v = 0; v < 8; v++) { for (let u = 0; u < 8; u++) { let s = 0; for (let y = 0; y < 8; y++) { s += CI[v * 8 + y] * R[y * 8 + u]; } F[v * 8 + u] = (s + 131072) >> 18; } }
+        return F;
+    }
+    /* idct — E : 64 coefficients F[v][u] → S : 64 pixels bornés 0..255 ; mêmes coefficients entiers :
+       passe lignes R[v][x] = (Σu Ci[u][x]·F[v][u] + 2⁸) >> 9, colonnes f = (Σv Ci[v][y]·R[v][x] + 2¹⁴) >> 15 */
+    function idct(F, out, o, pas) {
+        const R = new Int32Array(64);
+        for (let v = 0; v < 8; v++) { for (let x = 0; x < 8; x++) { let s = 0; for (let u = 0; u < 8; u++) { s += CI[u * 8 + x] * F[v * 8 + u]; } R[v * 8 + x] = (s + 256) >> 9; } }
+        for (let y = 0; y < 8; y++) {
+            for (let x = 0; x < 8; x++) {
+                let s = 0; for (let v = 0; v < 8; v++) { s += CI[v * 8 + y] * R[v * 8 + x]; }
+                const p = (s + 16384) >> 15;
+                out[o + y * pas + x] = p < 0 ? 0 : p > 255 ? 255 : p;
+            }
+        }
+    }
+    /* quantifier — quant_intra (page 03) : DC (F + 4) >> 3 borné 0..255, AC ±⌊(32|F| + D) / 2D⌋ ≤ 2 047, D = W·2·code */
+    function quantifier(F, code) {
+        const q = new Int32Array(64);
+        q[0] = Math.max(0, Math.min(255, (F[0] + 4) >> 3));
+        for (let i = 1; i < 64; i++) { const a = Math.abs(F[i]), D = W_INTRA[i] * 2 * code, v = Math.min(2047, Math.floor((32 * a + D) / (2 * D))); q[i] = F[i] < 0 ? -v : v; }
+        return q;
+    }
+    /* dequantifier — § 7.4.2 intra : DC × (8 >> précision), AC (2·QF·W·qs)/32 tronqué vers 0, saturation,
+       contrôle d'écart (§ 7.4.4) : somme paire → bit de poids faible de F[7][7] inversé */
+    function dequantifier(QF, W, qs, dcMult) {
+        const F = new Int32Array(64);
+        let somme = 0;
+        F[0] = QF[0] * dcMult;
+        for (let i = 1; i < 64; i++) { if (QF[i]) { const p = 2 * QF[i] * W[i] * qs; F[i] = p < 0 ? -Math.floor(-p / 32) : Math.floor(p / 32); } }
+        for (let i = 0; i < 64; i++) { F[i] = F[i] > 2047 ? 2047 : F[i] < -2048 ? -2048 : F[i]; somme += F[i]; }
+        if ((somme & 1) === 0) { F[63] += (F[63] & 1) ? -1 : 1; }
+        return F;
+    }
+
+    // ---------- écriture et lecture de bits ----------
+    function Ecrivain() { this.b = new Uint8Array(1 << 16); this.n = 0; }
+    Ecrivain.prototype.mettre = function (v, l) {
+        for (let i = l - 1; i >= 0; i--) {
+            if ((this.n >> 3) >= this.b.length) { const t = new Uint8Array(this.b.length * 2); t.set(this.b); this.b = t; }
+            if (Math.floor(v / Math.pow(2, i)) & 1) { this.b[this.n >> 3] |= 0x80 >> (this.n & 7); }
+            this.n++;
+        }
+    };
+    Ecrivain.prototype.chaine = function (s) { for (let i = 0; i < s.length; i++) { this.mettre(s.charCodeAt(i) - 48, 1); } };
+    Ecrivain.prototype.aligner = function () { while (this.n & 7) { this.mettre(0, 1); } };
+    Ecrivain.prototype.octets = function () { return this.b.slice(0, (this.n + 7) >> 3); };
+    function Lecteur(b, o, fin) { this.b = b; this.p = o * 8; this.fin = fin * 8; }
+    Lecteur.prototype.voir = function (l) {
+        let v = 0;
+        for (let i = 0; i < l; i++) { const q = this.p + i; v = (v << 1) | (q < this.fin ? (this.b[q >> 3] >> (7 - (q & 7))) & 1 : 0); }
+        return v;
+    };
+    Lecteur.prototype.lire = function (l) { const v = this.voir(l); this.p += l; return v; };
+    Lecteur.prototype.passer = function (l) { this.p += l; };
+    Lecteur.prototype.fini = function () { return this.p >= this.fin; };
+
+    // ============================================================
+    // CODEUR DE TEST : chemin caméra du mode GMSK (cam_mb → codeur → es_mux, G_TRAMES)
+    //   image 720 × 576 4:2:2 → deux demi-trames 720 × 288 codées chacune comme une image
+    //   (picture_structure 01 puis 10), chrominance 4:2:0 de la demi-trame : moyenne
+    //   arrondie des deux lignes de chaque paire, (a + b + 1) >> 1
+    // ============================================================
+    const LARG = 720, HAUT = 576, COLS = 45, ROWS = 18, GOP = 12, BUDGET = 42526;   // T3_CAM : bits par demi-trame
+    /* blocsDemiTrame — E : image {Y (720 × 576), Cb, Cr (360 × 576)}, demi-trame (0 haute, 1 basse)
+       → S : macroblocs (810 × 6 × 64 octets, ordre de cam_mb) */
+    function blocsDemiTrame(im, t) {
+        const out = new Uint8Array(COLS * ROWS * 384);
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const o = (r * COLS + c) * 384;
+                for (let b = 0; b < 4; b++) {
+                    const x0 = c * 16 + (b & 1) * 8, y0 = r * 16 + (b >> 1) * 8;
+                    for (let y = 0; y < 8; y++) { for (let x = 0; x < 8; x++) { out[o + b * 64 + y * 8 + x] = im.Y[(2 * (y0 + y) + t) * LARG + x0 + x]; } }
+                }
+                for (let k = 0; k < 2; k++) {
+                    const C = k ? im.Cr : im.Cb;
+                    for (let y = 0; y < 8; y++) {
+                        const l = 2 * (r * 8 + y);                     // paire de lignes de la demi-trame
+                        for (let x = 0; x < 8; x++) {
+                            const cx = c * 8 + x, a = C[(2 * l + t) * 360 + cx], d = C[(2 * (l + 1) + t) * 360 + cx];
+                            out[o + 256 + k * 64 + y * 8 + x] = (a + d + 1) >> 1;
+                        }
+                    }
+                }
+            }
+        }
+        return out;
+    }
+    /* coderDemiTrame — E : macroblocs, code d'échelle → S : {bits (slices, Ecrivain), rec : reconstruction
+       {Y 720 × 288, C 360 × 144 × 2}} ; une slice par rangée, prédicteurs DC remis à 128 */
+    function coderDemiTrame(mb, code) {
+        const w = new Ecrivain(), rec = { Y: new Uint8Array(LARG * 288), Cb: new Uint8Array(360 * 144), Cr: new Uint8Array(360 * 144) };
+        const blk = new Uint8Array(64);
+        for (let r = 0; r < ROWS; r++) {
+            w.mettre(0x000001, 24); w.mettre(r + 1, 8); w.mettre(code, 5); w.mettre(0, 1);
+            const pred = [128, 128, 128];
+            for (let c = 0; c < COLS; c++) {
+                w.chaine('11');
+                const o = (r * COLS + c) * 384;
+                for (let b = 0; b < 6; b++) {
+                    for (let i = 0; i < 64; i++) { blk[i] = mb[o + b * 64 + i]; }
+                    const q = quantifier(dct(blk), code), comp = b < 4 ? 0 : b - 3;
+                    // DC
+                    const d = q[0] - pred[comp]; pred[comp] = q[0];
+                    const ad = Math.abs(d), size = ad ? Math.floor(Math.log2(ad)) + 1 : 0;
+                    w.chaine((comp ? DC_C : DC_Y)[size]);
+                    if (size) { w.mettre(d > 0 ? d : (ad ^ ((1 << size) - 1)), size); }
+                    // AC
+                    let run = 0;
+                    for (let i = 1; i < 64; i++) {
+                        const v = q[ZZ[i]];
+                        if (!v) { run++; continue; }
+                        const k = run + ',' + Math.abs(v);
+                        if (AC[k]) { w.chaine(AC[k]); w.mettre(v < 0 ? 1 : 0, 1); }
+                        else { w.chaine('000001'); w.mettre(run, 6); w.mettre(v & 4095, 12); }
+                        run = 0;
+                    }
+                    w.chaine('10');
+                    // reconstruction locale (même calcul que le décodeur)
+                    const F = dequantifier(q, W_INTRA, 2 * code, 8);
+                    if (b < 4) { idct(F, rec.Y, (r * 16 + (b >> 1) * 8) * LARG + c * 16 + (b & 1) * 8, LARG); }
+                    else { idct(F, b === 4 ? rec.Cb : rec.Cr, r * 8 * 360 + c * 8, 360); }
+                }
+            }
+            w.aligner();
+        }
+        return { bits: w, rec: rec };
+    }
+    /* Codeur — E : code (0 : automatique, le plus petit code dont la demi-trame tient dans le budget
+       T3_CAM, comme la régulation qui sature à 31) ; image(im, derniere) → {octets : flux élémentaire de
+       l'image (pour ts_mux), rec : reconstructions des deux demi-trames, codes, bits} */
+    function Codeur(codeFixe) { this.fixe = codeFixe; this.n = 0; this.tc = { im: 0, se: 0, mi: 0, h: 0 }; }
+    Codeur.prototype.image = function (im, derniere) {
+        const w = new Ecrivain(), tr = this.n % GOP, tc = this.tc, res = { rec: [], codes: [], bits: [] };
+        if (tr === 0) {
+            w.mettre(0x000001B3, 32); w.mettre(LARG, 12); w.mettre(HAUT, 12); w.mettre(2, 4); w.mettre(3, 4);
+            w.mettre(5656, 18); w.mettre(1, 1); w.mettre(112, 10); w.mettre(0, 3);
+            w.mettre(0x000001B5, 32); w.mettre(1, 4); w.mettre(0x48, 8); w.mettre(0, 1); w.mettre(1, 2); w.mettre(0, 4); w.mettre(0, 12); w.mettre(1, 1); w.mettre(0, 16);
+            w.mettre(0x000001B8, 32);
+            w.mettre(0, 1); w.mettre(tc.h, 5); w.mettre(tc.mi, 6); w.mettre(1, 1); w.mettre(tc.se, 6); w.mettre(tc.im, 6); w.mettre(1, 1); w.mettre(0, 1); w.aligner();
+        }
+        for (let t = 0; t < 2; t++) {
+            w.mettre(0x00000100, 32); w.mettre(tr, 10); w.mettre(1, 3); w.mettre(0xFFFF, 16); w.mettre(0, 1); w.aligner();
+            w.mettre(0x000001B5, 32); w.mettre(8, 4); w.mettre(0xFFFF, 16); w.mettre(0, 2); w.mettre(t ? 2 : 1, 2); w.mettre(0, 8); w.mettre(0, 2); w.aligner();
+            const mb = blocsDemiTrame(im, t);
+            let code = this.fixe;
+            if (!code) {                                      // recherche dichotomique du plus petit code tenant dans le budget
+                let lo = 1, hi = 31;
+                while (lo < hi) { const m = (lo + hi) >> 1; if (coderDemiTrame(mb, m).bits.n <= BUDGET) { hi = m; } else { lo = m + 1; } }
+                code = lo;
+            }
+            const r = coderDemiTrame(mb, code), o = r.bits.octets();
+            for (let i = 0; i < o.length; i++) { w.mettre(o[i], 8); }
+            res.codes.push(code); res.bits.push(r.bits.n); res.rec.push(r.rec);
+        }
+        if (derniere) { w.mettre(0x000001B7, 32); }
+        res.octets = w.octets();
+        this.n++;
+        tc.im++; if (tc.im === 25) { tc.im = 0; tc.se++; if (tc.se === 60) { tc.se = 0; tc.mi++; if (tc.mi === 60) { tc.mi = 0; tc.h = (tc.h + 1) % 24; } } }
+        return res;
+    };
+    /* coder — E : images [{Y, Cb, Cr}], code → S : {images, es, rec, codes, bits} */
+    function coder(images, codeFixe) {
+        const C = new Codeur(codeFixe), res = { images: [], rec: [], codes: [], bits: [] };
+        for (let n = 0; n < images.length; n++) {
+            const r = C.image(images[n], n === images.length - 1);
+            res.images.push(r.octets); res.rec.push(r.rec); res.codes.push.apply(res.codes, r.codes); res.bits.push.apply(res.bits, r.bits);
+        }
+        let tot = 0; res.images.forEach(function (a) { tot += a.length; });
+        res.es = new Uint8Array(tot); let p = 0; res.images.forEach(function (a) { res.es.set(a, p); p += a.length; });
+        return res;
+    }
+
+    // ============================================================
+    // TS DU MODE GMSK (ts_mux, gmsk = 1, cadence CAD_G_5M) avec un vrai flux élémentaire
+    // ============================================================
+    const CAD_G = { k: 374, psi: 45000, pcr: 16875, img: 22500, pcrInc: 17952, pcr0: 955 };
+    function crc32(a) {
+        let c = 0xFFFFFFFF;
+        for (let i = 0; i < a.length; i++) { for (let b = 7; b >= 0; b--) { const f = ((c >>> 31) ^ (a[i] >> b)) & 1; c = (c << 1) >>> 0; if (f) { c = (c ^ 0x04C11DB7) >>> 0; } } }
+        return c >>> 0;
+    }
+    function paquetPsi(tete, section) {
+        const p = new Uint8Array(188).fill(0xFF); let j = 0;
+        for (const v of tete) { p[j++] = v; } for (const v of section) { p[j++] = v; }
+        const c = crc32(section); p[j] = c >>> 24; p[j + 1] = (c >>> 16) & 255; p[j + 2] = (c >>> 8) & 255; p[j + 3] = c & 255;
+        return p;
+    }
+    const PAT_1 = paquetPsi([0x47, 0x40, 0x00, 0x10, 0x00], [0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xE1, 0x00]);
+    const PMT_1 = paquetPsi([0x47, 0x41, 0x00, 0x10, 0x00], [0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00, 0xE1, 0x01, 0xF0, 0x00, 0x02, 0xE1, 0x01, 0xF0, 0x00]);
+    /* muxGmsk — E : flux élémentaire de chaque image → S : TS (un paquet par créneau) jusqu'à la
+       dernière image, plus 30 créneaux ; image n prête 30 créneaux après son instant (n + 1)/25 s */
+    function muxGmsk(imgs) {
+        const C = CAD_G, out = [];
+        let dpsi = 0, dpcr = 0, pmt = 0, nPat = 0, nPmt = 0, dimg = -C.img, nVid = 0, nGop = 0, pesPtr = 0, pesLg = 0, pts = 12600, ccVid = 0, k = 0, apres = 0;
+        while (apres < 30) {
+            const firePsi = dpsi >= 0, firePcr = dpcr >= 0;
+            const pret = nVid < imgs.length && dimg >= 0 && k >= Math.ceil((nVid + 1) * C.img / C.k) + 30;
+            const pcrV = C.pcr0 + C.pcrInc * k;
+            dpsi += C.k; dpcr += C.k; dimg += C.k;
+            const p = new Uint8Array(188).fill(0xFF);
+            if (firePsi) { p.set(PAT_1); p[3] = 0x10 | (nPat++ & 15); dpsi -= C.psi; pmt = 1; }
+            else if (pmt) { p.set(PMT_1); p[3] = 0x10 | (nPmt++ & 15); pmt = 0; }
+            else {
+                const avec = firePcr;
+                if (avec) { dpcr -= C.pcr; }
+                const b = Math.floor(pcrV / 300), e = pcrV % 300;
+                const pcr = [Math.floor(b / 33554432) & 255, Math.floor(b / 131072) & 255, Math.floor(b / 512) & 255, Math.floor(b / 2) & 255, ((b & 1) << 7) | 0x7E | (e >> 8), e & 255];
+                if (!pret) {
+                    if (avec) { p.set([0x47, 0x01, 0x01, 0x20 | ccVid, 183, 0x10].concat(pcr)); } else { p.set([0x47, 0x1F, 0xFF, 0x10]); }
+                } else {
+                    const es = imgs[nVid];
+                    if (pesPtr === 0) { pesLg = es.length + 14; }
+                    const debut = pesPtr === 0, rai = debut && nGop === 0;
+                    const af = avec ? 8 : rai ? 2 : 0, maxcu = 184 - af, cu = Math.min(pesLg - pesPtr, maxcu), afl = af + maxcu - cu;
+                    p[0] = 0x47; p[1] = 0x01 | (debut ? 0x40 : 0); p[2] = 0x01; p[3] = (afl > 0 ? 0x30 : 0x10) | ccVid;
+                    if (afl > 0) { p[4] = afl - 1; }
+                    if (afl > 1) { p[5] = (rai ? 0x40 : 0) | (avec ? 0x10 : 0); }
+                    if (avec) { p.set(pcr, 6); }
+                    for (let i = 4 + afl; i < 188; i++) {
+                        const q = pesPtr, L = pesLg - 6;
+                        let o;
+                        if (q < 2) { o = 0; } else if (q === 2) { o = 1; } else if (q === 3) { o = 0xE0; }
+                        else if (q === 4) { o = L > 65535 ? 0 : L >> 8; } else if (q === 5) { o = L > 65535 ? 0 : L & 255; }
+                        else if (q === 6) { o = 0x84; } else if (q === 7) { o = 0x80; } else if (q === 8) { o = 0x05; }
+                        else if (q === 9) { o = 0x21 | ((Math.floor(pts / 1073741824) & 7) << 1); }
+                        else if (q === 10) { o = Math.floor(pts / 4194304) & 255; } else if (q === 11) { o = ((Math.floor(pts / 32768) & 127) << 1) | 1; }
+                        else if (q === 12) { o = Math.floor(pts / 128) & 255; } else if (q === 13) { o = ((pts & 127) << 1) | 1; }
+                        else { o = es[q - 14]; }
+                        p[i] = o;
+                        if (q === pesLg - 1) { pesPtr = 0; nVid++; dimg -= C.img; pts = (pts + 3600) % 8589934592; nGop = (nGop + 1) % 12; } else { pesPtr++; }
+                    }
+                    ccVid = (ccVid + 1) & 15;
+                }
+            }
+            out.push(p); k++;
+            if (nVid >= imgs.length) { apres++; }
+        }
+        const ts = new Uint8Array(out.length * 188);
+        out.forEach(function (p, i) { ts.set(p, i * 188); });
+        return ts;
+    }
+
+    // ============================================================
+    // DÉMULTIPLEXAGE : PAT → PMT → PID vidéo (stream_type 0x02), PES → flux élémentaire
+    // ============================================================
+    /* demux — E : TS → S : {es, trous, M} ; un paquet marqué faux (transport_error_indicator) ou une
+       rupture du compteur de continuité laissent un trou dans le flux élémentaire : sa position est
+       notée (trous) et le décodeur abandonne la tranche qui le contient ; la suite du PES est gardée */
+    function demux(ts) {
+        const n = Math.floor(ts.length / 188), M = { paquets: n, tei: 0, cc: 0, pes: 0, pmtPid: -1, pid: -1, sync: 0 };
+        // PAT puis PMT
+        for (let p = 0; p < n && (M.pmtPid < 0 || M.pid < 0); p++) {
+            const o = p * 188;
+            if (ts[o] !== 0x47 || (ts[o + 1] & 0x80) || !(ts[o + 1] & 0x40)) { continue; }
+            const pid = ((ts[o + 1] & 31) << 8) | ts[o + 2];
+            let q = o + 4; if (ts[o + 3] & 0x20) { q += 1 + ts[o + 4]; }
+            q += 1 + ts[q];                                   // pointer_field
+            if (pid === 0 && M.pmtPid < 0 && ts[q] === 0) {
+                const L = ((ts[q + 1] & 15) << 8) | ts[q + 2];
+                for (let i = q + 8; i + 4 <= q + 3 + L - 4; i += 4) { const prog = (ts[i] << 8) | ts[i + 1], pp = ((ts[i + 2] & 31) << 8) | ts[i + 3]; if (prog) { M.pmtPid = pp; break; } }
+            } else if (pid === M.pmtPid && ts[q] === 2) {
+                const L = ((ts[q + 1] & 15) << 8) | ts[q + 2], pil = ((ts[q + 10] & 15) << 8) | ts[q + 11];
+                for (let i = q + 12 + pil; i + 5 <= q + 3 + L - 4;) {
+                    const st = ts[i], ep = ((ts[i + 1] & 31) << 8) | ts[i + 2], eil = ((ts[i + 3] & 15) << 8) | ts[i + 4];
+                    if (st === 0x02 || st === 0x01) { M.pid = ep; break; }
+                    i += 5 + eil;
+                }
+            }
+        }
+        if (M.pid < 0) { M.pid = 0x101; }
+        const morceaux = [], trous = [];
+        let cc = -1, dansPes = false, taille = 0;
+        for (let p = 0; p < n; p++) {
+            const o = p * 188;
+            if (ts[o] !== 0x47) { M.sync++; continue; }
+            const pid = ((ts[o + 1] & 31) << 8) | ts[o + 2];
+            if (pid !== M.pid) { continue; }
+            if (ts[o + 1] & 0x80) { M.tei++; if (trous[trous.length - 1] !== taille) { trous.push(taille); } cc = -1; continue; }
+            const afc = (ts[o + 3] >> 4) & 3, c = ts[o + 3] & 15;
+            if (!(afc & 1)) { continue; }                     // pas de charge utile : compteur inchangé
+            if (cc >= 0 && c !== ((cc + 1) & 15)) { M.cc++; if (trous[trous.length - 1] !== taille) { trous.push(taille); } }
+            cc = c;
+            let q = o + 4; if (afc & 2) { q += 1 + ts[o + 4]; }
+            if (q >= o + 188) { continue; }
+            if (ts[o + 1] & 0x40) {
+                if (ts[q] !== 0 || ts[q + 1] !== 0 || ts[q + 2] !== 1) { dansPes = false; continue; }
+                M.pes++; dansPes = true;
+                q += 9 + ts[q + 8];
+            }
+            if (!dansPes || q >= o + 188) { continue; }
+            morceaux.push(ts.subarray(q, o + 188)); taille += o + 188 - q;
+        }
+        const es = new Uint8Array(taille); let i = 0;
+        morceaux.forEach(function (m) { es.set(m, i); i += m.length; });
+        return { es: es, trous: trous, M: M };
+    }
+
+    // ============================================================
+    // DÉCODEUR MPEG-2 IMAGES I (ISO 13818-2), 4:2:0 : images (trame) ou demi-trames
+    // ============================================================
+    function Decodeur(rappel) {
+        this.rappel = rappel;                               // rappel(tranche) : {struct, rang, Y, Cb, Cr, larg} à chaque slice décodée ; image() en fin d'image
+        this.seq = null; this.pic = null; this.Wi = W_INTRA.slice();
+        this.M = { images: 0, demiTrames: 0, slices: 0, slicesFausses: 0, mbs: 0, nonI: 0, erreurs: [] };
+    }
+    function erreurSyntaxe(m) { const e = new Error(m); e.syntaxe = true; return e; }
+    /* decoder — E : flux élémentaire, positions des trous (facultatif) → T : codes de début, en-têtes,
+       slices ; une tranche qui contient un trou est abandonnée (pas de décodage de données manquantes) */
+    Decodeur.prototype.decoder = function (es, trous) {
+        const n = es.length, T = trous || [];
+        const debuts = [];
+        for (let i = 0; i + 3 < n; i++) { if (es[i] === 0 && es[i + 1] === 0 && es[i + 2] === 1) { debuts.push(i); i += 2; } }
+        let it = 0;
+        for (let k = 0; k < debuts.length; k++) {
+            const o = debuts[k], fin = k + 1 < debuts.length ? debuts[k + 1] : n, sc = es[o + 3];
+            while (it < T.length && T[it] <= o) { it++; }
+            if (it < T.length && T[it] < fin) {
+                if (sc >= 0x01 && sc <= 0xAF) { this.M.slicesFausses++; } else if (sc === 0x00) { this.finImage(); this.pic = null; }
+                continue;
+            }
+            const r = new Lecteur(es, o + 4, fin);
+            try {
+                if (sc === 0xB3) { this.sequence(r); }
+                else if (sc === 0xB5) { this.extension(r); }
+                else if (sc === 0x00) { this.finImage(); this.image(r); }
+                else if (sc >= 0x01 && sc <= 0xAF) { this.slice(r, sc); }
+                else if (sc === 0xB7) { this.finImage(); }
+            } catch (e) {
+                if (!e.syntaxe) { throw e; }
+                if (sc >= 0x01 && sc <= 0xAF) { this.M.slicesFausses++; } else { this.M.erreurs.push(e.message); }
+            }
+        }
+        this.finImage();
+    };
+    Decodeur.prototype.sequence = function (r) {
+        const l = r.lire(12), h = r.lire(12); r.lire(4); r.lire(4); r.lire(18); r.lire(1); r.lire(10); r.lire(1);
+        this.Wi = W_INTRA.slice();
+        if (r.lire(1)) { for (let i = 0; i < 64; i++) { this.Wi[ZZ[i]] = r.lire(8); } }
+        this.seq = { larg: l, haut: h, prog: 1 };
+    };
+    Decodeur.prototype.extension = function (r) {
+        const id = r.lire(4);
+        if (id === 1 && this.seq) { r.lire(8); this.seq.prog = r.lire(1); const cf = r.lire(2); if (cf !== 1) { throw erreurSyntaxe('chroma_format ' + cf + ' non pris en charge'); } }
+        else if (id === 8 && this.pic) {
+            r.lire(16);
+            const P = this.pic;
+            P.dcPrec = r.lire(2); P.struct = r.lire(2); P.tff = r.lire(1); P.fpfd = r.lire(1); r.lire(1); P.qType = r.lire(1); P.vlc = r.lire(1); P.alt = r.lire(1);
+            if (P.vlc) { throw erreurSyntaxe('intra_vlc_format = 1 (table B.15) non pris en charge'); }
+        }
+    };
+    Decodeur.prototype.image = function (r) {
+        if (!this.seq) { throw erreurSyntaxe('image sans en-tête de séquence'); }
+        r.lire(10); const t = r.lire(3);
+        this.pic = { type: t, dcPrec: 0, struct: 3, tff: 0, fpfd: 1, qType: 0, vlc: 0, alt: 0, mbs: 0 };
+        if (t !== 1) { this.M.nonI++; this.pic.ignore = true; }
+    };
+    Decodeur.prototype.finImage = function () {
+        if (this.pic && !this.pic.ignore && this.pic.mbs) {
+            if (this.pic.struct === 3) { this.M.images++; } else { this.M.demiTrames++; }
+            if (this.rappel) { this.rappel({ fin: true, struct: this.pic.struct }); }
+        }
+        this.pic = null;
+    };
+    /* slice — une rangée : macroblocs intra, blocs, quantification inverse, DCT inverse ; la rangée
+       décodée est rendue au rappel (sortie par rangées de macroblocs, comme le FPGA) */
+    Decodeur.prototype.slice = function (r, sc) {
+        const P = this.pic, S = this.seq;
+        if (!P || P.ignore || !S) { return; }
+        const champ = P.struct !== 3, L = S.larg, Hp = champ ? S.haut >> 1 : S.haut, cols = (L + 15) >> 4, rang = sc - 1;
+        if (rang * 16 >= Hp) { throw erreurSyntaxe('slice hors image'); }
+        let qcode = r.lire(5);
+        while (r.lire(1)) { r.lire(8); }                       // extra_information_slice
+        const scan = P.alt ? ALT : ZZ, dcMult = 8 >> P.dcPrec, raz = 128 << P.dcPrec;
+        const Y = new Uint8Array(16 * L).fill(128), Cb = new Uint8Array(8 * (L >> 1)).fill(128), Cr = new Uint8Array(8 * (L >> 1)).fill(128);
+        const pred = [raz, raz, raz];
+        let mba = -1;
+        const QF = new Int32Array(64);
+        for (;;) {
+            // incrément d'adresse (B.1, échappement + 33)
+            let inc = 0;
+            for (;;) {
+                const v = T_MBA[r.voir(11)];
+                if (v < 0) { throw erreurSyntaxe('macroblock_address_increment'); }
+                r.passer(v & 31);
+                if ((v >> 5) === 34) { inc += 33; continue; }
+                inc += v >> 5; break;
+            }
+            if (inc !== 1 && mba >= 0) { throw erreurSyntaxe('macroblocs sautés dans une image I'); }
+            mba += inc;
+            if (mba >= cols) { throw erreurSyntaxe('macrobloc hors rangée'); }
+            // type (B.2) : 1 intra, 01 intra + quant
+            let quant = 0;
+            if (r.lire(1) === 0) { if (r.lire(1) !== 1) { throw erreurSyntaxe('macroblock_type'); } quant = 1; }
+            const dctChamp = !champ && !P.fpfd ? r.lire(1) : 0;
+            if (quant) { qcode = r.lire(5); }
+            const qs = P.qType ? QNL[qcode] : 2 * qcode;
+            for (let b = 0; b < 6; b++) {
+                QF.fill(0);
+                const comp = b < 4 ? 0 : b - 3;
+                const tv = (comp ? T_DCC : T_DCY)[r.voir(10)];
+                if (tv < 0) { throw erreurSyntaxe('dct_dc_size'); }
+                r.passer(tv & 31);
+                const size = tv >> 5;
+                let d = 0;
+                if (size) { d = r.lire(size); if (d < (1 << (size - 1))) { d = d + 1 - (1 << size); } }
+                pred[comp] += d; QF[0] = pred[comp];
+                let i = 1;
+                for (;;) {
+                    const v = T_AC[r.voir(16)];
+                    if (v < 0) { throw erreurSyntaxe('coefficient AC'); }
+                    r.passer(v & 31);
+                    const c = v >> 5;
+                    if (c === 4095) { break; }                  // fin de bloc
+                    let run, lev;
+                    if (c === 4094) { run = r.lire(6); lev = r.lire(12); if (lev & 2048) { lev -= 4096; } if (lev === 0 || lev === -2048) { throw erreurSyntaxe('niveau d\'échappement interdit'); } }
+                    else { run = c >> 6; lev = c & 63; if (r.lire(1)) { lev = -lev; } }
+                    i += run;
+                    if (i > 63) { throw erreurSyntaxe('plus de 64 coefficients'); }
+                    QF[scan[i]] = lev; i++;
+                }
+                const F = dequantifier(QF, this.Wi, qs, dcMult);
+                if (b < 4) {
+                    if (dctChamp) { idct(F, Y, (b >> 1) * L + mba * 16 + (b & 1) * 8, 2 * L); }
+                    else { idct(F, Y, (b >> 1) * 8 * L + mba * 16 + (b & 1) * 8, L); }
+                } else { idct(F, b === 4 ? Cb : Cr, mba * 8, L >> 1); }
+            }
+            P.mbs++; this.M.mbs++;
+            // fin de slice : 23 zéros (code de début suivant) ou fin des données
+            if (r.fini() || r.voir(23) === 0) { break; }
+        }
+        this.M.slices++;
+        if (this.rappel) { this.rappel({ struct: P.struct, rang: rang, Y: Y, Cb: Cb, Cr: Cr, larg: L, haut: S.haut, cols: mba + 1 }); }
+    };
+
+    // ============================================================
+    // SORTIE BT.656 (ITU-R BT.656, 625 lignes) depuis les rangées décodées
+    //   tampon de deux rangées de macroblocs par demi-trame (32 lignes de luminance, 16 de
+    //   chrominance) ; chrominance 4:2:0 → 4:2:2 dans la demi-trame : la ligne de chrominance i
+    //   représente la paire (2i, 2i + 1) ; ligne 2i = (3·C[i] + C[i − 1] + 2) >> 2, ligne 2i + 1
+    //   = (3·C[i] + C[i + 1] + 2) >> 2 (bords répétés) ; demi-trame haute → lignes 23 à 310 (F = 0),
+    //   basse → lignes 336 à 623 (F = 1) ; valeurs bornées à 1..254
+    // ============================================================
+    function xy(f, v, h) { return 0x80 | f << 6 | v << 5 | h << 4 | (v ^ h) << 3 | (f ^ h) << 2 | (f ^ v) << 1 | (f ^ v ^ h); }
+    /* SortieBT656 — images 720 × 576 en demi-trames ; chaque image fait 625 × 1 728 octets */
+    function SortieBT656() { this.images = []; this.cour = null; this.att = [null, null]; this.prec = [null, null]; this.M = { lignes: 0 }; }
+    SortieBT656.prototype.nouvelleImage = function () {
+        const b = new Uint8Array(625 * 1728);
+        for (let n = 1; n <= 625; n++) {
+            const f = n >= 313 ? 1 : 0, v = (n <= 22 || (n >= 311 && n <= 335) || n >= 624) ? 1 : 0, o = (n - 1) * 1728;
+            b.set([0xFF, 0, 0, xy(f, v, 1)], o);
+            for (let i = 0; i < 280; i++) { b[o + 4 + i] = i & 1 ? 0x10 : 0x80; }
+            b.set([0xFF, 0, 0, xy(f, v, 0)], o + 284);
+            for (let i = 0; i < 1440; i++) { b[o + 288 + i] = i & 1 ? 0x10 : 0x80; }   // noir tant que rien n'est décodé
+        }
+        this.cour = b; this.images.push(b);
+    };
+    /* rangee — E : rangée décodée {struct 1 haute / 2 basse, rang, Y, Cb, Cr}, ou {fin} en fin de demi-trame
+       → T : tampon de deux rangées : la rangée en attente part quand la suivante arrive (sa dernière
+       ligne de chrominance s'interpole avec la première de la suivante) */
+    SortieBT656.prototype.rangee = function (s) {
+        if (s.fin) {
+            const t = s.struct === 1 ? 0 : 1;
+            if (this.att[t]) { this.emettre(t, this.att[t], this.prec[t], null); }
+            this.att[t] = null; this.prec[t] = null;
+            return;
+        }
+        if (s.larg !== 720 || s.haut !== 576 || s.struct === 3) { return; }
+        const t = s.struct === 1 ? 0 : 1;
+        if (!this.cour || (t === 0 && s.rang === 0 && !this.att[0])) { this.nouvelleImage(); }
+        if (this.att[t]) { this.emettre(t, this.att[t], this.prec[t], s); this.prec[t] = this.att[t]; }
+        this.att[t] = s;
+    };
+    /* emettre — 16 lignes BT.656 d'une rangée (avant : rangée précédente, après : suivante, ou null) */
+    SortieBT656.prototype.emettre = function (t, s, avant, apres) {
+        const b = this.cour, borne = function (v) { return v < 1 ? 1 : v > 254 ? 254 : v; };
+        if (avant && avant.rang !== s.rang - 1) { avant = null; }
+        if (apres && apres.rang !== s.rang + 1) { apres = null; }
+        for (let l = 0; l < 16; l++) {
+            const n = t ? 336 + s.rang * 16 + l : 23 + s.rang * 16 + l, o = (n - 1) * 1728 + 288, i = l >> 1, k = (l & 1) ? i + 1 : i - 1;
+            for (let q = 0; q < 2; q++) {
+                const C = q ? s.Cr : s.Cb;
+                let V, kv;                                       // ligne voisine de chrominance
+                if (k < 0) { V = avant ? (q ? avant.Cr : avant.Cb) : C; kv = avant ? 7 : 0; }
+                else if (k > 7) { V = apres ? (q ? apres.Cr : apres.Cb) : C; kv = apres ? 0 : 7; }
+                else { V = C; kv = k; }
+                for (let x = 0; x < 360; x++) { b[o + 4 * x + 2 * q] = borne((3 * C[i * 360 + x] + V[kv * 360 + x] + 2) >> 2); }
+            }
+            for (let x = 0; x < 720; x++) { b[o + 2 * x + 1] = borne(s.Y[l * 720 + x]); }
+            this.M.lignes++;
+        }
+    };
+    /* lireBT656 — E : flux BT.656 (images de 625 × 1 728 octets) → S : images {Y 720 × 576, Cb, Cr 360 × 576}
+       relues par les codes EAV / SAV (contrôle de la sortie) */
+    function lireBT656(b) {
+        const res = [], nIm = Math.floor(b.length / (625 * 1728));
+        for (let k = 0; k < nIm; k++) {
+            const im = { Y: new Uint8Array(720 * 576), Cb: new Uint8Array(360 * 576), Cr: new Uint8Array(360 * 576), erreurs: 0 };
+            for (let n = 1; n <= 625; n++) {
+                const o = (k * 625 + n - 1) * 1728;
+                if (b[o] !== 0xFF || b[o + 1] || b[o + 2] || b[o + 284] !== 0xFF || b[o + 285] || b[o + 286]) { im.erreurs++; continue; }
+                const sav = b[o + 287], f = (sav >> 6) & 1, v = (sav >> 5) & 1;
+                if (sav !== xy(f, v, 0)) { im.erreurs++; continue; }
+                if (v) { continue; }
+                const r = f ? 2 * (n - 336) + 1 : 2 * (n - 23);
+                for (let x = 0; x < 360; x++) {
+                    const q = o + 288 + 4 * x;
+                    im.Cb[r * 360 + x] = b[q]; im.Y[r * 720 + 2 * x] = b[q + 1]; im.Cr[r * 360 + x] = b[q + 2]; im.Y[r * 720 + 2 * x + 1] = b[q + 3];
+                }
+            }
+            res.push(im);
+        }
+        return res;
+    }
+
+    // ---------- conversions de couleur (page 01, BT.601 pleine échelle) ----------
+    function ycc(R, G, B) {
+        const b = function (v) { return Math.max(1, Math.min(254, Math.round(v))); };
+        return [b(0.299 * R + 0.587 * G + 0.114 * B), b(Math.fround(-0.168736 * R - 0.331264 * G + 0.5 * B + 128)), b(Math.fround(0.5 * R - 0.418688 * G - 0.081312 * B + 128))];
+    }
+    function rgb(Y, Cb, Cr) {
+        const c = function (v) { return v < 0 ? 0 : v > 255 ? 255 : Math.round(v); };
+        return [c(Y + 1.402 * (Cr - 128)), c(Y - 0.344136 * (Cb - 128) - 0.714136 * (Cr - 128)), c(Y + 1.772 * (Cb - 128))];
+    }
+    /* imageRGB — E : pixels RGBA 720 × 576 → S : image 4:2:2 {Y, Cb, Cr} (chrominance du pixel pair, comme bt656.js) */
+    function imageRGB(px) {
+        const im = { Y: new Uint8Array(720 * 576), Cb: new Uint8Array(360 * 576), Cr: new Uint8Array(360 * 576) };
+        for (let y = 0; y < 576; y++) {
+            for (let x = 0; x < 720; x++) {
+                const o = (y * 720 + x) * 4, c = ycc(px[o], px[o + 1], px[o + 2]);
+                im.Y[y * 720 + x] = c[0];
+                if (!(x & 1)) { im.Cb[y * 360 + (x >> 1)] = c[1]; im.Cr[y * 360 + (x >> 1)] = c[2]; }
+            }
+        }
+        return im;
+    }
+    /* mire — E : numéro d'image → S : pixels RGBA 720 × 576 : barres de couleur, dégradé, zone de
+       cercles concentriques (réseau fin), carré blanc mobile qui avance de 8 pixels par demi-trame
+       (la demi-trame basse est prise 20 ms après la haute, comme une caméra entrelacée) */
+    function mire(k) {
+        const px = new Uint8ClampedArray(720 * 576 * 4);
+        const barres = [[235, 235, 235], [235, 235, 16], [16, 235, 235], [16, 235, 16], [235, 16, 235], [235, 16, 16], [16, 16, 235], [16, 16, 16]];
+        for (let y = 0; y < 576; y++) {
+            const t = y & 1, xs = 40 + 16 * (2 * k + t);             // position du carré pour la demi-trame de la ligne
+            for (let x = 0; x < 720; x++) {
+                let c;
+                if (y < 192) { c = barres[Math.floor(x / 90)]; }
+                else if (y < 288) { const g = Math.round(16 + 219 * x / 719); c = [g, g, g]; }
+                else {
+                    const dx = x - 540, dy = (y - 432) * 1.0, r2 = dx * dx + dy * dy;
+                    if (x >= 360 && r2 < 130 * 130) { const g = Math.round(126 + 109 * Math.cos(r2 / 900)); c = [g, g, g]; }
+                    else { c = [Math.round(16 + 200 * y / 575), Math.round(60 + 150 * x / 719), 120]; }
+                }
+                if (y >= 360 && y < 456 && x >= (xs % 300) && x < (xs % 300) + 64) { c = [235, 235, 235]; }
+                const o = (y * 720 + x) * 4; px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+            }
+        }
+        return px;
+    }
+
+    return { W_INTRA: W_INTRA, ZZ: ZZ, dct: dct, idct: idct, quantifier: quantifier, dequantifier: dequantifier, Codeur: Codeur, coder: coder, muxGmsk: muxGmsk,
+             demux: demux, Decodeur: Decodeur, SortieBT656: SortieBT656, lireBT656: lireBT656, imageRGB: imageRGB, mire: mire, rgb: rgb, ycc: ycc, BUDGET: BUDGET };
+})();
+</script>
+<script>
+    // ============================================================
+    // PAGE 17 : interface
+    // ============================================================
+    let imageChargee = null, sources = null, code = null, tsCourant = null, nomTS = '', sortie = null, relues = null, enCours = false;
+
+    window.onload = function () {
+        const s = document.getElementById('code');
+        for (let c = 1; c <= 31; c++) { const o = document.createElement('option'); o.value = c; o.textContent = 'fixe ' + c + ' (pas ' + (2 * c) + ')'; s.appendChild(o); }
+        ['canvasInput', 'canvasProcess', 'canvasOutput', 'canvasGrand'].forEach(effacer);
+    };
+    function effacer(id) { const c = document.getElementById(id), x = c.getContext('2d'); x.fillStyle = '#0e1418'; x.fillRect(0, 0, c.width, c.height); }
+    function etat(t, f) { document.getElementById('barre').style.width = (100 * Math.max(0, Math.min(1, f))).toFixed(1) + '%'; document.getElementById('etat').textContent = t; }
+    function attente() { return new Promise(function (r) { setTimeout(r, 0); }); }
+    function boutons(actif) { ['btnCoder', 'btnDecoder'].forEach(function (id) { document.getElementById(id).disabled = !actif || (id === 'btnDecoder' && !tsCourant); }); enCours = !actif; }
+
+    /* dessinerImage — E : canvas, image {Y 720 × 576, Cb, Cr 360 × 576} ou pixels RGBA, échelle (1 ou ½) */
+    function dessinerImage(id, im, demi) {
+        const c = document.getElementById(id), ctx = c.getContext('2d'), L = demi ? 360 : 720, H = demi ? 288 : 576, d = ctx.createImageData(L, H);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < L; x++) {
+                const sx = demi ? 2 * x : x, sy = demi ? 2 * y : y, o = (y * L + x) * 4;
+                let p;
+                if (im.Y) { p = V.rgb(im.Y[sy * 720 + sx], im.Cb[sy * 360 + (sx >> 1)], im.Cr[sy * 360 + (sx >> 1)]); }
+                else { const q = (sy * 720 + sx) * 4; p = [im[q], im[q + 1], im[q + 2]]; }
+                d.data[o] = p[0]; d.data[o + 1] = p[1]; d.data[o + 2] = p[2]; d.data[o + 3] = 255;
+            }
+        }
+        ctx.putImageData(d, 0, 0);
+    }
+
+    // ---------- sources ----------
+    function chargerImage(files) {
+        if (!files || !files.length) { return; }
+        const u = URL.createObjectURL(files[0]), img = new Image();
+        img.onload = function () {
+            const c = document.createElement('canvas'); c.width = 720; c.height = 576;
+            const ctx = c.getContext('2d'), k = Math.max(720 / img.width, 576 / img.height), w = img.width * k, h = img.height * k;
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 720, 576);
+            ctx.drawImage(img, (720 - w) / 2, (576 - h) / 2, w, h);                       // remplissage, centré
+            imageChargee = ctx.getImageData(0, 0, 720, 576).data;
+            document.getElementById('src').value = 'image';
+            dessinerImage('canvasInput', imageChargee, true);
+            URL.revokeObjectURL(u);
+        };
+        img.onerror = function () { alert('Image illisible.'); };
+        img.src = u;
+        document.getElementById('imgInput').value = '';
+    }
+
+    async function coder() {
+        if (enCours) { return; }
+        const N = Math.max(1, Math.min(25, Math.round(+document.getElementById('nIm').value))), src = document.getElementById('src').value;
+        if (src === 'image' && !imageChargee) { alert('Chargez d\'abord une image (📁 Image).'); return; }
+        boutons(false);
+        try {
+            const px = [];
+            sources = [];
+            for (let k = 0; k < N; k++) {
+                px.push(src === 'image' ? imageChargee : V.mire(k));
+                sources.push(V.imageRGB(px[k]));
+                etat('images sources : ' + (k + 1) + ' / ' + N, (k + 1) / (3 * N));
+                await attente();
+            }
+            dessinerImage('canvasInput', px[0], true);
+            const fixe = +document.getElementById('code').value;
+            const t0 = performance.now(), C = new V.Codeur(fixe);
+            code = { images: [], rec: [], codes: [], bits: [] };
+            for (let k = 0; k < N; k++) {                        // une image à la fois : la page reste réactive
+                const r = C.image(sources[k], k === N - 1);
+                code.images.push(r.octets); code.rec.push(r.rec); code.codes.push.apply(code.codes, r.codes); code.bits.push.apply(code.bits, r.bits);
+                etat('codage : image ' + (k + 1) + ' / ' + N + ' (codes ' + r.codes.join(', ') + ')', (N + 2 * (k + 1)) / (3 * N));
+                await attente();
+            }
+            let tot = 0; code.images.forEach(function (a) { tot += a.length; });
+            code.es = new Uint8Array(tot); let p = 0; code.images.forEach(function (a) { code.es.set(a, p); p += a.length; });
+            tsCourant = V.muxGmsk(code.images); nomTS = 'ts_gmsk_codeur';
+            const dt = (performance.now() - t0) / 1000;
+            const st = document.getElementById('statsInput'); st.style.display = 'block';
+            const dep = code.bits.filter(function (b) { return b > V.BUDGET; }).length;
+            st.innerHTML = '• ' + N + ' images, ' + (2 * N) + ' demi-trames ; codes : ' + code.codes.join(', ') + '<br>' +
+                '• Bits par demi-trame : ' + Math.min.apply(null, code.bits).toLocaleString() + ' à ' + Math.max.apply(null, code.bits).toLocaleString() + ' (budget ' + V.BUDGET.toLocaleString() + (dep ? ' ; ' + dep + ' au-dessus même au code 31' : '') + ')<br>' +
+                '• Flux élémentaire : ' + code.es.length.toLocaleString() + ' octets ; TS : ' + (tsCourant.length / 188).toLocaleString() + ' paquets (' + (tsCourant.length / 188 * 1504 / 2262032 * 1000).toFixed(0) + ' ms à 2,26 Mbit/s)<br>' +
+                '• Durée du codage : ' + dt.toFixed(1) + ' s';
+            document.getElementById('btnTS').disabled = false; document.getElementById('btnES').disabled = false;
+            etat('codé : TS prêt à décoder (ou à émettre en page 16 : 💾 TS émis, puis 📁 TS source)', 1);
+        } catch (e) { alert('Erreur de codage : ' + e.message); console.error(e); }
+        boutons(true);
+    }
+
+    async function chargerTS(files) {
+        if (!files || !files.length) { return; }
+        const b = new Uint8Array(await files[0].arrayBuffer());
+        if (b.length < 188 || b[0] !== 0x47) { alert('Fichier TS non reconnu (octet 0x47 absent).'); return; }
+        tsCourant = b.slice(0, Math.floor(b.length / 188) * 188); nomTS = files[0].name.replace(/\.[^.]+$/, '');
+        code = null; sources = null;
+        effacer('canvasInput');
+        const st = document.getElementById('statsInput'); st.style.display = 'block';
+        st.innerHTML = '• TS chargé : <b>' + files[0].name + '</b>, ' + (tsCourant.length / 188).toLocaleString() + ' paquets ; pas d\'image source (contrôles de reconstruction et PSNR indisponibles)';
+        document.getElementById('btnTS').disabled = true; document.getElementById('btnES').disabled = true;
+        boutons(true);
+        document.getElementById('tsInput').value = '';
+    }
+
+    // ---------- décodage ----------
+    async function decoder() {
+        if (enCours || !tsCourant) { return; }
+        boutons(false);
+        try {
+            const t0 = performance.now();
+            const d = V.demux(tsCourant);
+            etat('démultiplexage : ' + d.M.pes + ' PES, ' + d.es.length.toLocaleString() + ' octets de flux élémentaire', 0.1);
+            await attente();
+            sortie = new V.SortieBT656();
+            const rangs = [], cadres = {};                    // cadres : images (trames) hors PAL, par numéro
+            let nDT = 0, nIm = 0;
+            const vue = document.getElementById('canvasProcess').getContext('2d');
+            effacer('canvasProcess');
+            const dec = new V.Decodeur(function (s) {
+                sortie.rangee(s);
+                if (s.fin) { if (s.struct === 3) { nIm++; } else { nDT++; } return; }
+                rangs.push(s);
+                // vue : la rangée décodée, réduite de moitié (demi-trame haute à gauche, basse à droite)
+                const L = s.larg, demi = s.struct !== 3, img = vue.createImageData(180, 8);
+                for (let y = 0; y < 8; y++) {
+                    for (let x = 0; x < 180; x++) {
+                        const sx = Math.min(L - 1, Math.floor(x * L / 180)), sy = 2 * y, p = V.rgb(s.Y[sy * L + sx], s.Cb[(sy >> 1) * (L >> 1) + (sx >> 1)], s.Cr[(sy >> 1) * (L >> 1) + (sx >> 1)]), o = (y * 180 + x) * 4;
+                        img.data[o] = p[0]; img.data[o + 1] = p[1]; img.data[o + 2] = p[2]; img.data[o + 3] = 255;
+                    }
+                }
+                vue.putImageData(img, (demi && s.struct === 2) ? 180 : 0, (s.rang * 8) % 288);
+                if (!demi) {                                   // trame entière (flux progressif) : gardée pour l'affichage
+                    const k = nIm, c = cadres[k] || (cadres[k] = { L: L, H: s.haut, Y: new Uint8Array(L * s.haut), Cb: new Uint8Array((L >> 1) * (s.haut >> 1)), Cr: new Uint8Array((L >> 1) * (s.haut >> 1)) });
+                    for (let y = 0; y < 16 && s.rang * 16 + y < s.haut; y++) { c.Y.set(s.Y.subarray(y * L, (y + 1) * L), (s.rang * 16 + y) * L); }
+                    for (let y = 0; y < 8 && s.rang * 8 + y < (s.haut >> 1); y++) { c.Cb.set(s.Cb.subarray(y * (L >> 1), (y + 1) * (L >> 1)), (s.rang * 8 + y) * (L >> 1)); c.Cr.set(s.Cr.subarray(y * (L >> 1), (y + 1) * (L >> 1)), (s.rang * 8 + y) * (L >> 1)); }
+                }
+            });
+            dec.decoder(d.es, d.trous);
+            const bt = new Uint8Array(sortie.images.length * 625 * 1728);
+            sortie.images.forEach(function (b, i) { bt.set(b, i * 625 * 1728); });
+            relues = V.lireBT656(bt);
+            relues.bt = bt; relues.cadres = cadres;
+            if (relues.length) { dessinerImage('canvasOutput', relues[0], true); }
+            else if (cadres[0]) { dessinerCadre('canvasOutput', cadres[0], true); }
+            // contrôles
+            let ecarts = -1, psnr = null;
+            if (code) {
+                ecarts = 0;
+                rangs.forEach(function (s, i) {
+                    const im = Math.floor(i / 36), t = s.struct === 1 ? 0 : 1, R = code.rec[im] && code.rec[im][t];
+                    if (!R) { ecarts++; return; }
+                    for (let l = 0; l < 16; l++) { for (let x = 0; x < 720; x++) { if (R.Y[(s.rang * 16 + l) * 720 + x] !== s.Y[l * 720 + x]) { ecarts++; } } }
+                    for (let l = 0; l < 8; l++) { for (let x = 0; x < 360; x++) { if (R.Cb[(s.rang * 8 + l) * 360 + x] !== s.Cb[l * 360 + x]) { ecarts++; } if (R.Cr[(s.rang * 8 + l) * 360 + x] !== s.Cr[l * 360 + x]) { ecarts++; } } }
+                });
+                psnr = relues.map(function (im, k) {
+                    const S = sources[k]; if (!S) { return null; }
+                    let sy = 0, sc = 0;
+                    for (let i = 0; i < 720 * 576; i++) { const e = im.Y[i] - S.Y[i]; sy += e * e; }
+                    for (let i = 0; i < 360 * 576; i++) { const a = im.Cb[i] - S.Cb[i], b = im.Cr[i] - S.Cr[i]; sc += a * a + b * b; }
+                    return [10 * Math.log10(65025 / (sy / (720 * 576))), 10 * Math.log10(65025 / (sc / (2 * 360 * 576)))];
+                });
+            }
+            const ok = function (c) { return c ? '<span style="color:#5cd65c">✔</span>' : '<span style="color:#ff5c5c">✘</span>'; };
+            const M = dec.M, err = relues.reduce(function (a, im) { return a + im.erreurs; }, 0);
+            let t = '<strong>Décodage :</strong><br>' +
+                ok(d.M.pid >= 0) + ' TS : ' + d.M.paquets.toLocaleString() + ' paquets ; PMT 0x' + d.M.pmtPid.toString(16) + ', vidéo 0x' + d.M.pid.toString(16) + ' ; ' + d.M.pes + ' PES ; ' +
+                d.M.tei + ' paquet faux, ' + d.M.cc + ' rupture de compteur<br>' +
+                ok(M.slicesFausses === 0 && !M.erreurs.length) + ' MPEG-2 : ' + M.demiTrames + ' demi-trames, ' + M.images + ' images (trames), ' + M.slices.toLocaleString() + ' slices, ' + M.mbs.toLocaleString() + ' macroblocs ; ' +
+                M.slicesFausses + ' slice abandonnée' + (d.trous.length ? ' (' + d.trous.length + ' trou dans le flux élémentaire)' : '') + (M.nonI ? ', ' + M.nonI + ' image non I ignorée' : '') + (M.erreurs.length ? ' ; erreurs : ' + M.erreurs.slice(0, 3).join(' ; ') : '') + '<br>' +
+                ok(err === 0) + ' BT.656 : ' + sortie.images.length + ' image(s) de 625 lignes, ' + sortie.M.lignes.toLocaleString() + ' lignes actives écrites, relecture EAV / SAV : ' + err + ' erreur<br>';
+            if (code) {
+                t += ok(ecarts === 0) + ' Reconstruction : ' + (ecarts === 0 ? 'identique' : ecarts.toLocaleString() + ' échantillons différents') + ' à la reconstruction locale du codeur<br>';
+                t += '• PSNR contre la source (luminance / chrominance 4:2:2) : ' + psnr.map(function (p, k) { return p ? 'image ' + (k + 1) + ' : ' + p[0].toFixed(2) + ' / ' + p[1].toFixed(2) + ' dB' : ''; }).join(' ; ') + '<br>';
+            }
+            if (!relues.length && Object.keys(cadres).length) { t += '• Flux à images progressives ' + cadres[0].L + ' × ' + cadres[0].H + ' : affichage seul (la sortie BT.656 est prévue pour 720 × 576 en demi-trames)<br>'; }
+            t += '• Durée : ' + ((performance.now() - t0) / 1000).toFixed(1) + ' s';
+            const gs = document.getElementById('globalStats'); gs.style.display = 'block'; gs.innerHTML = t;
+            document.getElementById('btnBT').disabled = !relues.length;
+            document.getElementById('vIm').max = Math.max(1, relues.length || Object.keys(cadres).length);
+            vueGrande();
+            etat('décodé', 1);
+        } catch (e) { alert('Erreur de décodage : ' + e.message); console.error(e); }
+        boutons(true);
+    }
+    function dessinerCadre(id, c, demi) {
+        const cv = document.getElementById(id), ctx = cv.getContext('2d'), k = demi ? Math.min(360 / c.L, 288 / c.H) : Math.min(720 / c.L, 576 / c.H);
+        const L = Math.round(c.L * k), H = Math.round(c.H * k), d = ctx.createImageData(L, H);
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < L; x++) {
+                const sx = Math.min(c.L - 1, Math.floor(x / k)), sy = Math.min(c.H - 1, Math.floor(y / k)), p = V.rgb(c.Y[sy * c.L + sx], c.Cb[(sy >> 1) * (c.L >> 1) + (sx >> 1)], c.Cr[(sy >> 1) * (c.L >> 1) + (sx >> 1)]), o = (y * L + x) * 4;
+                d.data[o] = p[0]; d.data[o + 1] = p[1]; d.data[o + 2] = p[2]; d.data[o + 3] = 255;
+            }
+        }
+        effacer(id); ctx.putImageData(d, 0, 0);
+    }
+    function vueGrande() {
+        const k = Math.max(1, Math.round(+document.getElementById('vIm').value)) - 1, mode = document.getElementById('vMode').value;
+        effacer('canvasGrand');
+        if (!relues) { return; }
+        if (!relues.length) { if (relues.cadres[k]) { dessinerCadre('canvasGrand', relues.cadres[k], false); } return; }
+        if (mode === 'source') { if (sources && sources[k]) { dessinerImage('canvasGrand', sources[k], false); } return; }
+        const im = relues[Math.min(k, relues.length - 1)];
+        if (mode === 'ecart') {
+            if (!sources || !sources[k]) { return; }
+            const ctx = document.getElementById('canvasGrand').getContext('2d'), d = ctx.createImageData(720, 576);
+            for (let i = 0; i < 720 * 576; i++) { const e = Math.max(0, Math.min(255, 128 + 8 * (im.Y[i] - sources[k].Y[i]))); d.data[4 * i] = e; d.data[4 * i + 1] = e; d.data[4 * i + 2] = e; d.data[4 * i + 3] = 255; }
+            ctx.putImageData(d, 0, 0);
+            return;
+        }
+        dessinerImage('canvasGrand', im, false);
+    }
+    function exporter(q) {
+        let b, nom, type = 'application/octet-stream';
+        if (q === 'bt') { if (!relues || !relues.bt) { return; } b = relues.bt; nom = 'sortie_' + nomTS + '.656'; }
+        else if (q === 'ts') { if (!tsCourant || !code) { return; } b = tsCourant; nom = 'ts_gmsk_codeur.ts'; type = 'video/mp2t'; }
+        else { if (!code) { return; } b = code.es; nom = 'es_gmsk_codeur.m2v'; }
+        const u = URL.createObjectURL(new Blob([b], { type: type })), a = document.createElement('a');
+        a.href = u; a.download = nom; a.click(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+    }
+</script>
+<nav class="j2d-nav bas" aria-label="Chaîne JPEG2DVB"><a href="page16-reception-gmsk.html">◀ 16 · Réception GMSK</a><span class="j2d-centre"><a href="index2.html">Sommaire</a><span class="j2d-etape">Étape 17 / 17</span></span><a href="index2.html">Sommaire ▶</a></nav>
+</body>
+</html>
